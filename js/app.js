@@ -19,6 +19,16 @@
   const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
   const quickHex = n => (P.NAMED.find(x => x[0] === n) || [,"#1f1f22"])[1];
 
+  const EMB = window.LEDGER_EMBLEMS || {icons: [], cats: {}};
+  function suggestedIcons(f){
+    const cats = P.iconCats(f.id, f.parent);
+    const words = f.name.toLowerCase().replace(/[^a-z ]/g, "").split(" ").filter(w => w.length > 3);
+    const def = P.defaultIcon(f.id).slice(5);
+    const score = i => (i.id === def ? -1000 : 0) + (words.some(w => i.n.toLowerCase().includes(w)) ? -100 : 0) + cats.indexOf(i.c);
+    return EMB.icons.filter(i => cats.includes(i.c)).sort((a, b) => score(a) - score(b) || a.n.localeCompare(b.n));
+  }
+  const catLabel = c => (EMB.cats && EMB.cats[c]) || c;
+
   let store = null;
   let view = {name: "", cleanup: null};
 
@@ -127,7 +137,7 @@
           <div class="fgrid">${list.map(f => `<a class="fcard" href="#/new/${esc(f.id)}" data-fname="${esc(f.name.toLowerCase())}">
             ${factionBadge(f.id, 34)}<span><strong>${esc(f.name)}</strong><small>${f.units.filter(u => !u.t).length} datasheets</small></span></a>`).join("")}</div>
         </div>`).join("")}</div>
-      <p class="source">Unit and weapon names come from the community BattleScribe data for Warhammer 40,000 11th edition (${esc(DATA.source || "BSData")}${DATA.commit ? ", " + esc(DATA.commit) : ""}). Starting colours are suggestions you can change. Warhammer 40,000 is a trademark of Games Workshop; this is an unofficial fan tool.</p>
+      <p class="source">Unit and weapon names come from the community BattleScribe data for Warhammer 40,000 11th edition (${esc(DATA.source || "BSData")}${DATA.commit ? ", " + esc(DATA.commit) : ""}). Emblem icons from <a href="https://github.com/Certseeds/wh40k-icon" target="_blank" rel="noopener">wh40k-icon</a> by shitake, farvig, 夜行漫记 and Certseeds (<a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a>), recoloured for this site. Starting colours are suggestions you can change. Warhammer 40,000 and its symbols are trademarks of Games Workshop; this is an unofficial, non-commercial fan tool.</p>
     `;
     const fq = $("fq");
     fq.addEventListener("input", () => {
@@ -195,7 +205,13 @@
           </div>
           <div class="panel">
             <h3>Emblem</h3>
-            <p class="hint">Shown on the shoulder pad. These are simple shapes, not official chapter icons.</p>
+            <p class="hint">Shown on the shoulder pad in your emblem colour. Pick a faction icon or a simple shape.</p>
+            <div class="em-current" id="s-emcur"></div>
+            <input type="search" id="s-emq" class="em-search" placeholder="Search all ${EMB.icons.length} icons, e.g. Khorne, Iyanden, Goffs" aria-label="Search icons">
+            <h4 class="em-h" id="s-emh">Suggested for ${esc(f.name)}</h4>
+            <div class="icongrid" id="s-icons"></div>
+            <div class="row-actions" style="margin-top:8px"><button type="button" class="btn-sm" id="s-emmore" hidden>Show more</button></div>
+            <h4 class="em-h">Simple shapes</h4>
             <div class="shapes" id="s-shapes">${P.SHAPES.map(([k, label]) => `<button type="button" class="shape" data-shape="${k}" aria-pressed="${draft.scheme.shape === k}">${ART.shapeIcon(k, draft.scheme.colors.emblem, 34)}${label}</button>`).join("")}</div>
           </div>
           <div class="panel">
@@ -231,6 +247,19 @@
     app.querySelectorAll("[data-signin]").forEach(b => b.addEventListener("click", openAuth));
 
     const sch = draft.scheme;
+    const suggested = suggestedIcons(f);
+    let emq = "", emLimit = 90;
+    function renderIcons(){
+      const q = emq.toLowerCase();
+      const list = q ? EMB.icons.filter(i => i.n.toLowerCase().includes(q) || catLabel(i.c).toLowerCase().includes(q)) : suggested;
+      $("s-emh").textContent = q ? `${list.length} icon${list.length === 1 ? "" : "s"} matching "${emq}"` : `Suggested for ${f.name}`;
+      $("s-icons").innerHTML = list.slice(0, emLimit).map(i => `<button type="button" class="ic" data-shape="icon:${esc(i.id)}" aria-pressed="${sch.shape === "icon:" + i.id}" title="${esc(i.n)} · ${esc(catLabel(i.c))}"><img src="${esc(i.f)}" alt="" loading="lazy" decoding="async"><span>${esc(i.n)}</span></button>`).join("") || `<p class="hint" style="grid-column:1/-1">No icons match. Try another word.</p>`;
+      $("s-emmore").hidden = list.length <= emLimit;
+    }
+    function renderCurrent(){
+      $("s-emcur").innerHTML = `${ART.pauldron(sch.colors.armour, sch.colors.trim, sch.colors.emblem, sch.shape, 52)}<span><small>Current emblem</small><strong>${esc(P.emblemName(sch.shape))}</strong></span>`;
+      app.querySelectorAll(".ic[data-shape]").forEach(b => b.setAttribute("aria-pressed", b.dataset.shape === sch.shape));
+    }
     function renderTiers(){
       $("s-tiers").innerHTML = sch.tiers.map((t, i) => `
         <div class="tier">
@@ -244,10 +273,11 @@
     function renderPreview(){
       $("s-preview").innerHTML = sch.tiers.map(t => `<div class="pv-tier">${tierBadge(sch, t, 60)}<span><strong>${esc(t.name || "Rank")}</strong><small>${esc(t.note || cname(t.color) + " helmet")}</small></span></div>`).join("");
       $("s-shapes").querySelectorAll("[data-shape]").forEach(b => { b.setAttribute("aria-pressed", b.dataset.shape === sch.shape); b.innerHTML = ART.shapeIcon(b.dataset.shape, sch.colors.emblem, 34) + esc(P.SHAPES.find(s => s[0] === b.dataset.shape)[1]); });
+      renderCurrent();
       COLOR_KEYS.forEach(([k]) => { $("s-" + k).value = sch.colors[k]; $("s-" + k + "-n").textContent = cname(sch.colors[k]); });
       app.querySelectorAll("[data-style]").forEach(b => b.setAttribute("aria-pressed", b.dataset.style === sch.style));
     }
-    renderTiers(); renderPreview();
+    renderIcons(); renderTiers(); renderPreview();
 
     app.addEventListener("input", onInput);
     app.addEventListener("click", onClick);
@@ -257,6 +287,7 @@
       const t = e.target;
       const ck = COLOR_KEYS.find(([k]) => t.id === "s-" + k);
       if(ck){ sch.colors[ck[0]] = t.value; renderPreview(); return; }
+      if(t.id === "s-emq"){ emq = t.value.trim(); emLimit = 90; renderIcons(); return; }
       if(t.dataset.tname != null){ sch.tiers[+t.dataset.tname].name = t.value; renderPreview(); }
       if(t.dataset.tnote != null){ sch.tiers[+t.dataset.tnote].note = t.value; renderPreview(); }
       if(t.dataset.tcolor != null){ sch.tiers[+t.dataset.tcolor].color = t.value; renderPreview(); }
@@ -267,6 +298,7 @@
       const t = e.target.closest("button"); if(!t) return;
       if(t.dataset.sw){ sch.colors[t.dataset.sw] = t.dataset.hex; renderPreview(); return; }
       if(t.dataset.shape){ sch.shape = t.dataset.shape; renderPreview(); return; }
+      if(t.id === "s-emmore"){ emLimit += 90; renderIcons(); return; }
       if(t.dataset.style){ sch.style = t.dataset.style; renderPreview(); return; }
       if(t.dataset.tdel != null){ sch.tiers.splice(+t.dataset.tdel, 1); renderTiers(); renderPreview(); return; }
       if(t.id === "s-addtier"){ sch.tiers.push({name: "New rank", note: "", color: sch.colors.secondary}); renderTiers(); renderPreview(); return; }
@@ -312,6 +344,8 @@
     const sheetOptions = ROLE_ORDER.filter(r => byRole[r]).map(r => `<optgroup label="${esc(r)}">${byRole[r].map(u => `<option value="${esc(u.n)}">${esc(u.n)}</option>`).join("")}</optgroup>`).join("")
       + (legends.length ? `<optgroup label="Legends and other">${legends.map(u => `<option value="${esc(u.n)}" data-legend="1">${esc(u.n)} (${esc(u.t)})</option>`).join("")}</optgroup>` : "");
     const sheetFor = n => sheets.find(u => u.n === n && !u.t) || sheets.find(u => u.n === n);
+    const sheetIcons = suggestedIcons(FBY[army.faction] || {id: army.faction, name: f.name}).slice(0, 250);
+    if(String(scheme.shape).startsWith("icon:") && !sheetIcons.some(i => "icon:" + i.id === scheme.shape) && P.ICON_BY_ID[scheme.shape.slice(5)]) sheetIcons.unshift(P.ICON_BY_ID[scheme.shape.slice(5)]);
     const schemeColors = [...new Set([...Object.values(scheme.colors), ...scheme.tiers.map(t => t.color)])];
 
     const colorField = (id, label) => `<label>${label}<span class="cpair" style="display:flex;gap:8px;align-items:center"><input type="color" id="f-${id}" list="dl-scheme" style="width:56px;flex:none"><span class="cname" data-cn="${id}" style="font-family:var(--mono);font-size:.72rem"></span></span></label>`;
@@ -379,7 +413,11 @@
             ${colorField("secondary", "Secondary")}
             ${colorField("trim", "Trim")}
             ${colorField("emblem", "Emblem colour")}
-            <label class="full">Emblem<select id="f-shape">${P.SHAPES.map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select></label>
+            <label class="full">Emblem<select id="f-shape">
+              <option value="">Army emblem (${esc(P.emblemName(scheme.shape))})</option>
+              <optgroup label="${esc(f.name)} icons">${sheetIcons.map(i => `<option value="icon:${esc(i.id)}">${esc(i.n)}</option>`).join("")}</optgroup>
+              <optgroup label="Simple shapes">${P.SHAPES.map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</optgroup>
+            </select></label>
           </fieldset>
           <fieldset>
             <legend>Cloth &amp; details</legend>
@@ -437,7 +475,7 @@
     function defaults(){
       const c = scheme.colors, t = scheme.tiers[0];
       return {datasheet:"", role:"", name:"", count:5, status:"unbuilt", tier:0, helmet:t.color, lens:c.lens, hdetail:"", noHelmet:false,
-        armour:c.armour, secondary:c.secondary, trim:c.trim, emblem:c.emblem, shape:scheme.shape, cloth:c.cloth, metal:c.metal,
+        armour:c.armour, secondary:c.secondary, trim:c.trim, emblem:c.emblem, shape:"", cloth:c.cloth, metal:c.metal,
         extras:"", melee:"", ranged:"", paints:"", notes:""};
     }
     function readForm(){
@@ -460,7 +498,7 @@
       $("f-name").value = d.name; $("f-count").value = d.count; $("f-status").value = d.status;
       $("f-tier").value = String(Math.min(d.tier, scheme.tiers.length - 1));
       $("f-hdetail").value = d.hdetail; $("f-noHelmet").checked = !!d.noHelmet;
-      $("f-shape").value = P.SHAPES.some(s => s[0] === d.shape) ? d.shape : scheme.shape;
+      $("f-shape").value = [...$("f-shape").options].some(o => o.value === d.shape) ? d.shape : "";
       ["extras","melee","ranged","paints","notes"].forEach(k => $("f-" + k).value = d[k] || "");
       COLOR_IDS.forEach(k => $("f-" + k).value = ART.hexOk(d[k]) ? d[k] : (defaults()[k] || "#1f1f22"));
       fillWeapons(); preview();
@@ -558,7 +596,7 @@
           <div class="row">${img ? unitBadge(u, scheme, 64) : ""}<span class="pill s-${esc(u.status)}">${esc(STATUS[u.status] || u.status)}</span></div>
           ${sec("Rank", [["Rank", esc(tier.name)], ["Who", esc(tier.note)]])}
           ${sec("Helmet", [["Colour", u.noHelmet ? "Bare head" : col(u.helmet)], ["Lenses", col(u.lens)], ["Detail", esc(u.hdetail)]])}
-          ${sec("Armour &amp; pauldrons", [["Armour", col(u.armour)], ["Secondary", col(u.secondary)], ["Trim", col(u.trim)], ["Emblem", u.shape === "none" ? "None" : col(u.emblem) + " " + esc((P.SHAPES.find(s => s[0] === u.shape) || ["", ""])[1].toLowerCase())]])}
+          ${sec("Armour &amp; pauldrons", [["Armour", col(u.armour)], ["Secondary", col(u.secondary)], ["Trim", col(u.trim)], ["Emblem", (u.shape || scheme.shape) === "none" ? "None" : col(u.emblem) + " · " + esc(P.emblemName(u.shape || scheme.shape))]])}
           ${sec("Cloth &amp; details", [["Cloth", col(u.cloth)], ["Metal", col(u.metal)], ["Extras", esc(u.extras)]])}
           ${sec("Weapons", [["Melee", esc(u.melee)], ["Ranged", esc(u.ranged)]])}
           ${u.paints ? `<section><h4>Paint recipe</h4><p class="prose">${esc(u.paints)}</p></section>` : ""}

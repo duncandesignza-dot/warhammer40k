@@ -31,7 +31,7 @@
       note: String((t && t.note) || "").slice(0, 80),
       color: HEX.test(t && t.color) ? t.color : "#1f1f22"
     }));
-    return {style: s.style === "roundel" ? "roundel" : "astartes", colors, shape: String(s.shape || "cross").slice(0, 20), tiers: tiers.length ? tiers : [{name:"Line", note:"", color:colors.armour}]};
+    return {style: s.style === "roundel" ? "roundel" : "astartes", colors, shape: String(s.shape || "cross").slice(0, 160), tiers: tiers.length ? tiers : [{name:"Line", note:"", color:colors.armour}]};
   }
   function cleanArmy(a){
     return {faction: String(a.faction || "").slice(0, 60), name: String(a.name || "My army").slice(0, 80), scheme: cleanScheme(a.scheme)};

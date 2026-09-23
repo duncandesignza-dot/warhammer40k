@@ -32,9 +32,35 @@
     wrap.innerHTML=`<svg id="ll-defs" width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>
       <g id="hx-shell">${HELMET_SHELL}</g><g id="hx-tubes">${HELMET_TUBES}</g>
       ${Object.entries(SHAPE_PATHS).map(([k,v])=>`<g id="em-${k}">${v}</g>`).join("")}
+      <filter id="ll-dilate" x="-10%" y="-10%" width="120%" height="120%"><feMorphology operator="dilate" radius="12"/></filter>
     </defs></svg>`;
     document.body.prepend(wrap.firstChild);
   }
+
+  /* Faction icons: fetched once from icons/*.svg and added as <symbol>s, so every
+     <use href="#emi-..."> on the page picks them up. */
+  const ICON_BY_ID = (window.LEDGER_EMBLEMS && Object.fromEntries(window.LEDGER_EMBLEMS.icons.map(i=>[i.id,i]))) || {};
+  const loading = {};
+  function loadIcon(id){
+    if(!ICON_BY_ID[id]) return Promise.resolve(false);
+    if(loading[id]) return loading[id];
+    loading[id] = fetch(ICON_BY_ID[id].f).then(r=>{ if(!r.ok) throw new Error(r.status); return r.text(); }).then(txt=>{
+      const doc=new DOMParser().parseFromString(txt,"image/svg+xml");
+      const src=doc.documentElement;
+      if(!src||src.nodeName!=="svg") return false;
+      const sym=document.createElementNS("http://www.w3.org/2000/svg","symbol");
+      sym.setAttribute("id","emi-"+id); sym.setAttribute("viewBox",src.getAttribute("viewBox")||"0 0 100 100");
+      sym.setAttribute("preserveAspectRatio","xMidYMid meet");
+      [...src.childNodes].forEach(n=>{ if(n.nodeType===1) sym.appendChild(document.importNode(n,true)); });
+      document.querySelector("#ll-defs defs").appendChild(sym);
+      // <use> elements drawn before the icon arrived don't pick it up on their own: swap them for fresh copies.
+      document.querySelectorAll(`use[href="#emi-${id}"]`).forEach(u=>u.replaceWith(u.cloneNode(true)));
+      document.dispatchEvent(new CustomEvent("ll-icon",{detail:id}));
+      return true;
+    }).catch(err=>{ console.warn("Couldn't load emblem icon",id,err); return false; });
+    return loading[id];
+  }
+  const iconId = shape => String(shape||"").startsWith("icon:") ? shape.slice(5) : "";
 
   const hexOk=h=>/^#[0-9a-f]{6}$/i.test(h||"");
   const safe=(h,f)=>hexOk(h)?h:f;
@@ -51,7 +77,9 @@
     const helmet=safe(u.helmet,"#1f1f22"), lens=safe(u.lens,"#b3141c");
     const armour=safe(u.armour,"#1f1f22"), second=safe(u.secondary,"#efeee9");
     const trim=safe(u.trim,"#efeee9"), emblem=safe(u.emblem,"#efeee9");
-    const shape=SHAPE_PATHS[u.shape]!==undefined?u.shape:"cross";
+    const icon=iconId(u.shape);
+    const shape=icon?"":(SHAPE_PATHS[u.shape]!==undefined?u.shape:"cross");
+    if(icon) loadIcon(icon);
     const td=shade(trim), w=Math.round(size*2000/960);
     let left;
     if(style==="astartes"){
@@ -74,7 +102,10 @@
         <rect x="30" y="-40" width="90" height="46" rx="12" fill="${lens}"/>
       </g>`;
     }
-    const emblemSvg=shape==="none"?"":`<g transform="scale(.6) translate(-500 -500)">
+    const edge=edgeFor(emblem);
+    const emblemSvg=icon?`<use href="#emi-${esc(icon)}" x="-265" y="-265" width="530" height="530" filter="url(#ll-dilate)" style="color:${edge};--ko:${edge}"/>
+        <use href="#emi-${esc(icon)}" x="-265" y="-265" width="530" height="530" style="color:${emblem};--ko:${armour}"/>`
+      :shape==="none"?"":`<g transform="scale(.6) translate(-500 -500)">
           <use href="#em-${shape}" fill="none" stroke="${edgeFor(emblem)}" stroke-width="44" stroke-linejoin="round"/>
           <use href="#em-${shape}" fill="${emblem}"/>
         </g>`;
@@ -92,9 +123,18 @@
 
   function shapeIcon(shape, color, size){
     size=size||36; color=safe(color,"#1f1f22");
+    const icon=iconId(shape);
+    if(icon){ loadIcon(icon); return `<svg width="${size}" height="${size}" viewBox="0 0 100 100" aria-hidden="true"><use href="#emi-${esc(icon)}" width="100" height="100" style="color:${color};--ko:transparent"/></svg>`; }
     if(shape==="none") return `<svg width="${size}" height="${size}" viewBox="0 0 1000 1000" aria-hidden="true"><path d="M200 200 L800 800 M800 200 L200 800" stroke="currentColor" stroke-width="60" opacity=".5"/></svg>`;
     return `<svg width="${size}" height="${size}" viewBox="0 0 1000 1000" aria-hidden="true"><use href="#em-${shape}" fill="none" stroke="${edgeFor(color)}" stroke-width="44"/><use href="#em-${shape}" fill="${color}"/></svg>`;
   }
 
-  window.LEDGER_ART = {injectDefs, badge, shapeIcon, shade, lum, hexOk};
+  // A single round pauldron with the emblem, for pickers.
+  function pauldron(armour, trim, emblem, shape, size){
+    const full=badge({armour,trim,emblem,shape},"astartes",size);
+    const w=Math.round(size);
+    return full.replace('class="mini"','class="mini solo"').replace(/width="\d+" height="\d+" viewBox="0 0 2000 960"/,`width="${w}" height="${w}" viewBox="1040 0 960 960"`);
+  }
+
+  window.LEDGER_ART = {injectDefs, badge, shapeIcon, shade, lum, hexOk, loadIcon, pauldron};
 })();

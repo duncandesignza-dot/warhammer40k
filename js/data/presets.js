@@ -60,6 +60,48 @@
     "tyranids":         {style:"roundel",  armour:"#5a2a6b", secondary:"#d8cba8", trim:"#b3141c", emblem:"#d8cba8", shape:"drop",    lens:"#e8c33a", cloth:"#d8cba8", metal:"#d8cba8"}
   };
 
+  /* Faction icons from the emblem library (icons/...). Default emblem per faction, and which
+     icon groups are suggested first on the colour page. */
+  const ICON_DEFAULT = {
+    "black-templars":"astartes-chapters/black-templars.svg", "ultramarines":"astartes-legion/ultramarines.svg",
+    "blood-angels":"astartes-legion/blood-angels.svg", "dark-angels":"astartes-legion/dark-angels.svg",
+    "space-wolves":"astartes-legion/space-wolves.svg", "imperial-fists":"astartes-legion/imperial-fists.svg",
+    "iron-hands":"astartes-legion/iron-hands.svg", "raven-guard":"astartes-legion/raven-guard.svg",
+    "salamanders":"astartes-legion/salamanders.svg", "white-scars":"astartes-legion/white-scars.svg",
+    "deathwatch":"astartes-chapters/deathwatch.svg", "grey-knights":"astartes-chapters/grey-knights.svg",
+    "space-marines":"human-imperium/adeptus-astartes.svg", "adeptus-custodes":"human-imperium/adeptus-custodes.svg",
+    "adepta-sororitas":"human-imperium/adepta-sororitas.svg", "adeptus-mechanicus":"human-imperium/adeptus-mechanicus.svg",
+    "agents-of-the-imperium":"human-imperium/inquisition-01.svg", "astra-militarum":"human-imperium/astra-militarum.svg",
+    "imperial-knights":"human-imperium/imperial-knights.svg", "chaos-space-marines":"legions/black-legion.svg",
+    "death-guard":"legions/death-guard.svg", "emperors-children":"legions/emperors-children-1.svg",
+    "thousand-sons":"legions/thousand-sons.svg", "world-eaters":"legions/world-eaters-1.svg",
+    "chaos-daemons":"chaos/chaos-daemons.svg", "chaos-knights":"chaos/questor-traitoris.svg",
+    "aeldari":"eldar/asuryani.svg", "drukhari":"durhkari/drukhari-2.svg", "genestealer-cults":"genestealer-cult/genestealer-cults.svg",
+    "leagues-of-votann":"xenos/leagues-of-votann.svg", "necrons":"necrons/necrons.svg", "orks":"orks/orks.svg",
+    "tau-empire":"tau-empire/tau-sept.svg", "tyranids":"xenos/tyranids.svg"
+  };
+  const SM = ["human_imperium/astartes_chapters","human_imperium/astartes_legion","human_imperium/astartes_legion/blood_angels","human_imperium/astartes_legion/dark_angels","human_imperium/astartes_legion/imperial_fists","human_imperium/astartes_legion/iron_hands","human_imperium/astartes_legion/space_wolves","human_imperium/adeptus_astartes","human_imperium"];
+  const CHAOS = ["chaos/legions","chaos","chaos/gods"];
+  const ICON_CATS = {
+    "space-marines":SM, "adeptus-custodes":["human_imperium/adeptus_custodes","human_imperium/sisters_of_silence","human_imperium"],
+    "adepta-sororitas":["human_imperium/battle_sisters","human_imperium"], "adeptus-mechanicus":["human_imperium/mechanicum","human_imperium"],
+    "agents-of-the-imperium":["human_imperium","human_imperium/officio-assassinorum","human_imperium/sisters_of_silence"],
+    "astra-militarum":["human_imperium/astra_militarum","human_imperium/solar_auxilla","human_imperium"],
+    "imperial-knights":["human_imperium","human_imperium/mechanicum"], "grey-knights":SM, "deathwatch":SM,
+    "chaos-space-marines":CHAOS, "death-guard":CHAOS, "emperors-children":CHAOS, "thousand-sons":CHAOS, "world-eaters":CHAOS,
+    "chaos-daemons":["chaos/gods","chaos"], "chaos-knights":["chaos","chaos/gods"],
+    "aeldari":["xenos/eldar","xenos/harlequins"], "drukhari":["xenos/durhkari","xenos/harlequins"], "genestealer-cults":["xenos/genestealer_cult","xenos"],
+    "leagues-of-votann":["xenos"], "necrons":["xenos/necrons"], "orks":["xenos/orks"], "tau-empire":["xenos/tau_empire"], "tyranids":["xenos"]
+  };
+  const ICONS = (window.LEDGER_EMBLEMS && window.LEDGER_EMBLEMS.icons) || [];
+  const ICON_BY_ID = Object.fromEntries(ICONS.map(i => [i.id, i]));
+  function defaultIcon(fid){ const p = ICON_DEFAULT[fid]; const i = p && ICONS.find(x => x.f.endsWith("/" + p) || x.f.endsWith(p)); return i ? "icon:" + i.id : ""; }
+  function iconCats(fid, parent){ return ICON_CATS[fid] || ICON_CATS[parent] || SM; }
+  function emblemName(shape){
+    if(String(shape).startsWith("icon:")){ const i = ICON_BY_ID[shape.slice(5)]; return i ? i.n : "Icon"; }
+    const s = SHAPES.find(x => x[0] === shape); return s ? s[1] : "Emblem";
+  }
+
   const DEFAULT_TIERS = (p) => [
     T("Line", p.armour, "Standard troops"),
     T("Veteran", p.secondary, "Veterans and elites"),
@@ -72,7 +114,7 @@
     return {
       style: base.style,
       colors: {armour:base.armour, secondary:base.secondary, trim:base.trim, emblem:base.emblem, lens:base.lens, cloth:base.cloth, metal:base.metal},
-      shape: base.shape,
+      shape: defaultIcon(factionId) || base.shape,
       tiers: (base.tiers || DEFAULT_TIERS(base)).map(t => ({...t}))
     };
   }
@@ -90,5 +132,5 @@
     return best;
   }
 
-  window.LEDGER_PRESETS = {NAMED, SHAPES, presetFor, colorName};
+  window.LEDGER_PRESETS = {NAMED, SHAPES, presetFor, colorName, ICONS, ICON_BY_ID, iconCats, emblemName, defaultIcon};
 })();
