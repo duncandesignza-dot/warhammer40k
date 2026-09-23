@@ -132,6 +132,45 @@ def tidy(names):
             seen.add(k); out.append(base)
     return out
 
+PTS_ID = None
+for gs in docs.values():
+    for ct in (gs or {}).get("costTypes", []) or []:
+        if ct.get("name") == "pts": PTS_ID = ct["id"]
+
+ARMY_SCOPES = {"force", "roster", "parent", "primary-catalogue", "ancestor"}
+
+def model_range(conds):
+    """Turn model-count conditions into an inclusive (lo, hi) range, or None if they aren't about model count."""
+    lo, hi, seen = 1, 999, False
+    for c in conds:
+        if c.get("field") != "selections" or c.get("scope") in ARMY_SCOPES: return None
+        if c.get("childName") or c.get("type") in ("instanceOf", "notInstanceOf", "before"): return None
+        v = c.get("value")
+        if not isinstance(v, (int, float)): return None
+        t = c.get("type"); v = int(v); seen = True
+        if t == "atLeast": lo = max(lo, v)
+        elif t == "greaterThan": lo = max(lo, v + 1)
+        elif t == "atMost": hi = min(hi, v)
+        elif t == "lessThan": hi = min(hi, v - 1)
+        elif t == "equalTo": lo, hi = max(lo, v), min(hi, v)
+        else: return None
+    return (lo, hi) if seen and lo <= hi else None
+
+def points(entry):
+    base = next((c.get("value") for c in entry.get("costs", []) or [] if c.get("typeId") == PTS_ID or c.get("name") == "pts"), None)
+    if base is None: return None, []
+    brackets = []
+    for m in entry.get("modifiers", []) or []:
+        if m.get("field") != PTS_ID or m.get("type") != "set": continue
+        conds = list(m.get("conditions", []) or [])
+        for g in m.get("conditionGroups", []) or []:
+            if g.get("type") != "and" or g.get("conditionGroups") or g.get("localConditionGroups"): conds = None; break
+            conds += g.get("conditions", []) or []
+        if not conds: continue
+        r = model_range(conds)
+        if r: brackets.append([r[0], r[1] if r[1] < 999 else 0, int(m.get("value"))])
+    return int(base), brackets
+
 def units_for(files):
     out, names = [], set()
     for fn in files:
@@ -149,12 +188,15 @@ def units_for(files):
             names.add(name)
             kw = keywords(link, t)
             w = weapons(t)
+            pts, br = points(t)
             tag = "Legends" if "[Legends]" in name else ("Crucible" if "[Crucible]" in name else "")
             clean = re.sub(r"\s*\[(Legends|Crucible)\]\s*", "", name).strip()
             out.append({
                 "n": clean, "r": role if role in ROLE_ORDER else "Other",
                 **({"t": tag} if tag else {}),
                 **({"eh": 1} if "Epic Hero" in kw else {}),
+                **({"p": pts} if pts is not None else {}),
+                **({"pb": br} if br else {}),
                 **({"wr": tidy(w["Ranged"])[:40]} if w["Ranged"] else {}),
                 **({"wm": tidy(w["Melee"])[:40]} if w["Melee"] else {}),
             })

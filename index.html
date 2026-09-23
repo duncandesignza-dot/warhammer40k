@@ -48,6 +48,21 @@
     </div>
   </dialog>
 
+  <dialog id="leavedlg" class="small" aria-labelledby="lv-h">
+    <div class="leavebox">
+      <h2 id="lv-h">Unsaved changes</h2>
+      <p id="lv-text">You have changes that haven't been saved.</p>
+      <div class="row-actions">
+        <button type="button" class="primary" data-leave="save">Save changes</button>
+        <button type="button" class="danger" data-leave="discard">Discard</button>
+        <span class="spacer"></span>
+        <button type="button" data-leave="stay">Keep editing</button>
+      </div>
+    </div>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden><span></span><button type="button">Undo</button></div>
+
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.1/dist/umd/supabase.js"></script>
   <script src="js/config.js"></script>
   <script src="js/data/factions.js"></script>

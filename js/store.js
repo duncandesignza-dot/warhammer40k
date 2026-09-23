@@ -4,7 +4,17 @@
   const CFG = window.LEDGER_CONFIG || {};
 
   const FIELDS = ["datasheet","role","name","count","status","tier","helmet","lens","hdetail","noHelmet",
-    "armour","secondary","trim","emblem","shape","cloth","metal","extras","melee","ranged","paints","notes"];
+    "armour","secondary","trim","emblem","shape","cloth","metal","extras","melee","ranged","paints","notes","points","painted"];
+  const STAGES = [["built","Built"],["primed","Primed"],["base","Basecoat"],["shade","Shade"],["highlight","Highlight"],["basing","Basing"],["varnish","Varnish"]];
+  const STAGE_KEYS = STAGES.map(s => s[0]);
+  const STAGES_FOR_STATUS = {unbuilt:[], built:["built"], primed:["built","primed"], progress:["built","primed","base"], done:STAGE_KEYS.slice()};
+  function deriveStatus(stages, painted, count){
+    if(count > 0 && painted >= count) return "done";
+    if(painted > 0 || stages.some(k => STAGE_KEYS.indexOf(k) >= 2)) return "progress";
+    if(stages.includes("primed")) return "primed";
+    if(stages.includes("built")) return "built";
+    return "unbuilt";
+  }
   const STATUS = {unbuilt:"Unbuilt",built:"Built",primed:"Primed",progress:"In progress",done:"Painted"};
   const HEX = /^#[0-9a-f]{6}$/i;
   const COLOR_FIELDS = ["helmet","lens","armour","secondary","trim","emblem","cloth","metal"];
@@ -15,9 +25,15 @@
     const o = {};
     FIELDS.forEach(f => { o[f] = r[f] == null ? "" : String(r[f]).slice(0, 600); });
     o.count = Math.min(99, Math.max(1, parseInt(r.count, 10) || 1));
+    o.points = Math.min(9999, Math.max(0, parseInt(r.points, 10) || 0));
+    // painting stages: older saves only had a status, so work the stages out from it
+    const oldStatus = STATUS[r.status] ? r.status : "unbuilt";
+    o.stages = Array.isArray(r.stages) ? STAGE_KEYS.filter(k => r.stages.includes(k)) : STAGES_FOR_STATUS[oldStatus].slice();
+    const p = parseInt(r.painted, 10);
+    o.painted = Math.min(o.count, Math.max(0, Number.isFinite(p) ? p : (oldStatus === "done" ? o.count : 0)));
     o.tier = Math.max(0, parseInt(r.tier, 10) || 0);
     o.noHelmet = r.noHelmet === true || r.noHelmet === "true";
-    if(!STATUS[o.status]) o.status = "unbuilt";
+    o.status = deriveStatus(o.stages, o.painted, o.count);
     COLOR_FIELDS.forEach(f => { if(!HEX.test(o[f])) o[f] = ""; });
     if(!o.name) o.name = o.datasheet || "Unnamed unit";
     return o;
@@ -31,10 +47,11 @@
       note: String((t && t.note) || "").slice(0, 80),
       color: HEX.test(t && t.color) ? t.color : "#1f1f22"
     }));
-    return {style: s.style === "roundel" ? "roundel" : "astartes", colors, shape: String(s.shape || "cross").slice(0, 160), tiers: tiers.length ? tiers : [{name:"Line", note:"", color:colors.armour}]};
+    const limit = Math.min(20000, Math.max(0, parseInt(s.limit, 10) || 0));
+    return {style: s.style === "roundel" ? "roundel" : "astartes", limit, colors, shape: String(s.shape || "cross").slice(0, 160), tiers: tiers.length ? tiers : [{name:"Line", note:"", color:colors.armour}]};
   }
   function cleanArmy(a){
-    return {faction: String(a.faction || "").slice(0, 60), name: String(a.name || "My army").slice(0, 80), scheme: cleanScheme(a.scheme)};
+    return {faction: String(a.faction || "").slice(0, 60), name: String(a.name || "My army").slice(0, 80), scheme: cleanScheme(a.scheme), public: a.public === true};
   }
 
   /* ---------- images ---------- */
@@ -98,14 +115,14 @@
     load();
 
     return {
-      kind: "local", canWrite: true, session: null,
+      kind: "local", canWrite: true, session: null, canShare: false,
       note(){ return ok ? {cls:"warn", text:"Saved in this browser only. Add your Supabase details in js/config.js to save online."}
                         : {cls:"warn", text:"This browser is blocking storage, so changes will be lost when you close the page."}; },
       async listArmies(){ return db.armies.map(a => ({...a})); },
       async getArmy(id){ const a = db.armies.find(x => x.id === id); return a ? {...a} : null; },
       async summary(){
         const m = {};
-        db.units.forEach(u => { const s = m[u.armyId] || (m[u.armyId] = {units:0, models:0, done:0}); s.units++; s.models += +u.count || 0; if(u.status === "done") s.done += +u.count || 0; });
+        db.units.forEach(u => { const s = m[u.armyId] || (m[u.armyId] = {units:0, models:0, done:0, points:0}); s.units++; s.models += +u.count || 0; s.done += Math.min(+u.count || 0, +u.painted || (u.status === "done" ? +u.count || 0 : 0)); s.points += +u.points || 0; });
         return m;
       },
       async saveArmy(a, id){
@@ -128,6 +145,8 @@
         return {...row};
       },
       async removeUnit(u){ db.units = db.units.filter(x => x.id !== u.id); save(); },
+      async restoreUnit(armyId, u){ db.units = db.units.filter(x => x.id !== u.id).concat({...u, armyId}); save(); return {...u, armyId}; },
+      purgeImage(){},
       async importUnits(armyId, rows){
         rows.forEach(r => db.units.push({...cleanUnit(r), id: newId(), armyId, image: typeof r.image === "string" && /^data:image\//.test(r.image) ? r.image : "", updatedAt: new Date().toISOString()}));
         save(); return rows.length;
@@ -143,7 +162,7 @@
     const A = CFG.ARMIES_TABLE || "armies", U = CFG.UNITS_TABLE || "units", B = CFG.BUCKET || "unit-images";
     let session = null;
     const pub = path => path ? sb.storage.from(B).getPublicUrl(path).data.publicUrl : "";
-    const toArmy = r => ({id: r.id, owner: r.owner, faction: r.faction, name: r.name, scheme: cleanScheme(r.scheme), createdAt: r.created_at, updatedAt: r.updated_at});
+    const toArmy = r => ({id: r.id, owner: r.owner, faction: r.faction, name: r.name, scheme: cleanScheme(r.scheme), public: r.public === true, createdAt: r.created_at, updatedAt: r.updated_at});
     const toUnit = r => ({...cleanUnit(r.data || {}), id: r.id, armyId: r.army_id, owner: r.owner, imagePath: r.image_path || "", image: pub(r.image_path), updatedAt: r.updated_at});
     const need = () => { if(!session) throw Object.assign(new Error("Sign in to save."), {code:"auth"}); };
     async function upload(armyId, blob){
@@ -155,17 +174,21 @@
     const mustOk = ({data, error}) => { if(error) throw error; return data; };
 
     return {
-      kind: "supabase", client: sb,
+      kind: "supabase", client: sb, canShare: true,
       get session(){ return session; },
       get canWrite(){ return !!session; },
       setSession(s){ session = s; },
       note(){ return session ? {cls:"on", text:"Saved online to your database."} : {cls:"", text:"Viewing only. Sign in to create and edit ledgers."}; },
-      async listArmies(){ return (mustOk(await sb.from(A).select("*").order("created_at", {ascending: true})) || []).map(toArmy); },
+      async listArmies(){
+        if(!session) return [];
+        return (mustOk(await sb.from(A).select("*").eq("owner", session.user.id).order("created_at", {ascending: true})) || []).map(toArmy);
+      },
       async getArmy(id){ const d = mustOk(await sb.from(A).select("*").eq("id", id).maybeSingle()); return d ? toArmy(d) : null; },
       async summary(){
-        const rows = mustOk(await sb.from(U).select("army_id,data->>status,data->>count")) || [];
+        if(!session) return {};
+        const rows = mustOk(await sb.from(U).select("army_id,data->>status,data->>count,data->>painted,data->>points").eq("owner", session.user.id)) || [];
         const m = {};
-        rows.forEach(r => { const s = m[r.army_id] || (m[r.army_id] = {units:0, models:0, done:0}); const c = parseInt(r.count, 10) || 1; s.units++; s.models += c; if(r.status === "done") s.done += c; });
+        rows.forEach(r => { const s = m[r.army_id] || (m[r.army_id] = {units:0, models:0, done:0, points:0}); const c = parseInt(r.count, 10) || 1; const p = parseInt(r.painted, 10); s.units++; s.models += c; s.done += Math.min(c, Number.isFinite(p) ? p : (r.status === "done" ? c : 0)); s.points += parseInt(r.points, 10) || 0; });
         return m;
       },
       async saveArmy(a, id){
@@ -192,7 +215,14 @@
         if(oldPath) sb.storage.from(B).remove([oldPath]).catch(() => {});
         return toUnit(res.data);
       },
-      async removeUnit(u){ need(); mustOk(await sb.from(U).delete().eq("id", u.id)); if(u.imagePath) sb.storage.from(B).remove([u.imagePath]).catch(() => {}); },
+      // keepImage: leave the photo in storage for a moment so "Undo" can bring the unit back with it
+      async removeUnit(u, keepImage){ need(); mustOk(await sb.from(U).delete().eq("id", u.id)); if(u.imagePath && !keepImage) sb.storage.from(B).remove([u.imagePath]).catch(() => {}); },
+      purgeImage(u){ if(u && u.imagePath) sb.storage.from(B).remove([u.imagePath]).catch(() => {}); },
+      async restoreUnit(armyId, u){
+        need();
+        const res = await sb.from(U).insert({id: u.id, army_id: armyId, data: cleanUnit(u), image_path: u.imagePath || null, updated_at: new Date().toISOString()}).select().single();
+        return toUnit(mustOk(res));
+      },
       async importUnits(armyId, rows){
         need(); let n = 0;
         for(const r of rows){
@@ -215,5 +245,5 @@
     return ready ? SupaStore() : LocalStore();
   }
 
-  window.LEDGER_STORE = {create, FIELDS, STATUS, cleanUnit, cleanScheme, newId};
+  window.LEDGER_STORE = {create, FIELDS, STATUS, STAGES, STAGE_KEYS, deriveStatus, cleanUnit, cleanScheme, newId};
 })();
