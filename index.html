@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Livery Ledger</title>
+<meta name="description" content="Plan how you'll paint your Warhammer 40,000 army: pick your faction, set your colours, and track every unit with photos and paint recipes.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=UnifrakturCook:wght@700&family=Alegreya+Sans:wght@400;500;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <div class="topbar">
+    <div class="topbar-in">
+      <a class="brand" href="#/">Livery Ledger</a>
+      <div class="top-tools">
+        <span class="who" id="who" hidden></span>
+        <button type="button" class="btn-sm" id="b-signin" hidden>Sign in</button>
+        <button type="button" class="btn-sm" id="b-signout" hidden>Sign out</button>
+      </div>
+    </div>
+  </div>
+
+  <main id="app" class="wrap" tabindex="-1" aria-live="polite">
+    <p class="loading">Loading…</p>
+  </main>
+
+  <dialog id="detail" aria-labelledby="dt-name">
+    <div class="dlg-close"><button type="button" data-close>Close</button></div>
+    <div id="detail-body"></div>
+  </dialog>
+
+  <dialog id="authdlg" class="small" aria-labelledby="au-h">
+    <div class="dlg-close"><button type="button" data-close>Close</button></div>
+    <div class="auth">
+      <h2 id="au-h">Sign in</h2>
+      <p>Sign in to create ledgers, add units and upload photos.</p>
+      <form id="authform" novalidate>
+        <label>Email<input id="au-email" type="email" autocomplete="email" required></label>
+        <label>Password<input id="au-pass" type="password" autocomplete="current-password" minlength="6" required></label>
+        <div class="row-actions">
+          <button type="submit" class="primary" id="au-in">Sign in</button>
+          <button type="button" id="au-up">Create account</button>
+        </div>
+        <div class="msg" id="au-msg" role="status" aria-live="polite"></div>
+      </form>
+    </div>
+  </dialog>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.1/dist/umd/supabase.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/data/factions.js"></script>
+  <script src="js/data/presets.js"></script>
+  <script src="js/art.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
