@@ -539,6 +539,7 @@
           <div class="cards" id="cards"><div class="empty">Loading units…</div></div>
         </section>
       </div>
+      ${canWrite ? `<button type="button" class="fab primary" id="b-fab" aria-label="Add a unit">+ Add unit</button>` : ""}
       <datalist id="dl-scheme">${schemeColors.map(c => `<option value="${c}"></option>`).join("")}</datalist>
       <datalist id="dl-melee"></datalist><datalist id="dl-ranged"></datalist>
       <datalist id="dl-hdetail"><option>Laurel wreath</option><option>Centre stripe</option><option>Crest</option><option>Battle damage</option><option>Squad markings</option></datalist>
@@ -776,6 +777,8 @@
         </div></div>`;
     }
     function render(){
+      // Units saved before points existed pick up their datasheet cost (kept when the unit is next saved).
+      units.forEach(u => { if(!u.points && u.datasheet){ const p = ptsFor(sheetFor(u.datasheet), u.count); if(p) u.points = p; } });
       const list = visible(), c = $("cards");
       if(!list.length){ c.innerHTML = `<div class="empty">${units.length ? "No units match." : canWrite ? "No units yet. Pick a datasheet in the form, or import your army list." : "No units in this ledger yet."}</div>`; }
       else c.innerHTML = groupsOf(list).map(([name, us]) => (name ? `<h3 class="group-h"><span>${esc(name)}</span><small>${plural(us.length, "unit")} · ${fmt(us.reduce((a, u) => a + (u.points || 0), 0))} pts · ${us.reduce((a, u) => a + u.painted, 0)}/${us.reduce((a, u) => a + u.count, 0)} painted</small></h3>` : "") + us.map(cardHtml).join("")).join("");
@@ -908,6 +911,10 @@
       finally { busy = false; b.disabled = !canWrite; if(b.textContent === "Saving…") b.textContent = label; }
     }
     $("b-new").addEventListener("click", async () => { if(await okToLeave()) newUnit(true); });
+    if(canWrite) $("b-fab").addEventListener("click", async () => {
+      if(!(await okToLeave())) return;
+      newUnit(false); form.scrollIntoView({behavior: "smooth", block: "start"}); setTimeout(() => $("f-sheet").focus({preventScroll: true}), 400);
+    });
     $("b-del").addEventListener("click", async () => {
       const cur = currentUnit(); if(!cur || busy) return;
       const b = $("b-del");

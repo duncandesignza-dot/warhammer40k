@@ -132,7 +132,7 @@
         db.armies = db.armies.filter(x => x.id !== row.id).concat(row); save(); return {...row};
       },
       async removeArmy(a){ db.armies = db.armies.filter(x => x.id !== a.id); db.units = db.units.filter(u => u.armyId !== a.id); save(); },
-      async listUnits(armyId){ return db.units.filter(u => u.armyId === armyId).map(u => ({...u})); },
+      async listUnits(armyId){ return db.units.filter(u => u.armyId === armyId).map(u => ({...u, ...cleanUnit(u)})); },
       async saveUnit(armyId, u, id, photo, remove){
         const prev = id ? db.units.find(x => x.id === id) : null;
         let image = prev ? prev.image || "" : "";
