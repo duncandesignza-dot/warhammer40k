@@ -371,3 +371,48 @@ button.pill:hover:not(:disabled){background:var(--brand-soft);border-color:var(-
   .toolbar .tools{width:100%}
   .toolbar .tools>*{flex:1 1 auto}
 }
+
+/* ---------- unit editor modal ---------- */
+.list-head .btn-add{margin-right:auto;margin-left:12px;padding:7px 14px;font-size:.85rem;border-radius:99px}
+@media (max-width:900px){.list-head .btn-add{display:none}}
+dialog.editdlg{max-width:min(1120px,calc(100vw - 32px));width:100%;max-height:calc(100dvh - 32px);padding:0;overflow:hidden}
+dialog.editdlg[open]{display:flex}
+.editor-form{display:flex;flex-direction:column;width:100%;max-height:calc(100dvh - 32px);min-height:0}
+.ed-top{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:16px 22px;border-bottom:1px solid var(--line);background:var(--surface-solid);flex:none}
+.ed-titles{display:flex;align-items:center;gap:12px;flex-wrap:wrap;min-width:0}
+.ed-top h2{margin:0;font-size:1.25rem;font-weight:800;letter-spacing:-.02em}
+.ed-top .btn-sm{border-radius:99px}
+.editor-form>fieldset.wrapper{flex:1;min-height:0;overflow:auto;scrollbar-color:var(--line-strong) transparent}
+.ed-body{display:grid;grid-template-columns:minmax(0,380px) minmax(0,1fr);gap:26px;padding:22px}
+.ed-left{position:sticky;top:0;align-self:start}
+.ed-col>fieldset:last-child{margin-bottom:0}
+.ed-right{display:grid;grid-template-columns:1fr 1fr;gap:4px 24px;align-content:start}
+.ed-right>fieldset{margin-bottom:18px}
+.ed-right>fieldset:nth-child(1),.ed-right>fieldset:nth-child(6){grid-column:1/-1}
+.ed-bar{flex:none;display:flex;align-items:center;gap:12px;padding:14px 22px calc(14px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--line);background:rgba(13,17,20,.92);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.ed-bar .msg{flex:1;margin:0;min-height:0;font-size:.84rem}
+.ed-bar-actions{display:flex;gap:8px;margin-left:auto;flex-wrap:wrap;justify-content:flex-end}
+.ed-bar-actions .primary{min-width:140px}
+@media (max-width:1000px){.ed-right{grid-template-columns:1fr}.ed-right>fieldset{grid-column:1/-1}}
+@media (max-width:760px){
+  dialog.editdlg{max-width:100vw;width:100vw;max-height:100dvh;height:100dvh;border-radius:0;border:0;margin:0}
+  .editor-form{max-height:100dvh;height:100%}
+  .ed-body{grid-template-columns:1fr;padding:16px;gap:8px}
+  .ed-left{position:static}
+  .ed-top{padding:12px 16px calc(12px);padding-top:calc(12px + env(safe-area-inset-top,0px))}
+  .ed-bar{padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px));flex-wrap:wrap}
+  .ed-bar .msg{order:3;flex-basis:100%}
+  .ed-bar-actions{flex:1}
+  .ed-bar-actions>*{flex:1}
+  #b-save-new{flex-basis:100%;order:3}
+}
+@media (max-width:760px){
+  /* phone: datasheet first, then painting, then the rest */
+  .ed-body{display:flex;flex-direction:column}
+  .ed-col{display:contents}
+  .ed-body .preview{order:0;margin-bottom:6px}
+  .ed-body fieldset:has(#f-sheet){order:1}
+  .ed-body fieldset:has(#f-stages){order:2}
+  .ed-body fieldset:has(#drop){order:3}
+}
+@media (max-width:760px){.ed-body fieldset{margin-bottom:14px}.ed-body>.ed-col>fieldset{order:4}.ed-body>.ed-col>fieldset:has(#f-sheet){order:1}.ed-body>.ed-col>fieldset:has(#f-stages){order:2}.ed-body>.ed-col>fieldset:has(#drop){order:3}}

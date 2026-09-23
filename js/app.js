@@ -441,12 +441,58 @@
       ${!canWrite ? `<div class="banner viewonly"><span class="dot on"></span><span>You're viewing a shared ledger. You can look but not change anything.</span>${store.kind === "supabase" && !store.session ? `<button type="button" class="btn-sm" data-signin>Sign in</button>` : ""}</div>` : ""}
       <section class="key" aria-label="Rank colours">${scheme.tiers.map(t => `<div>${tierBadge(scheme, t, 44)}<span><strong>${esc(t.name)}</strong><small>${esc(t.note || cname(t.color) + " helmet")}</small></span></div>`).join("")}</section>
 
-      <div class="layout${canWrite ? "" : " readonly"}">
-        <form class="editor" id="form" autocomplete="off" novalidate>
-          <div class="ed-head"><h2 class="eyebrow" id="ed-title">New unit</h2><span class="dirty" id="dirty" hidden>Unsaved changes</span></div>
-          <div class="preview"><span id="pv-svg"></span><div><div class="pv-name" id="pv-name">Unnamed unit</div><div class="pv-meta" id="pv-meta">—</div></div></div>
-          ${canWrite ? "" : `<div class="locked">${store.kind === "supabase" && !store.session ? `Sign in to add or edit units. <button type="button" class="btn-sm" data-signin>Sign in</button>` : "You can view this ledger but not change it."}</div>`}
+        <section class="list" aria-labelledby="army-h">
+          <div class="list-head">
+            <h2 class="eyebrow" id="army-h">Your army</h2>
+            ${canWrite ? `<button type="button" class="primary btn-add" id="b-add">+ Add unit</button>` : ""}
+            <div class="list-tools">
+              <input type="search" class="search" id="q" placeholder="Search units" aria-label="Search units">
+              <div class="filters" id="filters" role="group" aria-label="Filter by status">
+                <button type="button" data-f="all" aria-pressed="true">All</button>
+                <button type="button" data-f="todo" aria-pressed="false">To paint</button>
+                <button type="button" data-f="progress" aria-pressed="false">In progress</button>
+                <button type="button" data-f="done" aria-pressed="false">Painted</button>
+              </div>
+            </div>
+          </div>
+          <div class="list-tools arrange">
+            <label class="inline">Group by<select id="g-by">
+              <option value="none">Nothing</option><option value="role">Role</option><option value="rank">Rank</option><option value="status">Status</option></select></label>
+            <label class="inline">Sort by<select id="s-by">
+              <option value="rank">Rank</option><option value="name">Name</option><option value="points">Points</option><option value="progress">Progress</option><option value="recent">Recently changed</option></select></label>
+          </div>
+          <div class="cards" id="cards"><div class="empty">Loading units…</div></div>
+        </section>
+      ${canWrite ? `<button type="button" class="fab primary" id="b-fab" aria-label="Add a unit">+ Add unit</button>` : ""}
+
+      <dialog id="editdlg" class="editdlg" aria-labelledby="ed-title">
+        <form id="form" class="editor-form" autocomplete="off" novalidate>
+          <header class="ed-top">
+            <div class="ed-titles"><h2 id="ed-title">New unit</h2><span class="dirty" id="dirty" hidden>Unsaved changes</span></div>
+            <button type="button" class="btn-sm" id="ed-close">Close</button>
+          </header>
           <fieldset class="wrapper" id="fs-all" ${canWrite ? "" : "disabled"}>
+          <div class="ed-body">
+            <div class="ed-col ed-left">
+              <div class="preview"><span id="pv-svg"></span><div><div class="pv-name" id="pv-name">Unnamed unit</div><div class="pv-meta" id="pv-meta">—</div></div></div>
+          <fieldset>
+            <legend>Photo</legend>
+            <div class="drop" id="drop">
+              <div class="thumb" id="thumb">No photo</div>
+              <div class="dz-text"><span>Drop a photo here, or choose one. JPG, PNG or WebP.</span>
+                <div class="dz-btns"><button type="button" id="b-photo">Choose photo</button><button type="button" id="b-photo-rm" hidden>Remove</button></div></div>
+              <input type="file" id="f-photo" accept="image/jpeg,image/png,image/webp,image/gif" hidden>
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend>Painting</legend>
+            <div class="stages full" id="f-stages" role="group" aria-label="Painting stages">${STAGES.map(([k, l], i) => `<label class="stage"><input type="checkbox" value="${k}"><span><em>${i + 1}</em>${l}</span></label>`).join("")}</div>
+            <label class="full painted-row">Models painted
+              <span class="painted-ctl"><button type="button" class="btn-sm" id="pm-minus" aria-label="One fewer painted">−</button><input id="f-painted" type="number" inputmode="numeric" min="0" max="99" value="0"><span id="painted-of">of 5</span><button type="button" class="btn-sm" id="pm-plus" aria-label="One more painted">+</button><button type="button" class="btn-sm" id="pm-all">All done</button></span>
+            </label>
+          </fieldset>
+            </div>
+            <div class="ed-col ed-right">
           <fieldset>
             <legend>Unit</legend>
             <label class="full">Datasheet<select id="f-sheet"><option value="">Choose a datasheet…</option>${sheetOptions}<option value="__custom">Not listed (type it in)</option></select></label>
@@ -456,22 +502,6 @@
             <label>Models<input id="f-count" type="number" inputmode="numeric" min="1" max="99" value="5"></label>
             <label>Points<input id="f-points" type="number" inputmode="numeric" min="0" max="9999" step="5"></label>
             <div class="pts-hint" id="pts-hint"></div>
-          </fieldset>
-          <fieldset>
-            <legend>Painting</legend>
-            <div class="stages full" id="f-stages" role="group" aria-label="Painting stages">${STAGES.map(([k, l], i) => `<label class="stage"><input type="checkbox" value="${k}"><span><em>${i + 1}</em>${l}</span></label>`).join("")}</div>
-            <label class="full painted-row">Models painted
-              <span class="painted-ctl"><button type="button" class="btn-sm" id="pm-minus" aria-label="One fewer painted">−</button><input id="f-painted" type="number" inputmode="numeric" min="0" max="99" value="0"><span id="painted-of">of 5</span><button type="button" class="btn-sm" id="pm-plus" aria-label="One more painted">+</button><button type="button" class="btn-sm" id="pm-all">All done</button></span>
-            </label>
-          </fieldset>
-          <fieldset>
-            <legend>Photo</legend>
-            <div class="drop" id="drop">
-              <div class="thumb" id="thumb">No photo</div>
-              <div class="dz-text"><span>Drop a photo here, or choose one. JPG, PNG or WebP.</span>
-                <div class="dz-btns"><button type="button" id="b-photo">Choose photo</button><button type="button" id="b-photo-rm" hidden>Remove</button></div></div>
-              <input type="file" id="f-photo" accept="image/jpeg,image/png,image/webp,image/gif" hidden>
-            </div>
           </fieldset>
           <fieldset>
             <legend>Helmet</legend>
@@ -508,38 +538,20 @@
             <label class="full">Paint recipe<textarea id="f-paints" rows="2" maxlength="600" placeholder="e.g. black basecoat → grey edge highlight"></textarea></label>
             <label class="full">Notes<textarea id="f-notes" rows="2" maxlength="600" placeholder="Leader attached, magnetised arms, ideas…"></textarea></label>
           </fieldset>
-          </fieldset>
-          <div class="actions">
-            <button type="submit" class="primary" id="b-save" ${canWrite ? "" : "disabled"}>Add unit</button>
-            <button type="button" id="b-new" ${canWrite ? "" : "disabled"}>New</button>
-            <button type="button" class="danger" id="b-del" hidden>Delete</button>
-          </div>
-          <div class="msg" id="msg" role="status" aria-live="polite"></div>
-        </form>
-
-        <section class="list" aria-labelledby="army-h">
-          <div class="list-head">
-            <h2 class="eyebrow" id="army-h">Your army</h2>
-            <div class="list-tools">
-              <input type="search" class="search" id="q" placeholder="Search units" aria-label="Search units">
-              <div class="filters" id="filters" role="group" aria-label="Filter by status">
-                <button type="button" data-f="all" aria-pressed="true">All</button>
-                <button type="button" data-f="todo" aria-pressed="false">To paint</button>
-                <button type="button" data-f="progress" aria-pressed="false">In progress</button>
-                <button type="button" data-f="done" aria-pressed="false">Painted</button>
-              </div>
             </div>
           </div>
-          <div class="list-tools arrange">
-            <label class="inline">Group by<select id="g-by">
-              <option value="none">Nothing</option><option value="role">Role</option><option value="rank">Rank</option><option value="status">Status</option></select></label>
-            <label class="inline">Sort by<select id="s-by">
-              <option value="rank">Rank</option><option value="name">Name</option><option value="points">Points</option><option value="progress">Progress</option><option value="recent">Recently changed</option></select></label>
-          </div>
-          <div class="cards" id="cards"><div class="empty">Loading units…</div></div>
-        </section>
-      </div>
-      ${canWrite ? `<button type="button" class="fab primary" id="b-fab" aria-label="Add a unit">+ Add unit</button>` : ""}
+          </fieldset>
+          <footer class="ed-bar">
+            <button type="button" class="danger" id="b-del" hidden>Delete</button>
+            <div class="msg" id="msg" role="status" aria-live="polite"></div>
+            <div class="ed-bar-actions">
+              <button type="button" id="b-cancel">Cancel</button>
+              <button type="button" id="b-save-new">Save &amp; add another</button>
+              <button type="submit" class="primary" id="b-save">Add unit</button>
+            </div>
+          </footer>
+        </form>
+      </dialog>
       <datalist id="dl-scheme">${schemeColors.map(c => `<option value="${c}"></option>`).join("")}</datalist>
       <datalist id="dl-melee"></datalist><datalist id="dl-ranged"></datalist>
       <datalist id="dl-hdetail"><option>Laurel wreath</option><option>Centre stripe</option><option>Crest</option><option>Battle damage</option><option>Squad markings</option></datalist>
@@ -650,7 +662,9 @@
       $("f-painted").max = u.count;
       updatePointsHint();
     }
-    const msg = (t, err) => { const m = $("msg"); m.textContent = t; m.classList.toggle("err", !!err); };
+    const edOpen = () => $("editdlg").open;
+    // Messages show in the editor's bar while it's open, otherwise as a toast.
+    const msg = (t, err) => { const m = $("msg"); m.textContent = edOpen() ? t : ""; m.classList.toggle("err", !!err); if(t && !edOpen()) toast(t); };
     const setDirty = v => { dirty = v; $("dirty").hidden = !v; };
     const disarm = () => { armed = false; const b = $("b-del"); b.classList.remove("armed"); b.textContent = "Delete"; };
     const currentUnit = () => units.find(x => x.id === selId);
@@ -666,16 +680,30 @@
       $("ed-title").textContent = u ? "Edit unit" : "New unit";
       $("b-save").textContent = u ? "Save changes" : "Add unit";
       $("b-del").hidden = !u || !canWrite;
+      $("b-save-new").hidden = !!u;
     }
     function editUnit(id){
       const u = units.find(x => x.id === id); if(!u) return;
       selId = id; tierTouched = true; pointsTouched = true; clearPending(); writeForm(u); disarm(); setEditing(u); setPhotoUI(); setDirty(false); msg(""); render();
-      if(window.matchMedia("(max-width:900px)").matches) form.scrollIntoView({behavior: "smooth", block: "start"});
-      $("f-name").focus({preventScroll: true});
+      openEditor(); $("f-name").focus({preventScroll: true});
     }
     function newUnit(focus){
       selId = null; tierTouched = false; pointsTouched = false; clearPending(); writeForm(defaults()); disarm(); setEditing(null); setPhotoUI(); setDirty(false); msg(""); render();
       if(focus) $("f-sheet").focus();
+    }
+    function openEditor(){
+      const d = $("editdlg");
+      if(!d.open) d.showModal();
+      d.scrollTop = 0;
+    }
+    async function openNew(){
+      if(edOpen() && !(await okToLeave())) return;
+      newUnit(false); openEditor(); setTimeout(() => $("f-sheet").focus(), 50);
+    }
+    async function closeEditor(){
+      if(!(await okToLeave())) return;
+      if(edOpen()) $("editdlg").close();
+      newUnit(false);
     }
     // Moving away from unsaved edits: Save, Discard or Keep editing.
     async function okToLeave(){
@@ -893,7 +921,22 @@
     ["dragleave","drop"].forEach(ev => drop.addEventListener(ev, () => drop.classList.remove("over")));
     drop.addEventListener("drop", e => { if(!canWrite) return; e.preventDefault(); takePhoto(e.dataTransfer.files && e.dataTransfer.files[0]); });
 
-    form.addEventListener("submit", e => { e.preventDefault(); saveCurrent(); });
+    form.addEventListener("submit", async e => {
+      e.preventDefault();
+      const wasNew = !currentUnit(), name = $("f-name").value.trim() || $("f-sheet").value;
+      if(await saveCurrent()){ $("editdlg").close(); newUnit(false); toast(wasNew ? `Added ${name}` : `Saved ${name}`); }
+    });
+    $("b-save-new").addEventListener("click", async () => {
+      const name = $("f-name").value.trim() || $("f-sheet").value;
+      if(await saveCurrent()){ newUnit(false); $("editdlg").scrollTop = 0; $("f-sheet").focus(); msg(`Added ${name}. Add the next one.`); }
+    });
+    $("b-cancel").addEventListener("click", closeEditor);
+    $("ed-close").addEventListener("click", closeEditor);
+    $("editdlg").addEventListener("cancel", e => { e.preventDefault(); closeEditor(); });
+    $("editdlg").addEventListener("mousedown", e => { if(e.target === $("editdlg")) closeEditor(); });
+    $("editdlg").addEventListener("keydown", e => {
+      if((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s"){ e.preventDefault(); form.requestSubmit ? form.requestSubmit() : $("b-save").click(); }
+    });
     async function saveCurrent(){
       if(busy || !canWrite) return false;
       const u = readForm();
@@ -905,16 +948,12 @@
         const row = await store.saveUnit(army.id, u, cur ? cur.id : null, pendingPhoto, removePhoto, cur);
         units = units.filter(x => x.id !== row.id).concat(row);
         clearPending(); selId = row.id; setEditing(row); setPhotoUI(); disarm(); setDirty(false);
-        msg(cur ? "Saved." : "Unit added."); render();
+        render();
         return true;
       } catch(err){ console.error(err); msg("Couldn't save: " + errText(err), true); return false; }
       finally { busy = false; b.disabled = !canWrite; if(b.textContent === "Saving…") b.textContent = label; }
     }
-    $("b-new").addEventListener("click", async () => { if(await okToLeave()) newUnit(true); });
-    if(canWrite) $("b-fab").addEventListener("click", async () => {
-      if(!(await okToLeave())) return;
-      newUnit(false); form.scrollIntoView({behavior: "smooth", block: "start"}); setTimeout(() => $("f-sheet").focus({preventScroll: true}), 400);
-    });
+    if(canWrite){ $("b-fab").addEventListener("click", openNew); $("b-add").addEventListener("click", openNew); }
     $("b-del").addEventListener("click", async () => {
       const cur = currentUnit(); if(!cur || busy) return;
       const b = $("b-del");
@@ -922,7 +961,7 @@
       busy = true; b.disabled = true;
       try {
         await store.removeUnit(cur, true);
-        units = units.filter(x => x.id !== cur.id); setDirty(false); newUnit(false);
+        units = units.filter(x => x.id !== cur.id); setDirty(false); $("editdlg").close(); newUnit(false);
         toast(`Deleted ${cur.name}`, async () => {
           try { const row = await store.restoreUnit(army.id, cur); units = units.concat(row); render(); toast(`Restored ${cur.name}`); }
           catch(err){ msg("Couldn't restore: " + errText(err), true); }
@@ -976,7 +1015,7 @@
       if(ed){ $("detail").close(); if(await okToLeave()) editUnit(ed.dataset.edit); }
       if(dup){
         const u = units.find(x => x.id === dup.dataset.dup); $("detail").close();
-        if(u && await okToLeave()){ selId = null; tierTouched = true; pointsTouched = true; clearPending(); writeForm({...u, name: u.name + " (copy)"}); setEditing(null); setPhotoUI(); setDirty(true); msg("Copy ready. Change what you need and save."); render(); }
+        if(u && await okToLeave()){ selId = null; tierTouched = true; pointsTouched = true; clearPending(); writeForm({...u, name: u.name + " (copy)"}); setEditing(null); setPhotoUI(); setDirty(true); render(); openEditor(); msg("Copy ready. Change what you need and save."); }
       }
     }
     $("detail").addEventListener("click", onDetailClick);
