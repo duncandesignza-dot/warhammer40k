@@ -5,8 +5,8 @@
    Leave both empty to save everything in the browser only.
    ============================================================ */
 window.LEDGER_CONFIG = {
-  SUPABASE_URL: "",
-  SUPABASE_ANON_KEY: "",
+  SUPABASE_URL: "https://obnwceftiohxwiajqfqv.supbase.co",
+  SUPABASE_ANON_KEY: "sb_publishable_DY94OLtaVXIyJaslxvsQvA_6pxh6RW0",
   ARMIES_TABLE: "armies",
   UNITS_TABLE: "units",
   BUCKET: "unit-images"
