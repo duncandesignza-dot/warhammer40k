@@ -34,6 +34,7 @@
     o.tier = Math.max(0, parseInt(r.tier, 10) || 0);
     o.noHelmet = r.noHelmet === true || r.noHelmet === "true";
     o.status = deriveStatus(o.stages, o.painted, o.count);
+    o.recipes = Array.isArray(r.recipes) ? [...new Set(r.recipes.map(x => String(x).slice(0, 40)))].slice(0, 20) : [];
     COLOR_FIELDS.forEach(f => { if(!HEX.test(o[f])) o[f] = ""; });
     if(!o.name) o.name = o.datasheet || "Unnamed unit";
     return o;
@@ -48,8 +49,16 @@
       color: HEX.test(t && t.color) ? t.color : "#1f1f22"
     }));
     const limit = Math.min(20000, Math.max(0, parseInt(s.limit, 10) || 0));
-    return {style: s.style === "roundel" ? "roundel" : "astartes", limit, colors, shape: String(s.shape || "cross").slice(0, 160), tiers: tiers.length ? tiers : [{name:"Line", note:"", color:colors.armour}]};
+    const recipes = (Array.isArray(s.recipes) ? s.recipes : []).slice(0, 60).filter(r => r && r.id).map(r => ({
+      id: String(r.id).slice(0, 40),
+      name: String(r.name || "Recipe").slice(0, 60),
+      area: String(r.area || "").slice(0, 30),
+      notes: String(r.notes || "").slice(0, 300),
+      steps: (Array.isArray(r.steps) ? r.steps : []).slice(0, 20).map(st => ({t: String((st && st.t) || "").slice(0, 30), p: String((st && st.p) || "").slice(0, 90)})).filter(st => st.p || st.t)
+    }));
+    return {style: s.style === "roundel" ? "roundel" : "astartes", limit, recipes, colors, shape: String(s.shape || "cross").slice(0, 160), tiers: tiers.length ? tiers : [{name:"Line", note:"", color:colors.armour}]};
   }
+  const cleanPaints = list => [...new Set((Array.isArray(list) ? list : []).map(p => String(p).trim().slice(0, 90)).filter(Boolean))].slice(0, 600);
   function cleanArmy(a){
     return {faction: String(a.faction || "").slice(0, 60), name: String(a.name || "My army").slice(0, 80), scheme: cleanScheme(a.scheme), public: a.public === true};
   }
@@ -119,6 +128,8 @@
       note(){ return ok ? {cls:"warn", text:"Saved in this browser only. Add your Supabase details in js/config.js to save online."}
                         : {cls:"warn", text:"This browser is blocking storage, so changes will be lost when you close the page."}; },
       async listArmies(){ return db.armies.map(a => ({...a})); },
+      async getPaints(){ try { const v = JSON.parse(localStorage.getItem("livery-paints-v1") || "[]"); return Array.isArray(v) ? v : []; } catch(e){ return []; } },
+      async setPaints(list){ try { localStorage.setItem("livery-paints-v1", JSON.stringify(cleanPaints(list))); } catch(e){ throw Object.assign(new Error("This browser is blocking storage."), {code:"quota"}); } return cleanPaints(list); },
       async getArmy(id){ const a = db.armies.find(x => x.id === id); return a ? {...a} : null; },
       async summary(){
         const m = {};
@@ -179,6 +190,15 @@
       get canWrite(){ return !!session; },
       setSession(s){ session = s; },
       note(){ return session ? {cls:"on", text:"Saved online to your database."} : {cls:"", text:"Viewing only. Sign in to create and edit ledgers."}; },
+      async getPaints(){ return session ? cleanPaints((session.user.user_metadata || {}).paints) : []; },
+      async setPaints(list){
+        need();
+        const paints = cleanPaints(list);
+        const {data, error} = await sb.auth.updateUser({data: {paints}});
+        if(error) throw error;
+        if(data && data.user) session = {...session, user: data.user};
+        return paints;
+      },
       async listArmies(){
         if(!session) return [];
         return (mustOk(await sb.from(A).select("*").eq("owner", session.user.id).order("created_at", {ascending: true})) || []).map(toArmy);

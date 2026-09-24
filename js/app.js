@@ -162,7 +162,7 @@
           <div class="fgrid">${list.map(f => `<a class="fcard" href="#/new/${esc(f.id)}" data-fname="${esc(f.name.toLowerCase())}">
             ${factionBadge(f.id, 34)}<span><strong>${esc(f.name)}</strong><small>${f.units.filter(u => !u.t).length} datasheets</small></span></a>`).join("")}</div>
         </div>`).join("")}</div>
-      <p class="source">Unit and weapon names come from the community BattleScribe data for Warhammer 40,000 11th edition (${esc(DATA.source || "BSData")}${DATA.commit ? ", " + esc(DATA.commit) : ""}). Emblem icons from <a href="https://github.com/Certseeds/wh40k-icon" target="_blank" rel="noopener">wh40k-icon</a> by shitake, farvig, 夜行漫记 and Certseeds (<a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a>), recoloured for this site. Starting colours are suggestions you can change. Warhammer 40,000 and its symbols are trademarks of Games Workshop; this is an unofficial, non-commercial fan tool.</p>
+      <p class="source">Unit and weapon names come from the community BattleScribe data for Warhammer 40,000 11th edition (${esc(DATA.source || "BSData")}${DATA.commit ? ", " + esc(DATA.commit) : ""}). Emblem icons from <a href="https://github.com/Certseeds/wh40k-icon" target="_blank" rel="noopener">wh40k-icon</a> by shitake, farvig, 夜行漫记 and Certseeds (<a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a>), recoloured for this site. Paint names and colours from <a href="https://github.com/Arcturus5404/miniature-paints" target="_blank" rel="noopener">miniature-paints</a> by Rick Fleuren (MIT). Starting colours are suggestions you can change. Warhammer 40,000 and its symbols are trademarks of Games Workshop; this is an unofficial, non-commercial fan tool.</p>
     `;
     const fq = $("fq");
     fq.addEventListener("input", () => {
@@ -432,6 +432,7 @@
         <div class="tools">
           ${canWrite ? `<button type="button" class="btn-sm share-btn${army.public ? " on" : ""}" id="b-share"><span class="dot${army.public ? " on" : ""}"></span><span id="share-label">${army.public ? "Shared" : "Share"}</span></button>` : ""}
           ${canWrite ? `<button type="button" class="btn-sm primary" id="b-list">Import army list</button>` : ""}
+          <button type="button" class="btn-sm" id="b-paints">Paints &amp; recipes<span class="buy-badge" id="buy-badge" hidden></span></button>
           ${canWrite ? `<a class="btn btn-sm" href="#/army/${esc(army.id)}/colours">Edit colours</a>` : ""}
           <button type="button" class="btn-sm" id="b-export">Export backup</button>
           ${canWrite ? `<button type="button" class="btn-sm" id="b-import">Import backup</button><input type="file" id="f-import" accept="application/json,.json" hidden>` : ""}
@@ -534,8 +535,13 @@
             <label class="full">Ranged weapon<input id="f-ranged" list="dl-ranged" maxlength="120" placeholder="Choose or type"></label>
           </fieldset>
           <fieldset>
-            <legend>Paints &amp; notes</legend>
-            <label class="full">Paint recipe<textarea id="f-paints" rows="2" maxlength="600" placeholder="e.g. black basecoat → grey edge highlight"></textarea></label>
+            <legend>Paint recipes</legend>
+            <div class="full recipe-picks" id="f-recipes"></div>
+            <div class="full"><button type="button" class="btn-sm" id="f-manage-recipes">Manage recipes</button></div>
+          </fieldset>
+          <fieldset>
+            <legend>Notes</legend>
+            <label class="full">Paint notes<textarea id="f-paints" rows="2" maxlength="600" placeholder="Anything extra for this unit, e.g. freehand banner colours"></textarea></label>
             <label class="full">Notes<textarea id="f-notes" rows="2" maxlength="600" placeholder="Leader attached, magnetised arms, ideas…"></textarea></label>
           </fieldset>
             </div>
@@ -555,6 +561,21 @@
       <datalist id="dl-scheme">${schemeColors.map(c => `<option value="${c}"></option>`).join("")}</datalist>
       <datalist id="dl-melee"></datalist><datalist id="dl-ranged"></datalist>
       <datalist id="dl-hdetail"><option>Laurel wreath</option><option>Centre stripe</option><option>Crest</option><option>Battle damage</option><option>Squad markings</option></datalist>
+
+      <dialog id="paintdlg" class="paintdlg" aria-labelledby="pd-h">
+        <div class="pd-wrap">
+          <header class="ed-top">
+            <div class="ed-titles"><h2 id="pd-h">Paints &amp; recipes</h2></div>
+            <button type="button" class="btn-sm" id="pd-close">Close</button>
+          </header>
+          <div class="pd-tabs"><div class="seg" role="tablist" id="pd-tabs">
+            <button type="button" role="tab" data-tab="recipes" aria-pressed="true">Recipes</button>
+            ${canWrite ? `<button type="button" role="tab" data-tab="owned" aria-pressed="false">My paints</button>
+            <button type="button" role="tab" data-tab="buy" aria-pressed="false">To buy <span class="buy-badge" id="buy-tab" hidden></span></button>` : ""}
+          </div></div>
+          <div class="pd-body" id="pd-body"></div>
+        </div>
+      </dialog>
 
       <dialog id="sharedlg" class="small" aria-labelledby="sh-h">
         <div class="dlg-close"><button type="button" data-close>Close</button></div>
@@ -596,7 +617,7 @@
 
     function defaults(){
       const c = scheme.colors, t = scheme.tiers[0];
-      return {datasheet:"", role:"", name:"", count:5, points:0, stages:[], painted:0, tier:0, helmet:t.color, lens:c.lens, hdetail:"", noHelmet:false,
+      return {datasheet:"", role:"", name:"", count:5, points:0, stages:[], painted:0, recipes:[], tier:0, helmet:t.color, lens:c.lens, hdetail:"", noHelmet:false,
         armour:c.armour, secondary:c.secondary, trim:c.trim, emblem:c.emblem, shape:"", cloth:c.cloth, metal:c.metal,
         extras:"", melee:"", ranged:"", paints:"", notes:""};
     }
@@ -611,7 +632,8 @@
         painted: Math.min(count, Math.max(0, parseInt($("f-painted").value, 10) || 0)),
         tier: +$("f-tier").value || 0, hdetail: $("f-hdetail").value.trim(), noHelmet: $("f-noHelmet").checked,
         shape: $("f-shape").value, extras: $("f-extras").value.trim(), melee: $("f-melee").value.trim(), ranged: $("f-ranged").value.trim(),
-        paints: $("f-paints").value.trim(), notes: $("f-notes").value.trim()};
+        paints: $("f-paints").value.trim(), notes: $("f-notes").value.trim(),
+        recipes: [...$("f-recipes").querySelectorAll("input:checked")].map(i => i.value)};
       o.status = S.deriveStatus(o.stages, o.painted, o.count);
       COLOR_IDS.forEach(k => o[k] = $("f-" + k).value);
       return o;
@@ -626,6 +648,7 @@
       $("f-points").value = d.points || "";
       $("f-stages").querySelectorAll("input").forEach(i => i.checked = (d.stages || []).includes(i.value));
       $("f-painted").value = d.painted || 0;
+      renderRecipePicks(d.recipes || []);
       $("f-tier").value = String(Math.min(d.tier, scheme.tiers.length - 1));
       $("f-hdetail").value = d.hdetail; $("f-noHelmet").checked = !!d.noHelmet;
       $("f-shape").value = [...$("f-shape").options].some(o => o.value === d.shape) ? d.shape : "";
@@ -795,6 +818,7 @@
             <dt>Helmet</dt><dd>${u.noHelmet ? "Bare head" : chip(u.helmet) + esc(cname(u.helmet))}${u.hdetail ? ", " + esc(u.hdetail) : ""}</dd>
             <dt>Armour</dt><dd>${chip(u.armour)}${esc(cname(u.armour))}, ${esc(cname(u.trim))} trim</dd>
             <dt>Weapons</dt><dd>${esc(weaponsText(u))}</dd>
+            ${recipesOf(u).length ? `<dt>Recipes</dt><dd>${esc(recipesOf(u).map(r => r.name).join(", "))}${canWrite && missingFor(u).length ? ` <span class="need">${missingFor(u).length} to buy</span>` : ""}</dd>` : ""}
           </dl>
           <div class="progress" title="${esc(stageLabel(u))}"><div class="segs" aria-hidden="true">${segs}</div><span>${u.painted}/${u.count} painted</span></div>
           <div class="card-foot">
@@ -821,6 +845,7 @@
       sp.classList.toggle("over", !!lim && pts > lim);
       sp.title = lim ? (pts > lim ? `${fmt(pts - lim)} pts over your ${fmt(lim)} limit` : `${fmt(lim - pts)} pts left of ${fmt(lim)}`) : "No points limit set";
       $("bar").style.width = pct + "%";
+      updateBuyBadge();
     }
     function openDetail(id){
       const found = units.find(x => x.id === id); if(!found) return;
@@ -837,12 +862,13 @@
           <section><h4>Painting</h4>
             <div class="stage-list">${STAGES.map(([k, l]) => `<span class="${(u.stages || []).includes(k) ? "on" : ""}">${l}</span>`).join("")}</div>
             <p class="prose" style="margin-top:10px">${u.painted} of ${plural(u.count, "model")} painted</p></section>
+          ${recipesOf(u).map(r => `<section><h4>Recipe · ${esc(r.name)}${r.area ? " · " + esc(r.area) : ""}</h4>${stepsHtml(r)}</section>`).join("")}
           ${sec("Rank", [["Rank", esc(tier.name)], ["Who", esc(tier.note)]])}
           ${sec("Helmet", [["Colour", u.noHelmet ? "Bare head" : col(u.helmet)], ["Lenses", col(u.lens)], ["Detail", esc(u.hdetail)]])}
           ${sec("Armour &amp; pauldrons", [["Armour", col(u.armour)], ["Secondary", col(u.secondary)], ["Trim", col(u.trim)], ["Emblem", (u.shape || scheme.shape) === "none" ? "None" : col(u.emblem) + " · " + esc(P.emblemName(u.shape || scheme.shape))]])}
           ${sec("Cloth &amp; details", [["Cloth", col(u.cloth)], ["Metal", col(u.metal)], ["Extras", esc(u.extras)]])}
           ${sec("Weapons", [["Melee", esc(u.melee)], ["Ranged", esc(u.ranged)]])}
-          ${u.paints ? `<section><h4>Paint recipe</h4><p class="prose">${esc(u.paints)}</p></section>` : ""}
+          ${u.paints ? `<section><h4>Paint notes</h4><p class="prose">${esc(u.paints)}</p></section>` : ""}
           ${u.notes ? `<section><h4>Notes</h4><p class="prose">${esc(u.notes)}</p></section>` : ""}
           ${canWrite ? `<section class="row-actions"><button type="button" class="primary" data-edit="${esc(u.id)}">Edit unit</button><button type="button" data-dup="${esc(u.id)}">Duplicate</button></section>` : ""}
         </div></div>`;
@@ -1199,7 +1225,200 @@
       view.guard = null;
     };
 
+    /* ============================================================
+       Paint recipes and paints you own
+       ============================================================ */
+    const PU = window.LEDGER_PAINTUI;
+    const TECHNIQUES = ["Prime","Basecoat","Layer","Shade / wash","Contrast","Dry brush","Edge highlight","Highlight","Glaze","Technical","Varnish","Other"];
+    const AREAS = ["Armour","Trim","Helmet","Lenses / eyes","Robes / cloth","Metal","Weapons","Skin","Leather","Emblem","Base","Other"];
+    let owned = new Set(), ownedList = [];
+    const isOwned = label => owned.has(PU.norm(label));
+    const recipesOf = u => (u.recipes || []).map(id => (scheme.recipes || []).find(r => r.id === id)).filter(Boolean);
+    const paintsOf = r => (r.steps || []).map(s => s.p).filter(Boolean);
+    const missingFor = u => [...new Set(recipesOf(u).flatMap(paintsOf).filter(p => !isOwned(p)).map(PU.norm))];
+    function stepsHtml(r){
+      if(!r.steps.length) return `<p class="prose">No steps yet.</p>`;
+      return `<ol class="steps">${r.steps.map(st => `<li>${PU.swatch(st.p)}<span class="st-t">${esc(st.t || "Step")}</span><span class="st-p">${esc(st.p || "—")}</span>${canWrite && st.p ? (isOwned(st.p) ? `<span class="own ok">Owned</span>` : `<span class="own no">To buy</span>`) : ""}</li>`).join("")}</ol>${r.notes ? `<p class="prose r-notes">${esc(r.notes)}</p>` : ""}`;
+    }
+    function renderRecipePicks(checked){
+      const box = $("f-recipes"), list = scheme.recipes || [];
+      const on = new Set(checked || [...box.querySelectorAll("input:checked")].map(i => i.value));
+      box.innerHTML = list.length ? list.map(r => `<label class="stage"><input type="checkbox" value="${esc(r.id)}" ${on.has(r.id) ? "checked" : ""}><span>${esc(r.name)}${r.area ? `<small>${esc(r.area)}</small>` : ""}</span></label>`).join("")
+        : `<p class="hint-sm">No recipes yet. Write one once, then tick it on every unit that uses it.</p>`;
+      $("f-manage-recipes").textContent = list.length ? "Manage recipes" : "Create a recipe";
+    }
+    async function saveRecipes(list){
+      army = await store.saveArmy({faction: army.faction, name: army.name, scheme: {...army.scheme, recipes: list}, public: army.public}, army.id);
+      scheme.recipes = army.scheme.recipes;
+      renderRecipePicks(); render(); updateBuyBadge();
+    }
+    async function saveOwned(list){
+      ownedList = await store.setPaints(list);
+      owned = new Set(ownedList.map(PU.norm));
+      render(); updateBuyBadge();
+    }
+    function shoppingList(onlyUsed){
+      const used = new Set(units.flatMap(u => u.recipes || []));
+      const need = new Map();
+      (scheme.recipes || []).filter(r => !onlyUsed || used.has(r.id)).forEach(r => paintsOf(r).forEach(p => {
+        if(isOwned(p)) return;
+        const k = PU.norm(p); if(!need.has(k)) need.set(k, {label: p, recipes: []});
+        if(!need.get(k).recipes.includes(r.name)) need.get(k).recipes.push(r.name);
+      }));
+      return [...need.values()].sort((a, b) => a.label.localeCompare(b.label));
+    }
+    function updateBuyBadge(){
+      if(!canWrite) return;
+      const n = shoppingList(true).length;
+      [$("buy-badge"), $("buy-tab")].forEach(b => { if(!b) return; b.hidden = !n; b.textContent = n; });
+    }
+
+    let pdTab = "recipes", editingRecipe = null, buyAll = false, ownedQuery = "";
+    function openPaints(tab){
+      pdTab = tab || pdTab; editingRecipe = null;
+      $("pd-tabs").querySelectorAll("[data-tab]").forEach(b => b.setAttribute("aria-pressed", b.dataset.tab === pdTab));
+      renderPaints();
+      if(!$("paintdlg").open) $("paintdlg").showModal();
+      PU.load().then(renderPaints);
+    }
+    function renderPaints(){
+      const body = $("pd-body");
+      $("pd-tabs").querySelectorAll("[data-tab]").forEach(b => b.setAttribute("aria-pressed", b.dataset.tab === pdTab));
+      if(editingRecipe){ renderRecipeEditor(body); return; }
+      if(pdTab === "recipes"){
+        const list = scheme.recipes || [];
+        body.innerHTML = `
+          <div class="pd-head"><p class="hint">Write a recipe once, then tick it on every unit that uses it. Paints you don't own show as <span class="own no">To buy</span>.</p>
+          ${canWrite ? `<button type="button" class="primary btn-sm" data-act="new-recipe">+ New recipe</button>` : ""}</div>
+          ${list.length ? `<div class="recipes">${list.map(r => {
+            const n = units.filter(u => (u.recipes || []).includes(r.id)).length;
+            return `<article class="recipe">
+              <header><div><h3>${esc(r.name)}</h3><small>${esc([r.area, n ? plural(n, "unit") : "Not used yet"].filter(Boolean).join(" · "))}</small></div>
+              ${canWrite ? `<div class="row-actions"><button type="button" class="btn-sm" data-act="edit-recipe" data-id="${esc(r.id)}">Edit</button><button type="button" class="btn-sm" data-act="dup-recipe" data-id="${esc(r.id)}">Copy</button></div>` : ""}</header>
+              ${stepsHtml(r)}</article>`; }).join("")}</div>`
+            : `<div class="empty">No recipes yet.${canWrite ? " Start with your main armour colour." : ""}</div>`}`;
+      } else if(pdTab === "owned"){
+        const q = PU.norm(ownedQuery);
+        const shown = ownedList.filter(p => !q || PU.norm(p).includes(q)).sort((a, b) => a.localeCompare(b));
+        body.innerHTML = `
+          <p class="hint">Paints you own are saved to your ${store.kind === "supabase" ? "account" : "browser"} and shared by all your ledgers.</p>
+          <div class="add-paint"><span class="pwrap-host"><input id="op-add" placeholder="Add a paint, e.g. Abaddon Black" aria-label="Add a paint"></span><button type="button" class="primary" data-act="add-owned">Add</button></div>
+          <div class="owned-head"><strong>${plural(ownedList.length, "paint")}</strong>${ownedList.length > 8 ? `<input type="search" id="op-q" class="search" placeholder="Filter" value="${esc(ownedQuery)}">` : ""}</div>
+          <div class="owned">${shown.map(p => `<span class="ochip">${PU.swatch(p)}<span>${esc(p)}</span><button type="button" data-act="rm-owned" data-p="${esc(p)}" aria-label="Remove ${esc(p)}">×</button></span>`).join("") || `<p class="hint">${ownedList.length ? "No paints match." : "Nothing here yet. Add the paints on your shelf."}</p>`}</div>`;
+        PU.picker($("op-add"), {owned: () => owned, extra: () => [], onPick: () => {}});
+        $("op-add").addEventListener("keydown", e => { if(e.key === "Enter"){ e.preventDefault(); addOwned(); } });
+        const oq = $("op-q"); if(oq) oq.addEventListener("input", e => { ownedQuery = e.target.value; const pos = e.target.selectionStart; renderPaints(); const n = $("op-q"); if(n){ n.focus(); n.setSelectionRange(pos, pos); } });
+      } else {
+        const list = shoppingList(!buyAll);
+        body.innerHTML = `
+          <div class="pd-head"><p class="hint">Paints in your recipes that aren't in <em>My paints</em>.</p>
+          <label class="check"><input type="checkbox" id="buy-all" ${buyAll ? "checked" : ""}> Include recipes not used by any unit</label></div>
+          ${list.length ? `<ul class="buy">${list.map(it => `<li>${PU.swatch(it.label)}<span class="b-n"><strong>${esc(it.label)}</strong><small>For ${esc(it.recipes.join(", "))}</small></span><button type="button" class="btn-sm" data-act="got" data-p="${esc(it.label)}">I have it</button></li>`).join("")}</ul>
+            <div class="row-actions"><button type="button" class="btn-sm" data-act="copy-buy">Copy list</button><span class="hint" id="buy-msg"></span></div>`
+          : `<div class="empty">${(scheme.recipes || []).length ? "You have every paint you need." : "Add some recipes first."}</div>`}`;
+        $("buy-all").addEventListener("change", e => { buyAll = e.target.checked; renderPaints(); });
+      }
+    }
+    function renderRecipeEditor(body){
+      const r = editingRecipe;
+      body.innerHTML = `
+        <div class="r-edit">
+          <div class="r-grid">
+            <label>Recipe name<input id="re-name" maxlength="60" value="${esc(r.name)}" placeholder="e.g. Black armour"></label>
+            <label>Used for<select id="re-area"><option value="">Choose…</option>${AREAS.map(a => `<option ${a === r.area ? "selected" : ""}>${a}</option>`).join("")}</select></label>
+          </div>
+          <h4 class="em-h">Steps</h4>
+          <ol class="r-steps" id="re-steps">${r.steps.map((st, i) => `<li>
+            <span class="r-num">${i + 1}</span>
+            <select data-st="${i}" aria-label="Technique for step ${i + 1}">${TECHNIQUES.map(t => `<option ${t === st.t ? "selected" : ""}>${t}</option>`).join("")}</select>
+            <span class="pwrap-host">${PU.swatch(st.p, "in-input")}<input data-sp="${i}" value="${esc(st.p)}" placeholder="Paint" aria-label="Paint for step ${i + 1}"></span>
+            <span class="r-btns"><button type="button" class="btn-sm" data-act="up" data-i="${i}" ${i ? "" : "disabled"} aria-label="Move up">↑</button><button type="button" class="btn-sm" data-act="down" data-i="${i}" ${i < r.steps.length - 1 ? "" : "disabled"} aria-label="Move down">↓</button><button type="button" class="btn-sm" data-act="rm-step" data-i="${i}" aria-label="Remove step">×</button></span>
+          </li>`).join("")}</ol>
+          <button type="button" class="btn-sm" data-act="add-step">+ Add step</button>
+          <label>Notes<textarea id="re-notes" rows="2" maxlength="300" placeholder="e.g. thin the highlight, only on top edges">${esc(r.notes)}</textarea></label>
+          <div class="r-bar">
+            ${r.isNew ? "" : `<button type="button" class="danger" data-act="del-recipe">Delete recipe</button>`}
+            <span class="hint" id="re-msg"></span>
+            <div class="ed-bar-actions"><button type="button" data-act="cancel-recipe">Cancel</button><button type="button" class="primary" data-act="save-recipe">Save recipe</button></div>
+          </div>
+        </div>`;
+      body.querySelectorAll("[data-sp]").forEach(inp => PU.picker(inp, {owned: () => owned, extra: () => ownedList}));
+      if(r.isNew && !r.name) $("re-name").focus();
+    }
+    function syncRecipeDraft(){
+      const r = editingRecipe; if(!r || !$("re-name")) return;
+      r.name = $("re-name").value; r.area = $("re-area").value; r.notes = $("re-notes").value;
+      $("pd-body").querySelectorAll("[data-st]").forEach(el => r.steps[+el.dataset.st].t = el.value);
+      $("pd-body").querySelectorAll("[data-sp]").forEach(el => r.steps[+el.dataset.sp].p = el.value.trim());
+    }
+    async function addOwned(){
+      const inp = $("op-add"); const v = inp.value.trim(); if(!v) return;
+      const cat = await PU.load(); const hit = PU.find(v) || PU.search(v, [], 1)[0];
+      const label = hit && PU.norm(hit.label) === PU.norm(v) ? hit.label : v;
+      if(isOwned(label)){ inp.value = ""; return; }
+      try { await saveOwned(ownedList.concat(label)); renderPaints(); $("op-add").focus(); }
+      catch(err){ toast("Couldn't save your paints: " + errText(err)); }
+    }
+    let delArmed = false;
+    $("paintdlg").addEventListener("input", e => {
+      const t = e.target;
+      if(t.dataset.sp != null){ const sw = t.parentElement.querySelector(".pswatch"); const p = PU.find(t.value); if(sw) sw.style.background = p ? p.hex : ""; }
+    });
+    $("paintdlg").addEventListener("click", async e => {
+      if(e.target === $("paintdlg")){ $("paintdlg").close(); return; }
+      const tab = e.target.closest("[data-tab]");
+      if(tab){ syncRecipeDraft(); if(editingRecipe && !confirmDropRecipe()) return; editingRecipe = null; pdTab = tab.dataset.tab; renderPaints(); return; }
+      const b = e.target.closest("[data-act]"); if(!b) return;
+      const act = b.dataset.act;
+      if(editingRecipe) syncRecipeDraft();
+      if(act === "new-recipe"){ editingRecipe = {id: S.newId(), name: "", area: "", notes: "", steps: [{t: "Prime", p: ""}, {t: "Basecoat", p: ""}, {t: "Shade / wash", p: ""}, {t: "Edge highlight", p: ""}], isNew: true}; renderPaints(); }
+      else if(act === "edit-recipe" || act === "dup-recipe"){
+        const r = (scheme.recipes || []).find(x => x.id === b.dataset.id); if(!r) return;
+        editingRecipe = JSON.parse(JSON.stringify(r));
+        if(act === "dup-recipe"){ editingRecipe.id = S.newId(); editingRecipe.name = r.name + " (copy)"; editingRecipe.isNew = true; }
+        delArmed = false; renderPaints();
+      }
+      else if(act === "add-step"){ editingRecipe.steps.push({t: "Layer", p: ""}); renderPaints(); const last = $("pd-body").querySelectorAll("[data-sp]"); if(last.length) last[last.length - 1].focus(); }
+      else if(act === "rm-step"){ editingRecipe.steps.splice(+b.dataset.i, 1); renderPaints(); }
+      else if(act === "up" || act === "down"){ const i = +b.dataset.i, j = act === "up" ? i - 1 : i + 1; const st = editingRecipe.steps; [st[i], st[j]] = [st[j], st[i]]; renderPaints(); }
+      else if(act === "cancel-recipe"){ editingRecipe = null; renderPaints(); }
+      else if(act === "save-recipe"){
+        const r = editingRecipe; r.name = r.name.trim(); r.steps = r.steps.filter(st => st.p || st.t === "Other");
+        if(!r.name){ $("re-msg").textContent = "Give the recipe a name."; $("re-name").focus(); return; }
+        const list = (scheme.recipes || []).filter(x => x.id !== r.id);
+        const idx = (scheme.recipes || []).findIndex(x => x.id === r.id);
+        const clean = {id: r.id, name: r.name, area: r.area, notes: r.notes, steps: r.steps};
+        if(idx >= 0) list.splice(idx, 0, clean); else list.push(clean);
+        b.disabled = true;
+        try { await saveRecipes(list); editingRecipe = null; renderPaints(); toast(`Saved recipe ${clean.name}`); }
+        catch(err){ $("re-msg").textContent = "Couldn't save: " + errText(err); b.disabled = false; }
+      }
+      else if(act === "del-recipe"){
+        if(!delArmed){ delArmed = true; b.classList.add("armed"); b.textContent = "Click again to delete"; return; }
+        const gone = editingRecipe;
+        try {
+          await saveRecipes((scheme.recipes || []).filter(x => x.id !== gone.id)); editingRecipe = null; delArmed = false; renderPaints();
+          toast(`Deleted recipe ${gone.name}`, async () => { await saveRecipes((scheme.recipes || []).concat({id: gone.id, name: gone.name, area: gone.area, notes: gone.notes, steps: gone.steps})); renderPaints(); });
+        } catch(err){ $("re-msg").textContent = "Couldn't delete: " + errText(err); }
+      }
+      else if(act === "add-owned") addOwned();
+      else if(act === "rm-owned"){ try { await saveOwned(ownedList.filter(p => p !== b.dataset.p)); renderPaints(); } catch(err){ toast("Couldn't save: " + errText(err)); } }
+      else if(act === "got"){ try { await saveOwned(ownedList.concat(b.dataset.p)); renderPaints(); } catch(err){ toast("Couldn't save: " + errText(err)); } }
+      else if(act === "copy-buy"){
+        const text = shoppingList(!buyAll).map(it => "- " + it.label).join("\n");
+        try { await navigator.clipboard.writeText(text); $("buy-msg").textContent = "Copied."; } catch(err){ $("buy-msg").textContent = "Couldn't copy. Select the list and copy it instead."; }
+      }
+    });
+    function confirmDropRecipe(){ return true; }
+    $("pd-close").addEventListener("click", () => $("paintdlg").close());
+    $("paintdlg").addEventListener("close", () => { editingRecipe = null; renderRecipePicks(); });
+    $("b-paints").addEventListener("click", () => openPaints("recipes"));
+    $("f-manage-recipes").addEventListener("click", () => openPaints("recipes"));
+    $("f-recipes").addEventListener("change", () => { setDirty(true); preview(); });
+
     /* ---------- load ---------- */
+    if(canWrite){ try { ownedList = await store.getPaints(); owned = new Set(ownedList.map(PU.norm)); } catch(e){} }
+    PU.load().then(() => { render(); updateBuyBadge(); });
     writeForm(defaults()); setPhotoUI();
     try { units = await store.listUnits(army.id); }
     catch(err){ console.error(err); $("cards").innerHTML = `<div class="empty">Couldn't load units: ${esc(errText(err))}</div>`; return; }
