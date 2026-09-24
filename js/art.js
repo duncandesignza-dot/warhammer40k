@@ -81,11 +81,12 @@
     const shape=icon?"":(SHAPE_PATHS[u.shape]!==undefined?u.shape:"cross");
     if(icon) loadIcon(icon);
     const td=shade(trim), w=Math.round(size*2000/960);
+    if(u.noHelmet){ const r=badge({...u,noHelmet:false},style,size,label); return r.replace('class="mini"','class="mini solo"').replace(/width="\d+" height="\d+" viewBox="0 0 2000 960"/,`width="${size}" height="${size}" viewBox="1040 0 960 960"`); }
     let left;
     if(style==="astartes"){
       left=`<circle cx="480" cy="480" r="458" style="fill:var(--tile)"/>
       <circle cx="480" cy="480" r="458" fill="none" stroke="#000" stroke-opacity=".18" stroke-width="8"/>
-      <g transform="translate(480 484) scale(.74) translate(-449.7 -456.07)"${u.noHelmet?' opacity=".35"':""}>
+      <g transform="translate(480 484) scale(.74) translate(-449.7 -456.07)">
         <rect x="190" y="395" width="520" height="115" fill="${lens}"/>
         <use href="#hx-shell" fill="${helmet}" stroke="${shade(helmet,.45)}" stroke-width="4"/>
         <use href="#hx-tubes" fill="#5d6166"/>
