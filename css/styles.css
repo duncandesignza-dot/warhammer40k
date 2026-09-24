@@ -499,7 +499,7 @@ body::before{
   z-index:-2;
   background:url("../img/bg.jpg") center 30%/cover no-repeat;
   background-image:image-set(url("../img/bg.webp") type("image/webp"),url("../img/bg.jpg") type("image/jpeg"));
-  opacity:.4;filter:saturate(.55) contrast(1.05);
+  opacity:.12;filter:saturate(.55) contrast(1.05);
   -webkit-mask-image:linear-gradient(to bottom,#000 0%,rgba(0,0,0,.55) 55%,rgba(0,0,0,.18) 100%);
           mask-image:linear-gradient(to bottom,#000 0%,rgba(0,0,0,.55) 55%,rgba(0,0,0,.18) 100%);
 }
