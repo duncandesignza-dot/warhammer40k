@@ -54,6 +54,53 @@
     const hd = v.head === "bare" ? `bare head (${cname(v.skin)} skin)` : v.head === "none" ? "no head" : `${cname(v.helmet)} ${PROF.head}`;
     return ART.badge(v, scheme.style, size, `${hd}, ${cname(v.armour)} ${PROF.labels.armour.toLowerCase()} with ${cname(v.trim)} ${PROF.labels.trim.toLowerCase()}`);
   }
+  /* Suggestion dropdown for a text input, styled like the paint picker (the browser's own datalist
+     popup can't be styled). getList() returns the options; typing filters them, and any other
+     text is still allowed. */
+  function combo(input, getList){
+    const box = document.createElement("div");
+    box.className = "psuggest"; box.hidden = true; box.setAttribute("role", "listbox");
+    input.classList.add("combo");
+    input.setAttribute("autocomplete", "off"); input.setAttribute("role", "combobox"); input.setAttribute("aria-expanded", "false");
+    // Outside the label, so a click on an option doesn't also land on the input and reopen the list.
+    (input.closest("label") || input).after(box);
+    let items = [], active = -1;
+    function show(){
+      const all = getList() || [], q = input.value.trim().toLowerCase();
+      // Everything when the box is empty or already holds one of the options, otherwise the matches.
+      items = !q || all.some(o => o.toLowerCase() === q) ? all : all.filter(o => o.toLowerCase().includes(q));
+      if(!items.length){ hide(); return; }
+      box.innerHTML = items.map((o, i) => `<div class="psug${i === active ? " on" : ""}" role="option" data-i="${i}"><span class="pn"><strong>${esc(o)}</strong></span></div>`).join("");
+      box.hidden = false; input.setAttribute("aria-expanded", "true");
+      place();
+    }
+    // Float over everything, below the input or above it if there's no room.
+    function place(){
+      if(box.hidden) return;
+      const r = input.getBoundingClientRect(), vh = window.innerHeight, gap = 6;
+      const below = vh - r.bottom - gap - 12, above = r.top - gap - 12;
+      const up = below < 220 && above > below;
+      Object.assign(box.style, {left: r.left + "px", width: r.width + "px", maxHeight: Math.max(140, Math.min(320, up ? above : below)) + "px",
+        top: up ? "" : (r.bottom + gap) + "px", bottom: up ? (vh - r.top + gap) + "px" : ""});
+    }
+    function hide(){ box.hidden = true; active = -1; input.setAttribute("aria-expanded", "false"); }
+    function pick(i){ if(items[i] == null) return; input.value = items[i]; hide(); input.dispatchEvent(new Event("input", {bubbles: true})); }
+    const onMove = () => { if(!box.isConnected){ window.removeEventListener("resize", onMove); document.removeEventListener("scroll", onMove, true); return; } place(); };
+    window.addEventListener("resize", onMove);
+    document.addEventListener("scroll", onMove, true);
+    input.addEventListener("focus", show);
+    input.addEventListener("click", () => { if(box.hidden) show(); });
+    input.addEventListener("input", e => { active = -1; if(e.isTrusted) show(); });
+    input.addEventListener("blur", () => setTimeout(hide, 150));
+    input.addEventListener("keydown", e => {
+      if(e.key === "ArrowDown"){ e.preventDefault(); if(box.hidden){ show(); return; } active = Math.min(items.length - 1, active + 1); show(); }
+      else if(box.hidden) return;
+      else if(e.key === "ArrowUp"){ e.preventDefault(); active = Math.max(0, active - 1); show(); }
+      else if(e.key === "Enter" && active >= 0){ e.preventDefault(); pick(active); }
+      else if(e.key === "Escape"){ e.stopPropagation(); e.preventDefault(); hide(); }
+    });
+    box.addEventListener("mousedown", e => { const o = e.target.closest("[data-i]"); if(o){ e.preventDefault(); pick(+o.dataset.i); } });
+  }
   function tierBadge(scheme, t, size){
     const c = scheme.colors;
     return ART.badge({helmet: t.color, lens: c.lens, armour: c.armour, secondary: c.secondary, trim: c.trim, emblem: c.emblem, shape: scheme.shape}, scheme.style, size, `${t.name}: ${cname(t.color)} ${PROF.head}`);
@@ -549,7 +596,7 @@
             <div class="hd-when" data-when="helmet">${colorField("helmet", esc(LB.helmet))}</div>
             ${skinInHead ? `<div class="hd-when" data-when="bare">${colorField("skin", esc(LB.skin))}</div>` : ""}
             <div class="hd-when" data-when="helmet bare">${colorField("lens", `<span id="lens-lbl">${esc(LB.lens)}</span>`)}</div>
-            <label class="full hd-when" data-when="helmet bare"><span id="hdetail-lbl">${esc(PROF.detail[0])}</span><input id="f-hdetail" list="dl-hdetail" maxlength="60" placeholder="${esc(PROF.detail[1])}"></label>
+            <label class="full hd-when" data-when="helmet bare"><span id="hdetail-lbl">${esc(PROF.detail[0])}</span><input id="f-hdetail" maxlength="60" placeholder="${esc(PROF.detail[1])}"></label>
           </fieldset>
           <fieldset>
             <legend>${esc(PROF.legends.body)}</legend>
@@ -572,8 +619,8 @@
           </fieldset>
           <fieldset>
             <legend>Weapons</legend>
-            <label class="full">Melee weapon<input id="f-melee" list="dl-melee" maxlength="120" placeholder="Choose or type"></label>
-            <label class="full">Ranged weapon<input id="f-ranged" list="dl-ranged" maxlength="120" placeholder="Choose or type"></label>
+            <label class="full">Melee weapon<input id="f-melee" maxlength="120" placeholder="Choose or type"></label>
+            <label class="full">Ranged weapon<input id="f-ranged" maxlength="120" placeholder="Choose or type"></label>
           </fieldset>
           <fieldset>
             <legend>Paint recipes</legend>
@@ -600,9 +647,6 @@
         </form>
       </dialog>
       <datalist id="dl-scheme">${schemeColors.map(c => `<option value="${c}"></option>`).join("")}</datalist>
-      <datalist id="dl-melee"></datalist><datalist id="dl-ranged"></datalist>
-      <datalist id="dl-face"><option>War paint</option><option>Scars</option><option>Tattoos</option><option>Bionic eye</option><option>Beard</option><option>Service studs</option></datalist>
-      <datalist id="dl-hdetail">${PROF.detailOpts.map(o => `<option>${esc(o)}</option>`).join("")}</datalist>
 
       <dialog id="paintdlg" class="paintdlg" aria-labelledby="pd-h">
         <div class="pd-wrap">
@@ -664,7 +708,6 @@
       form.querySelectorAll(".hd-when").forEach(el => el.hidden = !el.dataset.when.split(" ").includes(h));
       $("lens-lbl").textContent = h === "bare" ? "Eyes" : LB.lens;
       $("hdetail-lbl").textContent = h === "bare" ? "Face paint & detail" : PROF.detail[0];
-      $("f-hdetail").setAttribute("list", h === "bare" ? "dl-face" : "dl-hdetail");
       $("f-hdetail").placeholder = h === "bare" ? "e.g. war paint, scars, tattoos, bionic eye" : PROF.detail[1];
       $("head-hint").textContent = h === "bare" ? `For a painted face: pick a skin tone${skinInHead ? "" : " (under " + PROF.legends.details + ")"} and note any war paint or scars.` : h === "none" ? "No head to paint, e.g. vehicles, monsters and walkers." : "";
       $("head-hint").hidden = h === "helmet";
@@ -712,10 +755,13 @@
       COLOR_IDS.forEach(k => $("f-" + k).value = ART.hexOk(d[k]) ? d[k] : (defaults()[k] || "#1f1f22"));
       fillWeapons(); preview();
     }
+    const sheetNow = () => { const sel = $("f-sheet").value; return sel && sel !== "__custom" ? sheetFor(sel) : null; };
+    const FACE_OPTS = ["War paint","Scars","Tattoos","Bionic eye","Beard","Service studs"];
+    combo($("f-melee"), () => (sheetNow() || {}).wm || []);
+    combo($("f-ranged"), () => (sheetNow() || {}).wr || []);
+    combo($("f-hdetail"), () => getHead() === "bare" ? FACE_OPTS : PROF.detailOpts);
     function fillWeapons(){
-      const sel = $("f-sheet").value, sh = sel && sel !== "__custom" ? sheetFor(sel) : null;
-      $("dl-melee").innerHTML = (sh && sh.wm || []).map(w => `<option value="${esc(w)}"></option>`).join("");
-      $("dl-ranged").innerHTML = (sh && sh.wr || []).map(w => `<option value="${esc(w)}"></option>`).join("");
+      const sh = sheetNow();
       $("f-melee").placeholder = sh && sh.wm ? sh.wm.slice(0, 2).join(", ") + (sh.wm.length > 2 ? "…" : "") : "Choose or type";
       $("f-ranged").placeholder = sh && sh.wr ? sh.wr.slice(0, 2).join(", ") + (sh.wr.length > 2 ? "…" : "") : "Choose or type";
     }
