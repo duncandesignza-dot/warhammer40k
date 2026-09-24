@@ -230,9 +230,8 @@
       extras: ["Glyphs, glow & extras", "e.g. green gauss glow on guns, verdigris"],
       hide: ["skin"],
       more: ["Weapons","Gauss glow","Verdigris"],
-      tiers: [["Warriors","Necron Warriors and line troops"],["Immortals","Immortals, Lychguard and elites"],["Lord","Lords and Crypteks"],["Overlord","Overlords and heroes"]],
-      // Nobles wear the dynasty's trim metal on their heads.
-      tierColors: c => [c.armour, c.secondary, c.trim, shade(c.trim, .2)]
+      // Nobles wear the dynasty's gold on their heads (see TIER_SRC).
+      tiers: [["Warriors","Necron Warriors and line troops"],["Immortals","Immortals, Lychguard and elites"],["Lord","Lords and Crypteks"],["Overlord","Overlords and heroes"]]
     },
     orks: {
       skinAlways: true,
@@ -315,88 +314,199 @@
     return (profiles[factionId] = pr);
   }
 
-  function tiersFor(factionId, c){
-    const pr = profileFor(factionId);
-    const cols = pr.tierColors ? pr.tierColors(c) : [c.armour, c.secondary, "#b3141c", c.trim];
-    return pr.tiers.map(([name, note], i) => T(name, cols[i] || c.armour, note));
+  /* ---------- Starting paints ----------
+     Every faction and known scheme starts from Citadel paints (the ones Games Workshop's painting
+     guides use for that army), so colours arrive as real paints you can buy, not plain colours.
+     F(armour, secondary, trim, emblem, lens, cloth, metal, skin) takes Citadel paint names; "" keeps
+     the plain colour. CIT maps each name to its catalogue label and colour in js/data/paints.js and
+     is filled in by tools/build_citadel_refs.py. */
+  const CIT = {"Abaddon Black":["Citadel Abaddon Black (Base)","#000000"],"Auric Armour Gold":["Citadel Auric Armour Gold","#ffc451"],"Averland Sunset":["Citadel Averland Sunset (Base)","#fbb81c"],"Balthasar Gold":["Citadel Balthasar Gold (Base)","#a77353"],"Bugman Glow":["Citadel Bugman Glow","#804c43"],"Cadian Fleshtone":["Citadel Cadian Fleshtone","#c47652"],"Caliban Green":["Citadel Caliban Green (Base)","#003d15"],"Castellan Green":["Citadel Castellan Green (Base)","#264715"],"Corax White":["Citadel Corax White (Base)","#ffffff"],"Death Guard Green":["Citadel Death Guard Green (Base)","#6d774d"],"Deathworld Forest":["Citadel Deathworld Forest (Base)","#556229"],"Emperor Children":["Citadel Emperor Children","#b74073"],"Eshin Grey":["Citadel Eshin Grey","#484b4e"],"Evil Sunz Scarlet":["Citadel Evil Sunz Scarlet (Layer)","#c01411"],"Incubi Darkness":["Citadel Incubi Darkness","#082e32"],"Jokaero Orange":["Citadel Jokaero Orange","#ed3814"],"Kantor Blue":["Citadel Kantor Blue (Base)","#02134e"],"Khorne Red":["Citadel Khorne Red (Base)","#650001"],"Leadbelcher":["Citadel Leadbelcher (Base)","#969696"],"Macragge Blue":["Citadel Macragge Blue (Base)","#0f3d7c"],"Mechanicus Standard Grey":["Citadel Mechanicus Standard Grey (Base)","#39484a"],"Mephiston Red":["Citadel Mephiston Red (Base)","#960c09"],"Moot Green":["Citadel Moot Green (Layer)","#3daf44"],"Mournfang Brown":["Citadel Mournfang Brown (Base)","#490f06"],"Naggaroth Night":["Citadel Naggaroth Night","#3b2b50"],"Nurgling Green":["Citadel Nurgling Green (Layer)","#7e975e"],"Pallid Wych Flesh":["Citadel Pallid Wych Flesh","#caccbb"],"Pink Horror":["Citadel Pink Horror","#8e2757"],"Rakarth Flesh":["Citadel Rakarth Flesh","#9c998d"],"Retributor Armour":["Citadel Retributor Armour (Base)","#edc169"],"Rhinox Hide":["Citadel Rhinox Hide","#462f30"],"Russ Grey":["Citadel Russ Grey (Layer)","#507085"],"Skrag Brown":["Citadel Skrag Brown","#8b4806"],"Slaanesh Grey":["Citadel Slaanesh Grey (Layer)","#8b8893"],"Sons of Horus Green":["Citadel Sons of Horus Green (Layer)","#00545e"],"Sotek Green":["Citadel Sotek Green","#0b6371"],"Steel Legion Drab":["Citadel Steel Legion Drab (Base)","#584e2d"],"Stormhost Silver":["Citadel Stormhost Silver","#dadddf"],"Tau Light Ochre":["Citadel Tau Light Ochre (Layer)","#bc6b10"],"Teclis Blue":["Citadel Teclis Blue","#3877bf"],"Temple Guard Blue":["Citadel Temple Guard Blue (Layer)","#239489"],"Tesseract Glow":["Citadel Tesseract Glow","#65ab46"],"The Fang":["Citadel The Fang (Base)","#405b71"],"Thousand Sons Blue":["Citadel Thousand Sons Blue","#00506f"],"Troll Slayer Orange":["Citadel Troll Slayer Orange (Layer)","#f16c23"],"Waaagh! Flesh":["Citadel Waaagh! Flesh","#0b3b36"],"Warboss Green":["Citadel Warboss Green (Layer)","#317e57"],"Warplock Bronze":["Citadel Warplock Bronze","#b36e4f"],"Warpstone Glow":["Citadel Warpstone Glow","#0f702a"],"Wraithbone":["Citadel Wraithbone (Base)","#dbd1b2"],"Xereus Purple":["Citadel Xereus Purple","#47125a"],"Zandri Dust":["Citadel Zandri Dust (Base)","#988e56"]};
+  const SLOTS = ["armour","secondary","trim","emblem","lens","cloth","metal","skin"];
+  const F = (...names) => Object.fromEntries(SLOTS.map((k, i) => [k, names[i] || ""]).filter(([, v]) => v));
+  const citHex = n => CIT[n] ? CIT[n][1] : "";
+  const citLabel = n => CIT[n] ? CIT[n][0] : "";
+
+  const FP = {
+    "space-marines":     F("Mechanicus Standard Grey","Corax White","Retributor Armour","Corax White","Moot Green","Rakarth Flesh","Leadbelcher","Cadian Fleshtone"),
+    "ultramarines":      F("Macragge Blue","Corax White","Retributor Armour","Corax White","Mephiston Red","Rakarth Flesh","Leadbelcher","Cadian Fleshtone"),
+    "black-templars":    F("Abaddon Black","Corax White","Corax White","Corax White","Mephiston Red","Rakarth Flesh","Leadbelcher","Cadian Fleshtone"),
+    "blood-angels":      F("Mephiston Red","Abaddon Black","Retributor Armour","Abaddon Black","Moot Green","Abaddon Black","Retributor Armour","Cadian Fleshtone"),
+    "dark-angels":       F("Caliban Green","Wraithbone","Wraithbone","Corax White","Mephiston Red","Zandri Dust","Leadbelcher","Cadian Fleshtone"),
+    "space-wolves":      F("The Fang","Averland Sunset","Retributor Armour","Abaddon Black","Averland Sunset","Mournfang Brown","Leadbelcher","Cadian Fleshtone"),
+    "imperial-fists":    F("Averland Sunset","Abaddon Black","Abaddon Black","Mephiston Red","Moot Green","Rakarth Flesh","Leadbelcher","Cadian Fleshtone"),
+    "iron-hands":        F("Abaddon Black","Leadbelcher","Corax White","Corax White","Moot Green","Eshin Grey","Leadbelcher","Cadian Fleshtone"),
+    "raven-guard":       F("Abaddon Black","Corax White","Corax White","Corax White","Mephiston Red","Abaddon Black","Leadbelcher","Cadian Fleshtone"),
+    // Salamanders: Warpstone Glow armour, flame emblems in orange, and jet-black skin.
+    "salamanders":       F("Warpstone Glow","Abaddon Black","Retributor Armour","Troll Slayer Orange","Mephiston Red","Abaddon Black","Retributor Armour","Abaddon Black"),
+    "white-scars":       F("Corax White","Mephiston Red","Mephiston Red","Mephiston Red","Mephiston Red","Mephiston Red","Leadbelcher","Cadian Fleshtone"),
+    "deathwatch":        F("Abaddon Black","Leadbelcher","Leadbelcher","Corax White","Moot Green","Abaddon Black","Leadbelcher","Cadian Fleshtone"),
+    "grey-knights":      F("Leadbelcher","Mephiston Red","Retributor Armour","Mephiston Red","Teclis Blue","Mephiston Red","Leadbelcher","Cadian Fleshtone"),
+    "adeptus-custodes":  F("Retributor Armour","Khorne Red","Balthasar Gold","Abaddon Black","Moot Green","Khorne Red","Retributor Armour","Cadian Fleshtone"),
+    // Order of Our Martyred Lady: black armour, red robes.
+    "adepta-sororitas":  F("Abaddon Black","Mephiston Red","Corax White","Corax White","Moot Green","Mephiston Red","Leadbelcher","Cadian Fleshtone"),
+    // Forge World Mars: red robes over silver plates.
+    "adeptus-mechanicus":F("Mephiston Red","Leadbelcher","Balthasar Gold","Corax White","Moot Green","Khorne Red","Leadbelcher","Cadian Fleshtone"),
+    "agents-of-the-imperium":F("Eshin Grey","Mephiston Red","Retributor Armour","Retributor Armour","Moot Green","Abaddon Black","Leadbelcher","Cadian Fleshtone"),
+    // Cadian: Castellan Green flak armour over Zandri Dust fatigues.
+    "astra-militarum":   F("Castellan Green","Zandri Dust","Rhinox Hide","Corax White","Abaddon Black","Zandri Dust","Leadbelcher","Cadian Fleshtone"),
+    "imperial-knights":  F("Macragge Blue","Corax White","Retributor Armour","Corax White","Moot Green","Mephiston Red","Leadbelcher","Cadian Fleshtone"),
+    // Black Legion
+    "chaos-space-marines":F("Abaddon Black","Balthasar Gold","Balthasar Gold","Mephiston Red","Mephiston Red","Khorne Red","Leadbelcher","Cadian Fleshtone"),
+    "death-guard":       F("Death Guard Green","Balthasar Gold","Balthasar Gold","Abaddon Black","Moot Green","Rakarth Flesh","Warplock Bronze","Nurgling Green"),
+    "emperors-children": F("Emperor Children","Abaddon Black","Retributor Armour","Retributor Armour","Teclis Blue","Corax White","Retributor Armour","Cadian Fleshtone"),
+    "thousand-sons":     F("Thousand Sons Blue","Retributor Armour","Retributor Armour","Retributor Armour","Sotek Green","Corax White","Retributor Armour","Cadian Fleshtone"),
+    "world-eaters":      F("Khorne Red","Balthasar Gold","Balthasar Gold","Balthasar Gold","Moot Green","Abaddon Black","Warplock Bronze","Cadian Fleshtone"),
+    "chaos-daemons":     F("Khorne Red","Abaddon Black","Balthasar Gold","Balthasar Gold","Averland Sunset","Abaddon Black","Warplock Bronze"),
+    "chaos-knights":     F("Abaddon Black","Khorne Red","Balthasar Gold","Balthasar Gold","Mephiston Red","Khorne Red","Leadbelcher","Cadian Fleshtone"),
+    // Ulthwé
+    "aeldari":           F("Abaddon Black","Wraithbone","Wraithbone","Mephiston Red","Moot Green","Wraithbone","Leadbelcher","Cadian Fleshtone"),
+    // Kabal of the Black Heart
+    "drukhari":          F("Incubi Darkness","Leadbelcher","Leadbelcher","Corax White","Moot Green","Naggaroth Night","Leadbelcher","Pallid Wych Flesh"),
+    // Cult of the Four-Armed Emperor: grey and purple
+    "genestealer-cults": F("Mechanicus Standard Grey","Xereus Purple","Balthasar Gold","Balthasar Gold","Averland Sunset","Zandri Dust","Leadbelcher","Slaanesh Grey"),
+    // Greater Thurian League: turquoise armour
+    "leagues-of-votann": F("Sons of Horus Green","Jokaero Orange","Retributor Armour","Corax White","Teclis Blue","Mournfang Brown","Warplock Bronze","Cadian Fleshtone"),
+    // Sautekh
+    "necrons":           F("Leadbelcher","Abaddon Black","Retributor Armour","Tesseract Glow","Tesseract Glow","Abaddon Black","Leadbelcher"),
+    "orks":              F("Leadbelcher","Mephiston Red","Averland Sunset","Abaddon Black","Mephiston Red","Mournfang Brown","Leadbelcher","Waaagh! Flesh"),
+    // T'au Sept
+    "tau-empire":        F("Tau Light Ochre","Corax White","Abaddon Black","Corax White","Moot Green","Mechanicus Standard Grey","Abaddon Black","Russ Grey"),
+    // Leviathan: Naggaroth Night carapace, bone-white flesh
+    "tyranids":          F("Naggaroth Night","Xereus Purple","Slaanesh Grey","Wraithbone","Averland Sunset","Mephiston Red","Wraithbone","Wraithbone")
+  };
+  // Rank colours: slot keys, or a paint name after @. Black Templars name their ranks by helmet colour.
+  const TIER_SRC = {
+    "black-templars": ["@Abaddon Black","@Corax White","@Mephiston Red","@Wraithbone"],
+    "necrons": ["armour","secondary","trim","@Auric Armour Gold"]
+  };
+  const DEFAULT_SRC = ["armour","secondary","@Mephiston Red","trim"];
+
+  // Rank colours (and their paints) from a set of army colours.
+  function tiersFor(factionId, c, paints){
+    const pr = profileFor(factionId), base = P[factionId] || {};
+    const src = TIER_SRC[factionId] || DEFAULT_SRC, names = base.tiers ? base.tiers.map(t => [t.name, t.note]) : pr.tiers;
+    return names.map(([name, note], i) => {
+      const s = src[i] || "armour";
+      if(s[0] === "@"){ const n = s.slice(1); return {...T(name, citHex(n) || c.armour, note), paint: citLabel(n)}; }
+      return {...T(name, c[s] || c.armour, note), paint: (paints || {})[s] || ""};
+    });
+  }
+  // Colours plus their paint labels from an F(...) set, over plain fallback colours.
+  function resolve(fp, fallback){
+    const colors = {...fallback}, slotPaints = {};
+    Object.entries(fp || {}).forEach(([k, n]) => { if(CIT[n]){ colors[k] = CIT[n][1]; slotPaints[k] = CIT[n][0]; } });
+    return {colors, slotPaints};
   }
 
   function presetFor(factionId){
     const base = P[factionId] || P["space-marines"];
-    const colors = {armour:base.armour, secondary:base.secondary, trim:base.trim, emblem:base.emblem, lens:base.lens, cloth:base.cloth, metal:base.metal, skin:base.skin || SKIN_OF[factionId] || SKIN};
-    return {
-      style: base.style,
-      colors,
-      shape: defaultIcon(factionId) || base.shape,
-      tiers: (base.tiers || tiersFor(factionId, colors)).map(t => ({...t}))
-    };
+    const plain = {armour:base.armour, secondary:base.secondary, trim:base.trim, emblem:base.emblem, lens:base.lens, cloth:base.cloth, metal:base.metal, skin:base.skin || SKIN_OF[factionId] || SKIN};
+    const {colors, slotPaints} = resolve(FP[factionId], plain);
+    return {style: base.style, colors, slotPaints, shape: defaultIcon(factionId) || base.shape, tiers: tiersFor(factionId, colors, slotPaints)};
   }
   const SKIN_OF = {"orks":"#4f7a2a", "tau-empire":"#6b7f93", "genestealer-cults":"#a58ab0", "drukhari":"#e6dccf", "death-guard":"#a9a57a", "tyranids":"#d8cba8", "necrons":"#a9adb3", "chaos-daemons":"#9e1b1b"};
 
-  /* Known schemes to start from (chapters have their own factions; these cover everyone else).
-     Colours are a starting point. The icon, when there is one, becomes the army emblem. */
-  const K = (name, icon, armour, secondary, trim, emblem, lens, cloth, metal, skin) => ({name, icon, colors: {armour, secondary, trim, emblem, lens, cloth, metal, ...(skin ? {skin} : {})}});
+  /* Known schemes to start from. The icon (an id, or an icons/ path ending) becomes the army emblem.
+     Every faction also gets its own starting paints as "Official colours", so an existing ledger can
+     switch to them in one click. */
+  const K = (name, icon, fp) => ({name, icon, fp});
+  const SM_CHAPTERS = [
+    K("Ultramarines", "astartes-legion/ultramarines.svg", FP["ultramarines"]),
+    K("Imperial Fists", "astartes-legion/imperial-fists.svg", FP["imperial-fists"]),
+    K("Iron Hands", "astartes-legion/iron-hands.svg", FP["iron-hands"]),
+    K("Raven Guard", "astartes-legion/raven-guard.svg", FP["raven-guard"]),
+    K("Salamanders", "astartes-legion/salamanders.svg", FP["salamanders"]),
+    K("White Scars", "astartes-legion/white-scars.svg", FP["white-scars"]),
+    K("Crimson Fists", "human-imperium-astartes-chapters-crimson-fists", F("Kantor Blue","Mephiston Red","Retributor Armour","Mephiston Red","Mephiston Red","Rakarth Flesh","Leadbelcher","Cadian Fleshtone")),
+    K("Blood Ravens", "human-imperium-astartes-chapters-blood-ravens", F("Khorne Red","Wraithbone","Retributor Armour","Wraithbone","Moot Green","Wraithbone","Leadbelcher","Cadian Fleshtone")),
+    K("Minotaurs", "", F("Balthasar Gold","Abaddon Black","Retributor Armour","Abaddon Black","Mephiston Red","Abaddon Black","Leadbelcher","Cadian Fleshtone")),
+    K("Howling Griffons", "", F("Mephiston Red","Averland Sunset","Retributor Armour","Abaddon Black","Moot Green","Rakarth Flesh","Leadbelcher","Cadian Fleshtone"))
+  ];
   const SCHEMES = {
+    "space-marines": SM_CHAPTERS,
+    "blood-angels": [
+      K("Flesh Tearers", "human-imperium-astartes-chapters-flesh-tearers", F("Khorne Red","Abaddon Black","Abaddon Black","Corax White","Moot Green","Abaddon Black","Leadbelcher","Cadian Fleshtone")),
+      K("Lamenters", "human-imperium-astartes-chapters-lamenters", F("Averland Sunset","Abaddon Black","Abaddon Black","Abaddon Black","Mephiston Red","Abaddon Black","Leadbelcher","Cadian Fleshtone")),
+      K("Death Company", "human-imperium-astartes-legion-blood-angels-blood-angels-death-company", F("Abaddon Black","Mephiston Red","Retributor Armour","Mephiston Red","Mephiston Red","Abaddon Black","Leadbelcher","Cadian Fleshtone"))
+    ],
+    "dark-angels": [
+      K("Deathwing", "human-imperium-astartes-legion-dark-angels-dark-angels-deathwing", F("Wraithbone","Mephiston Red","Wraithbone","Mephiston Red","Mephiston Red","Zandri Dust","Leadbelcher","Cadian Fleshtone")),
+      K("Ravenwing", "human-imperium-astartes-legion-dark-angels-dark-angels-ravenwing", F("Abaddon Black","Wraithbone","Leadbelcher","Corax White","Mephiston Red","Zandri Dust","Leadbelcher","Cadian Fleshtone"))
+    ],
+    "imperial-fists": [
+      K("Crimson Fists", "human-imperium-astartes-chapters-crimson-fists", F("Kantor Blue","Mephiston Red","Retributor Armour","Mephiston Red","Mephiston Red","Rakarth Flesh","Leadbelcher","Cadian Fleshtone"))
+    ],
     "necrons": [
-      K("Sautekh", "xenos-necrons-sautekh", "#a9adb3","#1f1f22","#c9a13b","#3fbf5a","#3fbf5a","#1f1f22","#a9adb3"),
-      K("Szarekhan", "xenos-necrons-szarekhan", "#c9ccd1","#3a3a3e","#a9adb3","#3b8fe0","#3b8fe0","#1f1f22","#a9adb3"),
-      K("Nihilakh", "xenos-necrons-nihilakh", "#c9a13b","#1f7a78","#c9a13b","#2fb3b0","#2fb3b0","#1f1f22","#a9adb3"),
-      K("Novokh", "xenos-necrons-novokh", "#a9adb3","#7a0d12","#b08d3c","#3fbf5a","#3fbf5a","#1f1f22","#a9adb3"),
-      K("Mephrit", "xenos-necrons-mephrit", "#9a9da2","#3a3a3e","#c9a13b","#d9702a","#d9702a","#1f1f22","#a9adb3"),
-      K("Nephrekh", "xenos-necrons-nephrekh", "#c9a13b","#1f1f22","#b08d3c","#e8c33a","#e8c33a","#1f1f22","#c9a13b")
+      K("Sautekh", "xenos-necrons-sautekh", FP["necrons"]),
+      K("Szarekhan", "xenos-necrons-szarekhan", F("Stormhost Silver","Eshin Grey","Leadbelcher","Teclis Blue","Teclis Blue","Abaddon Black","Leadbelcher")),
+      K("Nihilakh", "xenos-necrons-nihilakh", F("Retributor Armour","Sotek Green","Retributor Armour","Temple Guard Blue","Temple Guard Blue","Abaddon Black","Leadbelcher")),
+      K("Novokh", "xenos-necrons-novokh", F("Leadbelcher","Khorne Red","Balthasar Gold","Tesseract Glow","Tesseract Glow","Abaddon Black","Leadbelcher")),
+      K("Mephrit", "xenos-necrons-mephrit", F("Leadbelcher","Eshin Grey","Retributor Armour","Troll Slayer Orange","Troll Slayer Orange","Abaddon Black","Leadbelcher")),
+      K("Nephrekh", "xenos-necrons-nephrekh", F("Retributor Armour","Abaddon Black","Balthasar Gold","Averland Sunset","Averland Sunset","Abaddon Black","Retributor Armour"))
     ],
     "tyranids": [
-      K("Leviathan", "", "#5a2a6b","#7b5ab8","#a58ab0","#d8cba8","#e8c33a","#b3141c","#d8cba8","#d8cba8"),
-      K("Behemoth", "", "#1c2c55","#1f4aa8","#3b8fe0","#b3141c","#e8c33a","#b3141c","#d8cba8","#b3141c"),
-      K("Kraken", "", "#c24a1f","#7a0d12","#d9702a","#1f1f22","#e8c33a","#5a2a6b","#1f1f22","#d8cba8")
+      K("Leviathan", "", FP["tyranids"]),
+      K("Behemoth", "", F("Kantor Blue","Macragge Blue","Teclis Blue","Mephiston Red","Averland Sunset","Mephiston Red","Wraithbone","Mephiston Red")),
+      K("Kraken", "", F("Troll Slayer Orange","Khorne Red","Jokaero Orange","Abaddon Black","Averland Sunset","Naggaroth Night","Abaddon Black","Wraithbone"))
     ],
     "orks": [
-      K("Goffs", "xenos-orks-goffs-clan", "#1f1f22","#1f1f22","#efeee9","#b3141c","#b3141c","#1f1f22","#5d6166","#3f6b2a"),
-      K("Evil Sunz", "xenos-orks-evil-sunz-clan", "#b3141c","#b3141c","#e8c33a","#1f1f22","#b3141c","#6b4a2e","#5d6166","#4f7a2a"),
-      K("Bad Moons", "xenos-orks-bad-moons-clan", "#e8c33a","#1f1f22","#c9a13b","#1f1f22","#b3141c","#6b4a2e","#c9a13b","#4f7a2a"),
-      K("Blood Axes", "xenos-orks-blood-axes-clan", "#5a6b3a","#8f8a5a","#6b4a2e","#b3141c","#b3141c","#8f8a5a","#5d6166","#4f7a2a"),
-      K("Deathskulls", "xenos-orks-deathskulls-clan", "#1f4aa8","#efeee9","#d8cba8","#efeee9","#b3141c","#6b4a2e","#a9adb3","#4f7a2a"),
-      K("Snakebites", "xenos-orks-snakebites-clan", "#6b4a2e","#b3141c","#d8cba8","#1f1f22","#b3141c","#8a5a34","#9a6b3a","#5a6b3a")
+      K("Goffs", "xenos-orks-goffs-clan", F("Abaddon Black","Abaddon Black","Corax White","Mephiston Red","Mephiston Red","Abaddon Black","Leadbelcher","Warboss Green")),
+      K("Evil Sunz", "xenos-orks-evil-sunz-clan", F("Mephiston Red","Mephiston Red","Averland Sunset","Abaddon Black","Mephiston Red","Mournfang Brown","Leadbelcher","Waaagh! Flesh")),
+      K("Bad Moons", "xenos-orks-bad-moons-clan", F("Averland Sunset","Abaddon Black","Retributor Armour","Abaddon Black","Mephiston Red","Mournfang Brown","Retributor Armour","Waaagh! Flesh")),
+      K("Blood Axes", "xenos-orks-blood-axes-clan", F("Castellan Green","Steel Legion Drab","Rhinox Hide","Mephiston Red","Mephiston Red","Steel Legion Drab","Leadbelcher","Waaagh! Flesh")),
+      K("Deathskulls", "xenos-orks-deathskulls-clan", F("Macragge Blue","Corax White","Wraithbone","Corax White","Mephiston Red","Mournfang Brown","Leadbelcher","Waaagh! Flesh")),
+      K("Snakebites", "xenos-orks-snakebites-clan", F("Mournfang Brown","Mephiston Red","Wraithbone","Abaddon Black","Mephiston Red","Skrag Brown","Warplock Bronze","Castellan Green"))
     ],
     "tau-empire": [
-      K("T'au Sept", "xenos-tau-empire-tau-sept", "#c98a3b","#efeee9","#1f1f22","#efeee9","#3fbf5a","#3a3a3e","#3a3a3e"),
-      K("Vior'la Sept", "xenos-tau-empire-viorla-sept", "#efeee9","#b3141c","#1f1f22","#b3141c","#3fbf5a","#3a3a3e","#3a3a3e"),
-      K("Farsight Enclaves", "xenos-tau-empire-farsight-enclave", "#b3141c","#efeee9","#1f1f22","#efeee9","#3fbf5a","#3a3a3e","#3a3a3e")
+      K("T'au Sept", "xenos-tau-empire-tau-sept", FP["tau-empire"]),
+      K("Vior'la Sept", "xenos-tau-empire-viorla-sept", F("Corax White","Mephiston Red","Abaddon Black","Mephiston Red","Moot Green","Mechanicus Standard Grey","Abaddon Black","Russ Grey")),
+      K("Farsight Enclaves", "xenos-tau-empire-farsight-enclave", F("Mephiston Red","Corax White","Abaddon Black","Corax White","Moot Green","Mechanicus Standard Grey","Abaddon Black","Russ Grey"))
     ],
     "aeldari": [
-      K("Ulthwé", "xenos-eldar-craftworld-ulthwe", "#1f1f22","#d8cba8","#d8cba8","#d8cba8","#b3141c","#d8cba8","#a9adb3"),
-      K("Biel-Tan", "xenos-eldar-craftworld-biel-tan", "#1f6b3a","#efeee9","#efeee9","#efeee9","#b3141c","#efeee9","#a9adb3"),
-      K("Iyanden", "xenos-eldar-craftworld-iyanden", "#e8c33a","#1f4aa8","#1f4aa8","#1f4aa8","#b3141c","#1f4aa8","#a9adb3"),
-      K("Saim-Hann", "xenos-eldar-craftworld-saim-hann", "#b3141c","#efeee9","#1f1f22","#efeee9","#3fbf5a","#efeee9","#a9adb3"),
-      K("Alaitoc", "xenos-eldar-craftworld-alaitoc", "#1f4aa8","#e8c33a","#e8c33a","#e8c33a","#b3141c","#e8c33a","#a9adb3")
+      K("Ulthwé", "xenos-eldar-craftworld-ulthwe", FP["aeldari"]),
+      K("Biel-Tan", "xenos-eldar-craftworld-biel-tan", F("Warpstone Glow","Corax White","Corax White","Corax White","Mephiston Red","Corax White","Leadbelcher","Cadian Fleshtone")),
+      K("Iyanden", "xenos-eldar-craftworld-iyanden", F("Averland Sunset","Macragge Blue","Macragge Blue","Macragge Blue","Mephiston Red","Macragge Blue","Leadbelcher","Cadian Fleshtone")),
+      K("Saim-Hann", "xenos-eldar-craftworld-saim-hann", F("Mephiston Red","Corax White","Abaddon Black","Corax White","Moot Green","Corax White","Leadbelcher","Cadian Fleshtone")),
+      K("Alaitoc", "xenos-eldar-craftworld-alaitoc", F("Macragge Blue","Averland Sunset","Averland Sunset","Averland Sunset","Mephiston Red","Averland Sunset","Leadbelcher","Cadian Fleshtone"))
     ],
     "astra-militarum": [
-      K("Cadian", "human-imperium-astra-militarum-cadian-shock-troops-2", "#3f5a2e","#c9b27c","#6b4a2e","#efeee9","#1f1f22","#c9b27c","#5d6166"),
-      K("Catachan", "human-imperium-astra-militarum-catachan-jungle-fighters", "#4a5a32","#3f5a2e","#6b4a2e","#b3141c","#1f1f22","#b3141c","#5d6166","#b07a58"),
-      K("Mordian Iron Guard", "human-imperium-astra-militarum-mordian-iron-guard", "#1c2c55","#1c2c55","#c9a13b","#b3141c","#1f1f22","#b3141c","#a9adb3"),
-      K("Death Korps of Krieg", "human-imperium-astra-militarum-death-korps-of-krieg", "#5d6166","#5a5a48","#6b4a2e","#efeee9","#3fbf5a","#5a5a48","#5d6166"),
-      K("Tallarn", "human-imperium-astra-militarum-tallarn-desert-raiders", "#c9b27c","#d8cba8","#6b4a2e","#b3141c","#1f1f22","#d8cba8","#5d6166","#9a6b4a"),
-      K("Vostroyan", "human-imperium-astra-militarum-vostroyan-firstborn", "#7a0d12","#1f1f22","#c9a13b","#c9a13b","#1f1f22","#6b4a2e","#c9a13b")
+      K("Cadian", "human-imperium-astra-militarum-cadian-shock-troops-2", FP["astra-militarum"]),
+      K("Catachan", "human-imperium-astra-militarum-catachan-jungle-fighters", F("Castellan Green","Deathworld Forest","Rhinox Hide","Mephiston Red","Abaddon Black","Mephiston Red","Leadbelcher","Bugman Glow")),
+      K("Mordian Iron Guard", "human-imperium-astra-militarum-mordian-iron-guard", F("Kantor Blue","Kantor Blue","Retributor Armour","Mephiston Red","Abaddon Black","Mephiston Red","Leadbelcher","Cadian Fleshtone")),
+      K("Death Korps of Krieg", "human-imperium-astra-militarum-death-korps-of-krieg", F("Mechanicus Standard Grey","Eshin Grey","Rhinox Hide","Corax White","Moot Green","Eshin Grey","Leadbelcher","Cadian Fleshtone")),
+      K("Tallarn", "human-imperium-astra-militarum-tallarn-desert-raiders", F("Zandri Dust","Wraithbone","Rhinox Hide","Mephiston Red","Abaddon Black","Wraithbone","Leadbelcher","Bugman Glow")),
+      K("Vostroyan", "human-imperium-astra-militarum-vostroyan-firstborn", F("Khorne Red","Abaddon Black","Retributor Armour","Retributor Armour","Abaddon Black","Mournfang Brown","Retributor Armour","Cadian Fleshtone"))
     ],
     "adepta-sororitas": [
-      K("Our Martyred Lady", "human-imperium-battle-sisters-order-of-our-martyred-lady", "#1f1f22","#1f1f22","#a9adb3","#efeee9","#3fbf5a","#b3141c","#a9adb3"),
-      K("Bloody Rose", "human-imperium-battle-sisters-order-of-the-bloody-rose", "#9e1b1b","#9e1b1b","#a9adb3","#efeee9","#3fbf5a","#1f1f22","#a9adb3")
+      K("Our Martyred Lady", "human-imperium-battle-sisters-order-of-our-martyred-lady", FP["adepta-sororitas"]),
+      K("Bloody Rose", "human-imperium-battle-sisters-order-of-the-bloody-rose", F("Mephiston Red","Mephiston Red","Leadbelcher","Corax White","Moot Green","Abaddon Black","Leadbelcher","Cadian Fleshtone"))
     ],
     "chaos-space-marines": [
-      K("Black Legion", "chaos-legions-black-legion", "#1f1f22","#b08d3c","#b08d3c","#b3141c","#b3141c","#7a0d12","#5d6166"),
-      K("Night Lords", "chaos-legions-night-lords", "#1c2c55","#efeee9","#b08d3c","#efeee9","#b3141c","#1f1f22","#5d6166"),
-      K("Iron Warriors", "chaos-legions-iron-warriors", "#6f7378","#e8c33a","#b08d3c","#1f1f22","#b3141c","#3a3a3e","#5d6166"),
-      K("Word Bearers", "chaos-legions-word-bearers", "#7a0d12","#1f1f22","#c9a13b","#c9a13b","#3fbf5a","#1f1f22","#5d6166"),
-      K("Alpha Legion", "chaos-legions-alpha-legion-1", "#1f7a78","#a9adb3","#a9adb3","#a9adb3","#3fbf5a","#1f1f22","#5d6166")
+      K("Black Legion", "chaos-legions-black-legion", FP["chaos-space-marines"]),
+      K("Night Lords", "chaos-legions-night-lords", F("Kantor Blue","Corax White","Balthasar Gold","Corax White","Mephiston Red","Abaddon Black","Leadbelcher","Cadian Fleshtone")),
+      K("Iron Warriors", "chaos-legions-iron-warriors", F("Leadbelcher","Averland Sunset","Balthasar Gold","Abaddon Black","Mephiston Red","Eshin Grey","Leadbelcher","Cadian Fleshtone")),
+      K("Word Bearers", "chaos-legions-word-bearers", F("Khorne Red","Abaddon Black","Retributor Armour","Retributor Armour","Moot Green","Abaddon Black","Leadbelcher","Cadian Fleshtone")),
+      K("Alpha Legion", "chaos-legions-alpha-legion-1", F("Incubi Darkness","Leadbelcher","Leadbelcher","Leadbelcher","Moot Green","Abaddon Black","Leadbelcher","Cadian Fleshtone"))
     ],
     "chaos-daemons": [
-      K("Khorne", "chaos-gods-khorne", "#9e1b1b","#7a0d12","#1f1f22","#b08d3c","#e8c33a","#1f1f22","#b08d3c"),
-      K("Nurgle", "chaos-gods-nurgle", "#8a8f5a","#6b4a2e","#d8cba8","#1f1f22","#e8c33a","#d97aa6","#6b4a2e"),
-      K("Tzeentch", "chaos-gods-tzeentch", "#d97aa6","#1f4aa8","#e8c33a","#e8c33a","#efeee9","#1f4aa8","#c9a13b"),
-      K("Slaanesh", "chaos-gods-slaanesh", "#c8b8d8","#b8428e","#1f1f22","#b8428e","#efeee9","#b8428e","#c9a13b")
+      K("Khorne", "chaos-gods-khorne", F("Evil Sunz Scarlet","Khorne Red","Abaddon Black","Balthasar Gold","Averland Sunset","Abaddon Black","Balthasar Gold")),
+      K("Nurgle", "chaos-gods-nurgle", F("Death Guard Green","Rhinox Hide","Wraithbone","Abaddon Black","Averland Sunset","Pink Horror","Warplock Bronze")),
+      K("Tzeentch", "chaos-gods-tzeentch", F("Pink Horror","Macragge Blue","Averland Sunset","Averland Sunset","Corax White","Macragge Blue","Retributor Armour")),
+      K("Slaanesh", "chaos-gods-slaanesh", F("Slaanesh Grey","Emperor Children","Abaddon Black","Emperor Children","Corax White","Emperor Children","Retributor Armour"))
+    ],
+    "leagues-of-votann": [
+      K("Greater Thurian League", "", FP["leagues-of-votann"]),
+      K("Trans-Hyperian Alliance", "", F("Jokaero Orange","Abaddon Black","Retributor Armour","Corax White","Teclis Blue","Mournfang Brown","Warplock Bronze","Cadian Fleshtone"))
     ]
   };
-  const schemesFor = factionId => (SCHEMES[factionId] || []).map(s => ({...s, shape: s.icon && ICON_BY_ID[s.icon] ? "icon:" + s.icon : ""}));
+  const iconRef = ref => { if(!ref) return ""; const i = ICON_BY_ID[ref] || ICONS.find(x => x.f.endsWith("/" + ref)); return i ? "icon:" + i.id : ""; };
+  function schemesFor(factionId){
+    const own = FP[factionId];
+    const list = (SCHEMES[factionId] || []).slice();
+    if(own && !list.some(k => JSON.stringify(k.fp) === JSON.stringify(own))) list.unshift(K("Official colours", "", own));
+    const base = presetFor(factionId);
+    return list.map(k => { const r = resolve(k.fp, base.colors); return {name: k.name, shape: k.fp === own ? base.shape : iconRef(k.icon), colors: r.colors, paints: r.slotPaints}; });
+  }
 
   function colorName(hex){
     const h = String(hex||"").replace("#","");

@@ -282,7 +282,7 @@
           </div>
           ${known.length ? `<div class="panel">
             <h3>Start from a known scheme</h3>
-            <p class="hint">Sets every colour and the emblem to a well-known ${esc(f.name)} scheme. You can change anything afterwards.</p>
+            <p class="hint">Sets every colour to the Citadel paints for a well-known ${esc(f.name)} scheme, and the emblem to match. You can change anything afterwards.</p>
             <div class="schemes" id="s-schemes">${known.map((k, i) => `<button type="button" class="scheme" data-scheme="${i}">${ART.pauldron(k.colors.armour, k.colors.trim, k.colors.emblem, k.shape || draft.scheme.shape, 40)}<span>${esc(k.name)}</span></button>`).join("")}</div>
           </div>` : ""}
           <div class="panel">
@@ -442,7 +442,7 @@
       if(t.id === "s-emq"){ emq = t.value.trim(); emLimit = 90; renderIcons(); return; }
       if(t.dataset.tname != null){ sch.tiers[+t.dataset.tname].name = t.value; renderPreview(); }
       if(t.dataset.tnote != null){ sch.tiers[+t.dataset.tnote].note = t.value; renderPreview(); }
-      if(t.id === "s-reset" && t.checked){ const p = P.presetFor(f.id); Object.assign(sch, p, {slotPaints: {}}); renderTiers(); renderPreview(); t.checked = false; $("s-msg").textContent = ""; }
+      if(t.id === "s-reset" && t.checked){ const p = P.presetFor(f.id); Object.assign(sch, p); renderTiers(); renderPreview(); t.checked = false; $("s-msg").textContent = ""; }
     }
     let armed = false;
     async function onClick(e){
@@ -452,10 +452,10 @@
         // Keep rank names (they may have been edited) but recolour the standard ranks to match.
         const k = known[+t.dataset.scheme];
         sch.colors = {...sch.colors, ...k.colors};
-        Object.keys(k.colors).forEach(c => delete sch.slotPaints[c]);
+        Object.keys(k.colors).forEach(c => { if(k.paints[c]) sch.slotPaints[c] = k.paints[c]; else delete sch.slotPaints[c]; });
         if(k.shape) sch.shape = k.shape;
-        const std = P.tiersFor(f.id, sch.colors);
-        sch.tiers.forEach((tr, i) => { if(std[i]){ tr.color = std[i].color; tr.paint = ""; } });
+        const std = P.tiersFor(f.id, sch.colors, sch.slotPaints);
+        sch.tiers.forEach((tr, i) => { if(std[i]){ tr.color = std[i].color; tr.paint = std[i].paint || ""; } });
         renderTiers(); renderPreview();
         $("s-msg").classList.remove("err"); $("s-msg").textContent = `Using the ${k.name} scheme. Save to keep it.`;
         return;
