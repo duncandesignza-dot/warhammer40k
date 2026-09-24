@@ -49,6 +49,7 @@
   }
   // Colours for the badge's shoulder pad: the left pauldron's own when they're painted differently.
   const padColours = (o, split) => split && PROF.pauldrons ? {pauldron: o.lpauldron, ptrim: o.lpsecondary, pemblem: o.lpemblem} : {};
+  const STAR = on => `<svg width="18" height="18" viewBox="0 0 24 24" fill="${on ? "currentColor" : "none"}" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 16.8l-5.4 2.9 1.1-6.1-4.5-4.2 6.1-.8Z"/></svg>`;
   const QUICK = ["Black","White","Bone","Silver","Gunmetal","Gold","Brass","Red","Crimson","Blue","Navy","Green","Purple","Yellow"];
 
   const $ = id => document.getElementById(id);
@@ -156,9 +157,13 @@
     const email = u.email || "", meta = u.user_metadata || {};
     const name = String(meta.display_name || meta.name || email.split("@")[0] || "Painter").trim();
     const bits = name.split(/[\s._-]+/).filter(Boolean);
-    const initials = ((bits[0] || "?")[0] + (bits[1] ? bits[1][0] : (bits[0] || "").slice(1, 2))).toUpperCase();
-    return {name, email, initials, since: u.created_at || ""};
+    const initials = ((bits[0] || "?")[0] + (bits.length > 1 ? bits[bits.length - 1][0] : (bits[0] || "").slice(1, 2))).toUpperCase();
+    const avatar = /^https:\/\//.test(meta.avatar_url || "") ? meta.avatar_url : "";
+    return {name, email, initials, since: u.created_at || "", avatar, avatarPath: meta.avatar_path || "", custom: !!meta.display_name};
   }
+  // Profile picture if there is one, otherwise initials.
+  const avatarInner = a => a.avatar ? `<img src="${esc(a.avatar)}" alt="" decoding="async">` : esc(a.initials);
+  const avatarHtml = (a, cls) => `<span class="avatar${cls ? " " + cls : ""}${a.avatar ? " has-img" : ""}" aria-hidden="true">${avatarInner(a)}</span>`;
   const monthYear = d => { const t = new Date(d); return isNaN(t) ? "" : t.toLocaleDateString("en-GB", {month: "long", year: "numeric"}); };
   const CARET = `<svg class="caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>`;
   function setTop(){
@@ -169,13 +174,13 @@
       return;
     }
     nav.innerHTML = `<div class="acct">
-      <button type="button" class="acct-btn" id="b-acct" aria-haspopup="menu" aria-expanded="false" aria-controls="acct-menu" aria-label="Account menu for ${esc(a.name)}"><span class="avatar" aria-hidden="true">${esc(a.initials)}</span><span class="acct-name">${esc(a.name)}</span>${CARET}</button>
+      <button type="button" class="acct-btn" id="b-acct" aria-haspopup="menu" aria-expanded="false" aria-controls="acct-menu" aria-label="Account menu for ${esc(a.name)}">${avatarHtml(a)}<span class="acct-name">${esc(a.name)}</span>${CARET}</button>
       <div class="acct-menu" id="acct-menu" role="menu" hidden>
-        <div class="acct-head"><span class="avatar lg" aria-hidden="true">${esc(a.initials)}</span><span><strong>${esc(a.name)}</strong><small>${esc(a.email)}</small></span></div>
-        <a role="menuitem" href="#/">My profile and ledgers</a>
+        <div class="acct-head">${avatarHtml(a, "lg")}<span><strong>${esc(a.name)}</strong><small>${esc(a.email)}</small></span></div>
+        <a role="menuitem" href="#/profile">My profile and ledgers</a>
         <button type="button" role="menuitem" data-roster>Your roster</button>
         <button type="button" role="menuitem" disabled aria-disabled="true">Settings <span class="soon">Soon</span></button>
-        <a role="menuitem" href="#/welcome">About Livery Ledger</a>
+        <a role="menuitem" href="#/">Home</a>
         <hr>
         <button type="button" role="menuitem" data-logout>Log out</button>
       </div>
@@ -243,7 +248,7 @@
     }
     function focus(){ const f = [...form.querySelectorAll("input")].find(i => !i.closest("[hidden]") && !i.value) || [...form.querySelectorAll("input")].find(i => !i.closest("[hidden]")); if(f) f.focus(); }
     host.addEventListener("click", e => {
-      const m = e.target.closest("[data-mode]");
+      const m = e.target.closest("button[data-mode]");   // not the host, which carries data-mode too
       if(m){ set(m.dataset.mode); focus(); return; }
       const sh = e.target.closest(".pw-show");
       if(sh){
@@ -281,7 +286,7 @@
   function openAuth(mode, note){
     if(store.kind !== "supabase") return;
     const d = $("authdlg");
-    if(!dlgAuth) dlgAuth = authForm($("auth-host"), "in", {onDone: () => setTimeout(() => { if(d.open) d.close(); }, 700)});
+    if(!dlgAuth) dlgAuth = authForm($("auth-host"), "in", {onDone: () => { if(view.name === "landing") location.hash = "#/profile"; setTimeout(() => { if(d.open) d.close(); }, 700); }});
     dlgAuth.set(typeof mode === "string" ? mode : "in", note);
     if(!d.open) d.showModal();
     dlgAuth.focus();
@@ -332,13 +337,16 @@
       else if(parts[0] === "army" && parts[1] && parts[2] === "colours") await viewSetup({armyId: parts[1]});
       else if(parts[0] === "army" && parts[1] && parts[2] === "unit" && parts[3]) await viewLedger(parts[1], parts[3]);
       else if(parts[0] === "army" && parts[1]) await viewLedger(parts[1]);
-      else if(parts[0] === "welcome") await viewLanding();
-      // Signed out on the online version: the homepage. Signed in (or saving in this browser): your profile and ledgers.
-      else if(store.kind === "supabase" && !store.session) await viewLanding();
-      else await viewHome();
+      else if(parts[0] === "profile"){
+        // Your profile and ledgers; logged out, the homepage with the log in form open.
+        if(store.kind === "supabase" && !store.session){ await viewLanding(); setTimeout(() => openAuth("in", "Log in to see your profile and ledgers."), 0); }
+        else await viewHome();
+      }
+      // "#/" (and the old "#/welcome"): the homepage.
+      else await viewLanding();
     } catch(err){
       console.error(err);
-      app.innerHTML = `<div class="banner"><span class="dot warn"></span>Couldn't load this page: ${esc(errText(err))}</div><p><a class="btn" href="#/">Back to start</a></p>`;
+      app.innerHTML = `<div class="banner"><span class="dot warn"></span>Couldn't load this page: ${esc(errText(err))}</div><p><a class="btn" href="#/profile">Back to your ledgers</a></p>`;
     }
     window.scrollTo(0, 0);
   }
@@ -366,12 +374,25 @@
     const since = me ? monthYear(me.since) : "";
     app.innerHTML = `
       <section class="profile-head">
-        ${me ? `<span class="avatar xl" aria-hidden="true">${esc(me.initials)}</span>` : ""}
+        ${me ? `<div class="ph-avatar">
+          <button type="button" class="avatar xl avatar-btn${me.avatar ? " has-img" : ""}" id="b-avatar" aria-label="${me.avatar ? "Change or remove your profile picture" : "Add a profile picture"}" title="${me.avatar ? "Change your picture" : "Add a picture"}">${avatarInner(me)}</button>
+          <span class="avatar-cam" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z"/><circle cx="12" cy="13.5" r="3.5"/></svg></span>
+          <div class="more-menu av-menu" id="av-menu" hidden>
+            <button type="button" data-av="upload">Upload a new picture</button>
+            <button type="button" class="menu-danger" data-av="remove">Remove picture</button>
+          </div>
+          <input type="file" id="f-avatar" accept="image/*" hidden>
+        </div>` : ""}
         <div class="ph-text">
           <p class="eyebrow">${me ? "Your profile" : "Livery Ledger"}</p>
-          <h1>${me ? esc(me.name) : "Your ledgers"}</h1>
+          ${me ? `<div class="ph-name" id="ph-name"><h1 id="ph-h">${esc(me.name)}</h1><button type="button" class="icon-btn edit-name" id="b-name" aria-label="Change your display name" title="Change your display name"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16Z"/><path d="m13.5 6.5 4 4"/></svg></button></div>
+          <form class="name-edit" id="name-form" hidden>
+            <input id="name-in" maxlength="40" autocomplete="nickname" aria-label="Display name" placeholder="${esc(me.email.split("@")[0])}">
+            <button type="submit" class="primary btn-sm">Save</button>
+            <button type="button" class="btn-sm" id="name-cancel">Cancel</button>
+          </form>` : `<h1>Your ledgers</h1>`}
           ${me ? `<p class="sub">${esc(me.email)}${since ? ` · Painting with us since ${esc(since)}` : ""}</p>` : `<p class="sub">Plan how you'll paint your army. Pick your faction, choose your colours, then track every unit with photos, weapons and paint recipes.</p>`}
-          ${me ? "" : `<div class="ph-note">${noteHtml()}</div>`}
+          ${me ? `<p class="msg" id="ph-msg" role="status" aria-live="polite"></p>` : `<div class="ph-note">${noteHtml()}</div>`}
           ${armies.length ? `<div class="ph-actions"><button type="button" class="btn-sm" data-roster><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11"/><path d="M9 12h11"/><path d="M9 18h11"/><path d="M4 6h.01"/><path d="M4 12h.01"/><path d="M4 18h.01"/></svg>Your roster<span class="count">${num(tot.units)}</span></button></div>` : ""}
         </div>
         <div class="stats" aria-label="Your painting so far">
@@ -413,6 +434,7 @@
       app.querySelectorAll("[data-group]").forEach(g => g.hidden = !g.querySelector(".fcard:not([hidden])"));
     });
     app.querySelectorAll("[data-signin]").forEach(b => b.addEventListener("click", openAuth));
+    if(me && store.updateProfile) profileEdits();
     if(store.canWrite){
       $("b-import-army").addEventListener("click", () => $("f-import-army").click());
       $("f-import-army").addEventListener("change", async e => {
@@ -455,7 +477,7 @@
     };
     const icon = k => `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[k]}</svg>`;
     const tick = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg>';
-    const cta = me ? `<a class="btn primary lg" href="#/">Go to your ledgers</a>` : online ? `<button type="button" class="primary lg" data-cta="up">Create your free account</button>` : `<a class="btn primary lg" href="#/">Start a ledger</a>`;
+    const cta = me ? `<a class="btn primary lg" href="#/profile">Go to your ledgers</a>` : online ? `<button type="button" class="primary lg" data-cta="up">Create your free account</button>` : `<a class="btn primary lg" href="#/profile">Start a ledger</a>`;
 
     app.innerHTML = `
       <section class="lp-hero">
@@ -470,16 +492,16 @@
         </div>
         <div class="lp-side">
           ${me ? `<div class="panel lp-card lp-welcome">
-              <span class="avatar xl" aria-hidden="true">${esc(me.initials)}</span>
+              ${avatarHtml(me, "xl")}
               <h2>Welcome back, ${esc(me.name)}</h2>
               <p class="sub">Your ledgers are waiting.</p>
-              <a class="btn primary" href="#/">Go to your ledgers</a>
+              <a class="btn primary" href="#/profile">Go to your ledgers</a>
             </div>`
           : online ? `<div class="panel lp-card auth" id="lp-auth"></div>`
           : `<div class="panel lp-card lp-welcome">
               <h2>Start painting smarter</h2>
               <p class="sub">This copy saves everything in your browser, with no account needed.</p>
-              <a class="btn primary" href="#/">Open your ledgers</a>
+              <a class="btn primary" href="#/profile">Open your ledgers</a>
             </div>`}
         </div>
       </section>
@@ -598,13 +620,74 @@ Redemptor Dreadnought (210 points)</pre>
       img.addEventListener("error", () => img.remove());
     });
     let heroAuth = null;
-    if($("lp-auth")) heroAuth = authForm($("lp-auth"), "up", {onDone: () => { if(location.hash !== "#/") location.hash = "#/"; }});
+    if($("lp-auth")) heroAuth = authForm($("lp-auth"), "up", {onDone: () => { location.hash = "#/profile"; }});
     app.querySelectorAll("[data-cta]").forEach(btn => btn.addEventListener("click", () => {
       if(!heroAuth){ openAuth(btn.dataset.cta); return; }
       heroAuth.set(btn.dataset.cta);
       $("lp-auth").scrollIntoView({behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center"});
       setTimeout(() => heroAuth.focus(), 350);
     }));
+  }
+  /* Profile page: change your display name (pencil) and picture (click the circle). */
+  function profileEdits(){
+    const say = (t, bad) => { $("ph-msg").textContent = t || ""; $("ph-msg").classList.toggle("err", !!bad); };
+    const btn = $("b-avatar"), menu = $("av-menu"), file = $("f-avatar");
+    const menuOpen = on => { menu.hidden = !on; btn.setAttribute("aria-expanded", on); if(on) menu.querySelector("button").focus(); };
+    // Redraw the circle here and in the top bar after a change.
+    const paint = () => {
+      const a = acct();
+      btn.innerHTML = avatarInner(a); btn.classList.toggle("has-img", !!a.avatar);
+      btn.setAttribute("aria-label", a.avatar ? "Change or remove your profile picture" : "Add a profile picture");
+      setTop();
+    };
+    // Name
+    const editing = on => {
+      $("ph-name").hidden = on; $("name-form").hidden = !on;
+      if(on){ const a = acct(); $("name-in").value = a.custom ? a.name : ""; $("name-in").focus(); $("name-in").select(); say(""); }
+      else $("b-name").focus();
+    };
+    $("b-name").addEventListener("click", () => editing(true));
+    $("name-cancel").addEventListener("click", () => editing(false));
+    $("name-in").addEventListener("keydown", e => { if(e.key === "Escape"){ e.preventDefault(); editing(false); } });
+    $("name-form").addEventListener("submit", async e => {
+      e.preventDefault();
+      const v = $("name-in").value.replace(/\s+/g, " ").trim().slice(0, 40), btn = $("name-form").querySelector("[type=submit]");
+      btn.disabled = true; say("Saving…");
+      try {
+        await store.updateProfile({display_name: v || null});
+        $("ph-h").textContent = acct().name; paint(); editing(false);
+        say(v ? "Name saved." : "Name cleared. We'll use the start of your email.");
+      } catch(err){ say("Couldn't save your name: " + errText(err), true); }
+      finally { btn.disabled = false; }
+    });
+    // Picture
+    btn.addEventListener("click", e => { e.stopPropagation(); if(acct().avatar) menuOpen(menu.hidden); else file.click(); });
+    menu.addEventListener("click", async e => {
+      const o = e.target.closest("[data-av]"); if(!o) return;
+      menuOpen(false);
+      if(o.dataset.av === "upload"){ file.click(); return; }
+      const old = acct().avatarPath;
+      btn.classList.add("busy"); say("Removing your picture…");
+      try { await store.updateProfile({avatar_url: null, avatar_path: null}); store.removeAvatar(old); paint(); say("Picture removed."); }
+      catch(err){ say("Couldn't remove your picture: " + errText(err), true); }
+      finally { btn.classList.remove("busy"); }
+    });
+    file.addEventListener("change", async () => {
+      const f = file.files && file.files[0]; file.value = "";
+      if(!f) return;
+      const old = acct().avatarPath;
+      btn.classList.add("busy"); say("Uploading your picture…");
+      try {
+        const up = await store.uploadAvatar(f);
+        await store.updateProfile({avatar_url: up.url, avatar_path: up.path});
+        if(old && old !== up.path) store.removeAvatar(old);
+        paint(); say("Picture updated.");
+      } catch(err){ say("Couldn't update your picture: " + errText(err), true); }
+      finally { btn.classList.remove("busy"); }
+    });
+    const onDoc = e => { if(!menu.isConnected){ document.removeEventListener("click", onDoc); return; } if(!e.target.closest(".ph-avatar")) menuOpen(false); };
+    document.addEventListener("click", onDoc);
+    menu.addEventListener("keydown", e => { if(e.key === "Escape"){ menuOpen(false); btn.focus(); } });
   }
   function alertBanner(text){
     const b = document.createElement("div"); b.className = "banner"; b.innerHTML = `<span class="dot warn"></span>${esc(text)}`;
@@ -617,7 +700,7 @@ Redemptor Dreadnought (210 points)</pre>
   async function viewSetup({factionId, armyId}){
     view.name = "setup";
     let army = null;
-    if(armyId){ army = await store.getArmy(armyId); if(!army){ location.hash = "#/"; return; } factionId = army.faction; }
+    if(armyId){ army = await store.getArmy(armyId); if(!army){ location.hash = "#/profile"; return; } factionId = army.faction; }
     const f = FBY[factionId] || FBY["space-marines"];
     PROF = P.profileFor(f.id);
     const draft = army ? {name: army.name, scheme: JSON.parse(JSON.stringify(army.scheme))} : {name: "", scheme: P.presetFor(f.id)};
@@ -631,7 +714,7 @@ Redemptor Dreadnought (210 points)</pre>
     const locked = !store.canWrite;
 
     app.innerHTML = `
-      <div class="crumbs"><a href="#/">Livery Ledger</a> / ${editing ? `<a href="#/army/${esc(army.id)}">${esc(army.name)}</a> / Colours` : esc(f.name)}</div>
+      <div class="crumbs"><a href="#/profile">My ledgers</a> / ${editing ? `<a href="#/army/${esc(army.id)}">${esc(army.name)}</a> / Colours` : esc(f.name)}</div>
       <div class="hero">
         <div><h1>${editing ? "Your colours" : esc(f.name)}</h1>
         <p class="sub">${editing ? "Change your army's colours. Units that use the scheme colours update to match." : "Name your army and choose its colours. These become the starting colours for every unit you add."}</p></div>
@@ -695,7 +778,7 @@ Redemptor Dreadnought (210 points)</pre>
           <div class="panel">
             <div class="row-actions">
               <button type="button" class="primary" id="s-save" ${locked ? "disabled" : ""}>${editing ? "Save colours" : "Create ledger"}</button>
-              <a class="btn" href="${editing ? "#/army/" + esc(army.id) : "#/"}">Cancel</a>
+              <a class="btn" href="${editing ? "#/army/" + esc(army.id) : "#/profile"}">Cancel</a>
               ${editing ? `<button type="button" class="danger" id="s-del" style="margin-left:auto">Delete ledger</button>` : ""}
             </div>
             ${!editing ? `<label style="margin-top:12px;flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="s-reset" style="width:auto"> Reset to ${esc(f.name)} starting colours</label>` : ""}
@@ -853,7 +936,7 @@ Redemptor Dreadnought (210 points)</pre>
       if(t.id === "s-del"){
         if(!armed){ armed = true; t.classList.add("armed"); t.textContent = "Click again to delete ledger and all its units"; return; }
         t.disabled = true;
-        try { await store.removeArmy(army); setupDirty = false; location.hash = "#/"; }
+        try { await store.removeArmy(army); setupDirty = false; location.hash = "#/profile"; }
         catch(err){ $("s-msg").textContent = "Couldn't delete: " + errText(err); t.disabled = false; }
       }
     }
@@ -866,7 +949,7 @@ Redemptor Dreadnought (210 points)</pre>
     view.name = "ledger";
     let army = await store.getArmy(armyId);
     if(!army){
-      app.innerHTML = `<div class="banner"><span class="dot warn"></span>${store.kind === "supabase" && !store.session ? "Sign in to open this ledger." : "This ledger doesn't exist any more."}</div><p class="row-actions"><a class="btn" href="#/">Back to start</a>${store.kind === "supabase" && !store.session ? `<button type="button" class="primary" data-signin>Sign in</button>` : ""}</p>`;
+      app.innerHTML = `<div class="banner"><span class="dot warn"></span>${store.kind === "supabase" && !store.session ? "Sign in to open this ledger." : "This ledger doesn't exist any more."}</div><p class="row-actions"><a class="btn" href="#/profile">Back to your ledgers</a>${store.kind === "supabase" && !store.session ? `<button type="button" class="primary" data-signin>Sign in</button>` : ""}</p>`;
       app.querySelectorAll("[data-signin]").forEach(b => b.addEventListener("click", openAuth));
       return;
     }
@@ -917,7 +1000,7 @@ Redemptor Dreadnought (210 points)</pre>
     try { prefs = {...prefs, ...JSON.parse(localStorage.getItem(PREF_KEY) || "{}")}; } catch(e){}
 
     app.innerHTML = `
-      <div class="crumbs"><a href="#/">Livery Ledger</a> / ${esc(f.name)}</div>
+      <div class="crumbs"><a href="#/profile">My ledgers</a> / ${esc(f.name)}</div>
       <header class="top">
         <div>
           <h1>${esc(army.name)}</h1>
@@ -971,6 +1054,7 @@ Redemptor Dreadnought (210 points)</pre>
                 <button type="button" data-f="todo" aria-pressed="false">To paint</button>
                 <button type="button" data-f="progress" aria-pressed="false">In progress</button>
                 <button type="button" data-f="done" aria-pressed="false">Painted</button>
+                <button type="button" data-f="fav" aria-pressed="false" aria-label="Starred">${STAR(true).replace('width="18" height="18"', 'width="14" height="14"')}<span class="lbl-long">Starred</span></button>
               </div>
             </div>
           </div>
@@ -1387,6 +1471,7 @@ Redemptor Dreadnought (210 points)</pre>
         if(filter === "done" && u.status !== "done") return false;
         if(filter === "progress" && !(u.status === "progress" || u.status === "primed" || u.status === "built")) return false;
         if(filter === "todo" && u.status === "done") return false;
+        if(filter === "fav" && !u.fav) return false;
         if(q && ![u.name, u.datasheet, u.role, u.melee, u.ranged, u.notes, (scheme.tiers[u.tier] || {}).name].join(" ").toLowerCase().includes(q)) return false;
         return true;
       }).sort(SORTS[prefs.sort] || SORTS.rank);
@@ -1415,6 +1500,22 @@ Redemptor Dreadnought (210 points)</pre>
     };
     // Paint name for a colour area if one was picked, otherwise the colour's name.
     const nameOf = (u, k) => (u.slotPaints || {})[k] ? PU.shortName(u.slotPaints[k]) : cname(u[k]);
+    // Star toggle for your own units; on a shared ledger a starred unit just shows the star.
+    const starBtn = (u, big) => canWrite
+      ? `<button type="button" class="star${u.fav ? " on" : ""}${big ? " big" : ""}" data-star="${esc(u.id)}" aria-pressed="${!!u.fav}" aria-label="${u.fav ? "Unstar" : "Star"} ${esc(u.name)}" title="${u.fav ? "Starred. Click to unstar" : "Star this unit"}">${STAR(u.fav)}</button>`
+      : u.fav ? `<span class="star on${big ? " big" : ""}" title="Starred">${STAR(true)}</span>` : "";
+    async function toggleStar(id){
+      const u = units.find(x => x.id === id); if(!u || busy || !canWrite) return;
+      busy = true;
+      try {
+        const row = await store.saveUnit(army.id, {...u, fav: !u.fav}, u.id, null, false, u);
+        units = units.map(x => x.id === row.id ? row : x);
+        render();
+        if($("detail").open && $("detail").dataset.unit === row.id) openDetail(row.id);
+        toast(row.fav ? `Starred ${row.name}` : `Unstarred ${row.name}`);
+      } catch(err){ msg("Couldn't update: " + errText(err), true); }
+      finally { busy = false; }
+    }
     function cardHtml(u){
       u = withColours(u);
       const img = safeImg(u.image), tier = scheme.tiers[u.tier] || {};
@@ -1423,7 +1524,7 @@ Redemptor Dreadnought (210 points)</pre>
       return `<div class="card${u.id === selId ? " sel" : ""}" tabindex="0" role="button" data-id="${esc(u.id)}" aria-label="View ${esc(u.name)}">
         ${img ? `<div class="photo"><img src="${esc(img)}" alt="" loading="lazy" decoding="async"></div>` : ""}
         <div class="body">
-          <div class="card-top">${unitBadge(u, scheme, 60)}<div><h3>${esc(u.name)}</h3><div class="type">${esc([u.datasheet && u.datasheet !== u.name ? u.datasheet : "", u.role].filter(Boolean).join(" · ") || "Unit")}</div></div>${u.points ? `<span class="pts">${fmt(u.points)}<small>pts</small></span>` : ""}</div>
+          <div class="card-top">${unitBadge(u, scheme, 60)}<div><h3>${esc(u.name)}</h3><div class="type">${esc([u.datasheet && u.datasheet !== u.name ? u.datasheet : "", u.role].filter(Boolean).join(" · ") || "Unit")}</div></div>${u.points ? `<span class="pts">${fmt(u.points)}<small>pts</small></span>` : ""}${starBtn(u)}</div>
           <dl>
             <dt>Rank</dt><dd>${esc(tier.name || "—")}</dd>
             ${u.head === "none" ? "" : `<dt>${u.head === "bare" ? "Face" : esc(LB.helmet)}</dt><dd>${u.head === "bare" ? chip(u.skin) + "Bare head" : chip(u.helmet) + esc(nameOf(u, "helmet"))}${u.hdetail ? ", " + esc(u.hdetail) : ""}</dd>`}
@@ -1445,7 +1546,7 @@ Redemptor Dreadnought (210 points)</pre>
       // Units saved before points existed pick up their datasheet cost (kept when the unit is next saved).
       units.forEach(u => { if(!u.points && u.datasheet){ const p = ptsFor(sheetFor(u.datasheet), u.count); if(p) u.points = p; } });
       const list = visible(), c = $("cards");
-      if(!list.length){ c.innerHTML = `<div class="empty">${units.length ? "No units match." : canWrite ? "No units yet. Pick a datasheet in the form, or import your army list." : "No units in this ledger yet."}</div>`; }
+      if(!list.length){ c.innerHTML = `<div class="empty">${units.length ? (filter === "fav" && !query ? "No starred units yet. Tap the star on a unit to keep it here." : "No units match.") : canWrite ? "No units yet. Pick a datasheet in the form, or import your army list." : "No units in this ledger yet."}</div>`; }
       else {
         // Each group sizes to its cards, so small groups sit side by side instead of one card per row.
         const groups = groupsOf(list), grouped = !!groups[0][0];
@@ -1479,6 +1580,7 @@ Redemptor Dreadnought (210 points)</pre>
     function openDetail(id){
       const found = units.find(x => x.id === id); if(!found) return;
       const u = withColours(found);
+      $("detail").dataset.unit = id;
       const img = safeImg(u.image), tier = scheme.tiers[u.tier] || {};
       const col = hex => ART.hexOk(hex) ? chip(hex) + esc(cname(hex)) : "";
       // Colour area: the paint (with Owned / To buy) or the plain colour.
@@ -1496,7 +1598,7 @@ Redemptor Dreadnought (210 points)</pre>
         <div class="info">
           <div><h2 id="dt-name">${esc(u.name)}</h2>
             <div class="meta">${esc(u.datasheet || "Unit")}${u.role ? " · " + esc(u.role) : ""} · ${plural(u.count, "model")}${u.points ? " · " + fmt(u.points) + " pts" : ""}</div></div>
-          <div class="row">${img ? unitBadge(u, scheme, 64) : ""}<span class="pill s-${esc(u.status)}">${esc(u.status === "done" ? "Painted" : stageLabel(u))}</span></div>
+          <div class="row">${img ? unitBadge(u, scheme, 64) : ""}<span class="row-end">${starBtn(u, true)}<span class="pill s-${esc(u.status)}">${esc(u.status === "done" ? "Painted" : stageLabel(u))}</span></span></div>
           ${box("painting", "Painting", `<div class="stage-list">${STAGES.map(([k, l]) => `<span class="${(u.stages || []).includes(k) ? "on" : ""}">${l}</span>`).join("")}</div>
             <p class="prose" style="margin-top:10px">${u.painted} of ${plural(u.count, "model")} painted</p>`)}
           ${recipesOf(u).map(r => box("recipes", `Recipe · ${esc(r.name)}${r.area ? " · " + esc(r.area) : ""}`, stepsHtml(r), false)).join("")}
@@ -1612,6 +1714,7 @@ Redemptor Dreadnought (210 points)</pre>
       if(!u.datasheet && !u.name){ msg("Choose a datasheet or give the unit a name.", true); $("f-sheet").focus(); return false; }
       if(!u.name) u.name = u.datasheet;
       const cur = currentUnit();
+      u.fav = !!(cur && cur.fav);
       busy = true; const b = $("b-save"), label = b.textContent; b.disabled = true; b.textContent = "Saving…";
       try {
         const row = await store.saveUnit(army.id, u, cur ? cur.id : null, pendingPhoto, removePhoto, cur);
@@ -1648,6 +1751,8 @@ Redemptor Dreadnought (210 points)</pre>
     $("cards").addEventListener("click", e => {
       const st = e.target.closest("[data-step]");
       if(st){ e.stopPropagation(); stepUnit(st.dataset.step); return; }
+      const sr = e.target.closest("[data-star]");
+      if(sr){ e.stopPropagation(); toggleStar(sr.dataset.star); return; }
       const c = e.target.closest(".card"); if(c) openDetail(c.dataset.id);
     });
     $("cards").addEventListener("keydown", e => { if((e.key === "Enter" || e.key === " ") && e.target.classList.contains("card")){ e.preventDefault(); openDetail(e.target.dataset.id); } });
@@ -1685,6 +1790,8 @@ Redemptor Dreadnought (210 points)</pre>
 
     async function onDetailClick(e){
       const ed = e.target.closest("[data-edit]"), dup = e.target.closest("[data-dup]"), del = e.target.closest("[data-del]");
+      const sr = e.target.closest("[data-star]");
+      if(sr){ toggleStar(sr.dataset.star); return; }
       if(del){
         const u = units.find(x => x.id === del.dataset.del); if(!u || busy) return;
         if(!del.classList.contains("armed")){ del.classList.add("armed"); del.textContent = "Click again to delete"; return; }
@@ -1982,7 +2089,7 @@ Redemptor Dreadnought (210 points)</pre>
         const b = $("dl-go"); b.disabled = true; b.textContent = "Deleting…";
         try {
           await store.removeArmy(army);
-          setDirty(false); view.guard = null; dd.close(); location.hash = "#/";
+          setDirty(false); view.guard = null; dd.close(); location.hash = "#/profile";
         } catch(err){
           $("dl-msg").textContent = "Couldn't delete: " + errText(err); $("dl-msg").classList.add("err");
           b.disabled = false; b.textContent = "Delete ledger";
@@ -2337,6 +2444,7 @@ Redemptor Dreadnought (210 points)</pre>
       if(rosterFilter === "done" && u.status !== "done") return false;
       if(rosterFilter === "progress" && !["progress", "primed", "built"].includes(u.status)) return false;
       if(rosterFilter === "todo" && u.status === "done") return false;
+      if(rosterFilter === "fav" && !u.fav) return false;
       const a = byId[u.armyId], f = FBY[a.faction];
       return !q || [u.name, u.datasheet, u.role, u.melee, u.ranged, u.notes, a.name, f && f.name].join(" ").toLowerCase().includes(q);
     });
@@ -2357,7 +2465,7 @@ Redemptor Dreadnought (210 points)</pre>
       const sub = [u.datasheet && u.datasheet !== u.name ? u.datasheet : "", by === "role" ? "" : u.role, by === "army" ? "" : a.name].filter(Boolean).join(" · ");
       return `<a class="ro-row" href="#/army/${esc(a.id)}/unit/${esc(u.id)}">
         <span class="ro-badge">${unitBadge(u, a.scheme, 44)}</span>
-        <span class="ro-name"><strong>${esc(u.name || u.datasheet || "Unit")}</strong><small>${esc(sub || "Unit")}</small></span>
+        <span class="ro-name"><strong>${u.fav ? `<span class="star on" title="Starred">${STAR(true)}</span>` : ""}${esc(u.name || u.datasheet || "Unit")}</strong><small>${esc(sub || "Unit")}</small></span>
         <span class="ro-prog"><span class="ro-bar"><i style="width:${pct}%"></i></span><small>${dn}/${c} painted</small></span>
         <span class="ro-pts">${u.points ? num(u.points) + " pts" : "—"}</span>
         <span class="ro-st st-${esc(st)}">${esc(STATUS[st] || st)}</span>

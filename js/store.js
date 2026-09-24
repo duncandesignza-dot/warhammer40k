@@ -62,6 +62,8 @@
     o.splitPauldrons = r.splitPauldrons === true || r.splitPauldrons === "true";
     // null = not set on this unit yet, so it shows the army's extra areas.
     o.xareas = r.xareas && typeof r.xareas === "object" ? cleanXareas(r.xareas) : null;
+    // Starred: shown with a star and kept together by the "Starred" filter.
+    o.fav = r.fav === true || r.fav === "true";
     if(!o.name) o.name = o.datasheet || "Unnamed unit";
     return o;
   }
@@ -102,19 +104,23 @@
   }
 
   /* ---------- images ---------- */
-  async function resizeImage(file, max, quality){
+  // square: crop the middle of the photo to a square first (profile pictures).
+  async function resizeImage(file, max, quality, square){
     if(!/^image\//.test(file.type)) throw Object.assign(new Error("That file isn't an image."), {code:"type"});
     let src;
     try { src = await createImageBitmap(file); }
     catch(e){
       src = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(Object.assign(new Error("That photo couldn't be read. Try a JPG or PNG."), {code:"type"})); i.src = URL.createObjectURL(file); });
     }
-    const k = Math.min(1, max / Math.max(src.width, src.height));
+    const side = Math.min(src.width, src.height);
+    const sw = square ? side : src.width, sh = square ? side : src.height;
+    const sx = square ? (src.width - side) / 2 : 0, sy = square ? (src.height - side) / 2 : 0;
+    const k = Math.min(1, max / Math.max(sw, sh));
     const c = document.createElement("canvas");
-    c.width = Math.round(src.width * k); c.height = Math.round(src.height * k);
+    c.width = Math.round(sw * k); c.height = Math.round(sh * k);
     const g = c.getContext("2d");
     g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height);
-    g.drawImage(src, 0, 0, c.width, c.height);
+    g.drawImage(src, sx, sy, sw, sh, 0, 0, c.width, c.height);
     return await new Promise((res, rej) => c.toBlob(b => b ? res(b) : rej(new Error("Couldn't process that photo.")), "image/jpeg", quality));
   }
   const blobToDataURL = b => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(b); });
@@ -322,6 +328,14 @@
       async signOut(){ await sb.auth.signOut(); },
       // Emails a link back to this page; opening it signs the person in and fires PASSWORD_RECOVERY.
       async resetPassword(email){ const {error} = await sb.auth.resetPasswordForEmail(email, {redirectTo: location.href.split("#")[0]}); if(error) throw error; },
+      // Display name and profile picture live on the account (user metadata), so they follow you to any device.
+      async updateProfile(data){ const {data: d, error} = await sb.auth.updateUser({data}); if(error) throw error; if(d && d.user && session) session = {...session, user: d.user}; return d && d.user; },
+      async uploadAvatar(file){
+        need();
+        const path = await upload("profile", await resizeImage(file, 360, .88, true));
+        return {path, url: pub(path)};
+      },
+      removeAvatar(path){ if(path && session && path.startsWith(session.user.id + "/profile/")) sb.storage.from(B).remove([path]).catch(() => {}); },
       async updatePassword(pass){ const {data, error} = await sb.auth.updateUser({password: pass}); if(error) throw error; if(data && data.user && session) session = {...session, user: data.user}; }
     };
   }
