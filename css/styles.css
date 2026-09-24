@@ -452,7 +452,10 @@ dialog.paintdlg[open]{display:flex}
 .lib-steps i{font-style:normal;color:var(--faint)}
 .recipe header small{color:var(--muted);font-size:.76rem;font-family:var(--mono)}
 .steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;counter-reset:st}
-.steps li{display:grid;grid-template-columns:18px 104px minmax(0,1fr) auto;gap:8px;align-items:center;font-size:.86rem}
+.steps li{display:grid;grid-template-columns:18px minmax(0,1fr) auto;gap:10px;align-items:center;font-size:.86rem}
+.st-x{display:flex;flex-direction:column;gap:2px;min-width:0}
+.st-p small,.pmeta{font-family:var(--mono);font-size:.62rem;color:var(--muted);font-weight:400}
+.st-p small{display:block}
 .st-t{font-family:var(--mono);font-size:.66rem;text-transform:uppercase;letter-spacing:.06em;color:var(--faint)}
 .st-p{overflow-wrap:anywhere}
 .own{font-family:var(--mono);font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:2px 7px;border-radius:99px;white-space:nowrap}
@@ -500,8 +503,7 @@ ul.buy li:first-child{border-top:0}
   .r-grid{grid-template-columns:1fr}
   .r-steps li{grid-template-columns:24px minmax(0,1fr) auto;grid-template-areas:"n t b" "n p p"}
   .r-steps li .r-num{grid-area:n}.r-steps li select{grid-area:t}.r-steps li .pwrap-host{grid-area:p}.r-steps li .r-btns{grid-area:b}
-  .steps li{grid-template-columns:18px 84px minmax(0,1fr)}
-  .steps li .own{grid-column:3}
+  .steps li{grid-template-columns:18px minmax(0,1fr) auto}
 }
 
 /* ---------- background artwork (subtle, behind the glow and grid) ---------- */
@@ -592,3 +594,36 @@ div.hd-when{display:contents}
 .cpop-custom{position:relative;overflow:hidden;cursor:pointer;flex-direction:row;color:var(--ink)}
 .cpop-custom .cp-sw{width:16px;height:16px}
 .cpop-custom input[type=color]{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;padding:0;border:0}
+
+/* ---------- Polish pass 2 ---------- */
+/* Grouped units: each group is as wide as its cards, so small groups share a row. */
+.cards.grouped{display:flex;flex-wrap:wrap;gap:24px 16px;align-items:flex-start}
+.grp{flex:var(--n) 1 calc(var(--n) * 284px - 14px);min-width:min(100%,270px);max-width:100%}
+.grp .group-h{margin:0 2px 12px;flex-direction:column;align-items:flex-start;gap:3px}
+.grp-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:14px}
+/* "More" menu for backups */
+.more{position:relative}
+.more-menu{position:absolute;right:0;top:calc(100% + 6px);z-index:40;min-width:190px;padding:6px;display:flex;flex-direction:column;gap:2px;background:rgba(13,17,20,.97);border:1px solid var(--line-strong);border-radius:var(--r);box-shadow:0 20px 50px -10px rgba(0,0,0,.8);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+.more-menu button{justify-content:flex-start;background:transparent;border:0;font-weight:500;font-size:.85rem;padding:9px 10px;border-radius:9px}
+.more-menu button:hover{background:var(--brand-soft)}
+/* Paints already used in a ledger, offered on an empty My paints tab */
+.used-here{margin-top:22px;padding-top:16px;border-top:1px solid var(--line)}
+.used-here .hint{margin-bottom:12px}
+/* Rank strip on phones: fade the edge while there's more to scroll to */
+.key.more-right{-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 56px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 56px),transparent)}
+.lbl-short{display:none}
+@media (max-width:760px){
+  .more>button{width:100%}
+  .more-menu{left:0;right:auto}
+  .ed-body .preview{flex-direction:row;text-align:left;padding:12px 14px;gap:14px}
+  #pv-svg svg{height:72px;width:auto}
+}
+@media (max-width:520px){
+  .lbl-long{display:none}
+  .lbl-short{display:inline}
+  .ed-bar-actions{flex-wrap:nowrap}
+  .ed-bar-actions>*{padding-left:8px;padding-right:8px;font-size:.86rem}
+  .ed-bar-actions .primary{min-width:0}
+  #b-save-new{flex-basis:0;order:0}
+  .more-menu{left:auto;right:0}
+}
