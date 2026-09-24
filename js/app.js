@@ -3258,6 +3258,8 @@ Redemptor Dreadnought (210 points)</pre>
   /* ============================================================
      Dialogs, auth, start
      ============================================================ */
+  // Dialogs that scroll inside (editor, paints) must never scroll as a whole; if a browser does it anyway, put it back.
+  document.addEventListener("scroll", e => { const d = e.target; if(d && d.tagName === "DIALOG" && (d.scrollTop || d.scrollLeft)){ d.scrollTop = 0; d.scrollLeft = 0; } }, true);
   document.querySelectorAll("dialog").forEach(d => d.addEventListener("click", e => {
     if(e.target.closest("[data-close]") || e.target === d) d.close();
   }));

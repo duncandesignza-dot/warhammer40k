@@ -1173,3 +1173,9 @@ body.no-points .card-top .pts,body.no-points .stat-pts,body.no-points .ro-pts,bo
 .follow.on{color:var(--brand)}
 .vo-social{display:inline-flex;gap:8px;margin-left:auto;flex-wrap:wrap}
 .sh-sort select{width:auto}
+
+/* Hidden checkboxes and radios stay inside their label, so focusing one never scrolls a dialog out of place */
+.stage,.switch,.headseg label{position:relative}
+.stage input,.switch input,.headseg input{top:0;left:0}
+/* Full-height dialogs only scroll their inner content */
+dialog.editdlg,dialog.paintdlg{overflow:clip}
