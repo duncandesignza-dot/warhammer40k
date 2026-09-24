@@ -443,6 +443,13 @@ dialog.paintdlg[open]{display:flex}
 .recipe{border:1px solid var(--line);border-radius:var(--r);background:var(--surface-2);padding:14px 16px;display:flex;flex-direction:column;gap:10px}
 .recipe header{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
 .recipe h3{margin:0;font-size:1rem;font-weight:700}
+.lib{margin-top:22px;padding-top:16px;border-top:1px solid var(--line)}
+.lib .hint{margin-bottom:12px}
+.lib-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.lib-head .em-h{margin:0}
+.lib-steps{margin:0;display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;font-size:.8rem;color:var(--muted);line-height:1.4}
+.lib-steps span{display:inline-flex;align-items:center;gap:5px}
+.lib-steps i{font-style:normal;color:var(--faint)}
 .recipe header small{color:var(--muted);font-size:.76rem;font-family:var(--mono)}
 .steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;counter-reset:st}
 .steps li{display:grid;grid-template-columns:18px 104px minmax(0,1fr) auto;gap:8px;align-items:center;font-size:.86rem}

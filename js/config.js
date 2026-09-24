@@ -7,5 +7,6 @@ window.LEDGER_CONFIG = {
   SUPABASE_ANON_KEY: "sb_publishable_DY94OLtaVXIyJaslxvsQvA_6pxh6RW0",
   ARMIES_TABLE: "armies",
   UNITS_TABLE: "units",
-  BUCKET: "unit-images"
+  BUCKET: "unit-images",
+  RECIPES_TABLE: "recipes"
 };

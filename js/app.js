@@ -1364,11 +1364,66 @@
       return `<ol class="steps">${r.steps.map(st => `<li>${PU.swatch(st.p)}<span class="st-t">${esc(st.t || "Step")}</span><span class="st-p">${esc(st.p || "—")}</span>${canWrite && st.p ? (isOwned(st.p) ? `<span class="own ok">Owned</span>` : `<span class="own no">To buy</span>`) : ""}</li>`).join("")}</ol>${r.notes ? `<p class="prose r-notes">${esc(r.notes)}</p>` : ""}`;
     }
     function renderRecipePicks(checked){
-      const box = $("f-recipes"), list = scheme.recipes || [];
+      const box = $("f-recipes"), list = scheme.recipes || [], inLib = libLive().length;
       const on = new Set(checked || [...box.querySelectorAll("input:checked")].map(i => i.value));
       box.innerHTML = list.length ? list.map(r => `<label class="stage"><input type="checkbox" value="${esc(r.id)}" ${on.has(r.id) ? "checked" : ""}><span>${esc(r.name)}${r.area ? `<small>${esc(r.area)}</small>` : ""}</span></label>`).join("")
-        : `<p class="hint-sm">No recipes yet. Write one once, then tick it on every unit that uses it.</p>`;
-      $("f-manage-recipes").textContent = list.length ? "Manage recipes" : "Create a recipe";
+        : `<p class="hint-sm">${inLib ? `No recipes in this ledger yet. You have ${plural(inLib, "recipe")} in your library.` : "No recipes yet. Write one once, then tick it on every unit that uses it."}</p>`;
+      $("f-manage-recipes").textContent = list.length ? "Manage recipes" : inLib ? "Add from your library" : "Create a recipe";
+    }
+
+    /* Recipe library: every recipe you save is also kept on your account (or in this browser), so
+       any of your ledgers can use it. Each ledger keeps its own copy too, which is what people see
+       on a shared ledger. The newest copy of a recipe wins, so an edit in one ledger reaches the
+       others the next time they're opened. */
+    let library = null, libState = "";   // libState: "", "loading", "setup" (no recipes table) or "error"
+    const libLive = () => (library || []).filter(r => !r.deleted);
+    const recipeOnly = r => ({id: r.id, name: r.name, area: r.area, notes: r.notes, steps: r.steps, at: r.at || ""});
+    const sameRecipe = (a, b) => JSON.stringify([a.name, a.area, a.notes, a.steps]) === JSON.stringify([b.name, b.area, b.notes, b.steps]);
+    const refreshRecipes = () => { renderRecipePicks(); if($("paintdlg").open && !editingRecipe) renderPaints(); };
+    async function loadLibrary(){
+      if(!canWrite || !store.getLibrary) return;
+      libState = "loading";
+      try { library = await store.getLibrary(); libState = ""; }
+      catch(err){ console.warn("Couldn't load the recipe library", err); library = null; libState = err.code === "nolib" ? "setup" : "error"; refreshRecipes(); return; }
+      const byId = new Map(library.map(r => [r.id, r]));
+      const push = [];
+      let changed = false;
+      const list = (scheme.recipes || []).map(r => {
+        const lib = byId.get(r.id);
+        if(!lib){ push.push(r); return r; }           // new to the library
+        if(lib.deleted) return r;                     // deleted from the library: this ledger keeps its copy
+        if((lib.at || "") > (r.at || "")){ if(!sameRecipe(lib, r)) changed = true; return recipeOnly(lib); }
+        if((r.at || "") > (lib.at || "") && !sameRecipe(lib, r)) push.push(r);
+        return r;
+      });
+      try {
+        if(push.length) await saveToLibrary(push);
+        if(changed) await saveRecipes(list);
+      } catch(err){ console.warn("Couldn't sync recipes with the library", err); }
+      refreshRecipes();
+    }
+    async function saveToLibrary(rows){
+      if(!library) return;   // library not available: the ledger's own copy is still saved
+      await store.putLibrary(rows);
+      const ids = new Set(rows.map(r => r.id));
+      library = library.filter(r => !ids.has(r.id)).concat(rows.map(r => ({...recipeOnly(r), deleted: r.deleted === true})));
+    }
+    function librarySection(){
+      const head = `<h4 class="em-h">Your recipe library</h4>`;
+      if(libState === "setup") return `<section class="lib">${head}<p class="hint">To reuse recipes in your other ledgers, add the recipes table to Supabase: open the SQL editor and run <code>supabase/recipes.sql</code> from this project. Recipes in this ledger work either way.</p></section>`;
+      if(libState === "error") return `<section class="lib">${head}<p class="hint">Couldn't load your recipe library. Check your connection and reopen this ledger.</p></section>`;
+      if(!library) return `<section class="lib">${head}<p class="hint">Loading your recipe library…</p></section>`;
+      const here = new Set((scheme.recipes || []).map(r => r.id));
+      const list = libLive().filter(r => !here.has(r.id)).sort((a, b) => a.name.localeCompare(b.name));
+      if(!list.length) return `<section class="lib">${head}<p class="hint">${libLive().length ? "Every recipe in your library is already in this ledger." : "Recipes you save are kept here, ready to add to your other ledgers."}</p></section>`;
+      return `<section class="lib">
+        <div class="lib-head">${head}<button type="button" class="btn-sm" data-act="lib-add-all">Add all (${list.length})</button></div>
+        <p class="hint">Recipes from your other ledgers. Add one to use it here. Changes to a recipe carry across to every ledger that has it.</p>
+        <div class="recipes">${list.map(r => `<article class="recipe lib-r">
+          <header><div><h3>${esc(r.name)}</h3><small>${esc([r.area, plural(r.steps.length, "step")].filter(Boolean).join(" · "))}</small></div>
+          <div class="row-actions"><button type="button" class="btn-sm primary" data-act="lib-add" data-id="${esc(r.id)}">Add</button><button type="button" class="btn-sm danger${libDelArmed === r.id ? " armed" : ""}" data-act="lib-del" data-id="${esc(r.id)}">${libDelArmed === r.id ? "Click again to delete" : "Delete"}</button></div></header>
+          <p class="lib-steps">${r.steps.filter(st => st.p).map(st => `<span>${PU.swatch(st.p)}${esc(st.p)}</span>`).join(`<i aria-hidden="true">→</i>`) || "No paints yet."}</p>
+        </article>`).join("")}</div></section>`;
     }
     async function saveRecipes(list){
       army = await store.saveArmy({faction: army.faction, name: army.name, scheme: {...army.scheme, recipes: list}, public: army.public}, army.id);
@@ -1396,7 +1451,7 @@
       [$("buy-badge"), $("buy-tab")].forEach(b => { if(!b) return; b.hidden = !n; b.textContent = n; });
     }
 
-    let pdTab = "recipes", editingRecipe = null, buyAll = false, ownedQuery = "";
+    let pdTab = "recipes", editingRecipe = null, buyAll = false, ownedQuery = "", libDelArmed = "";
     function openPaints(tab){
       pdTab = tab || pdTab; editingRecipe = null;
       $("pd-tabs").querySelectorAll("[data-tab]").forEach(b => b.setAttribute("aria-pressed", b.dataset.tab === pdTab));
@@ -1413,13 +1468,15 @@
         body.innerHTML = `
           <div class="pd-head"><p class="hint">Write a recipe once, then tick it on every unit that uses it. Paints you don't own show as <span class="own no">To buy</span>.</p>
           ${canWrite ? `<button type="button" class="primary btn-sm" data-act="new-recipe">+ New recipe</button>` : ""}</div>
+          ${canWrite ? `<h4 class="em-h">In this ledger</h4>` : ""}
           ${list.length ? `<div class="recipes">${list.map(r => {
             const n = units.filter(u => (u.recipes || []).includes(r.id)).length;
             return `<article class="recipe">
               <header><div><h3>${esc(r.name)}</h3><small>${esc([r.area, n ? plural(n, "unit") : "Not used yet"].filter(Boolean).join(" · "))}</small></div>
               ${canWrite ? `<div class="row-actions"><button type="button" class="btn-sm" data-act="edit-recipe" data-id="${esc(r.id)}">Edit</button><button type="button" class="btn-sm" data-act="dup-recipe" data-id="${esc(r.id)}">Copy</button></div>` : ""}</header>
               ${stepsHtml(r)}</article>`; }).join("")}</div>`
-            : `<div class="empty">No recipes yet.${canWrite ? " Start with your main armour colour." : ""}</div>`}`;
+            : `<div class="empty">No recipes yet.${canWrite ? (libLive().length ? " Add some from your library below, or write a new one." : " Start with your main armour colour.") : ""}</div>`}
+          ${canWrite ? librarySection() : ""}`;
       } else if(pdTab === "owned"){
         const q = PU.norm(ownedQuery);
         const shown = ownedList.filter(p => !q || PU.norm(p).includes(q)).sort((a, b) => a.localeCompare(b));
@@ -1460,7 +1517,7 @@
           <button type="button" class="btn-sm" data-act="add-step">+ Add step</button>
           <label>Notes<textarea id="re-notes" rows="2" maxlength="300" placeholder="e.g. thin the highlight, only on top edges">${esc(r.notes)}</textarea></label>
           <div class="r-bar">
-            ${r.isNew ? "" : `<button type="button" class="danger" data-act="del-recipe">Delete recipe</button>`}
+            ${r.isNew ? "" : `<button type="button" class="danger" data-act="del-recipe">${library ? "Remove from this ledger" : "Delete recipe"}</button>`}
             <span class="hint" id="re-msg"></span>
             <div class="ed-bar-actions"><button type="button" data-act="cancel-recipe">Cancel</button><button type="button" class="primary" data-act="save-recipe">Save recipe</button></div>
           </div>
@@ -1490,8 +1547,10 @@
     $("paintdlg").addEventListener("click", async e => {
       if(e.target === $("paintdlg")){ $("paintdlg").close(); return; }
       const tab = e.target.closest("[data-tab]");
-      if(tab){ syncRecipeDraft(); if(editingRecipe && !confirmDropRecipe()) return; editingRecipe = null; pdTab = tab.dataset.tab; renderPaints(); return; }
-      const b = e.target.closest("[data-act]"); if(!b) return;
+      if(tab){ libDelArmed = ""; syncRecipeDraft(); if(editingRecipe && !confirmDropRecipe()) return; editingRecipe = null; pdTab = tab.dataset.tab; renderPaints(); return; }
+      const b = e.target.closest("[data-act]");
+      if(libDelArmed && (!b || b.dataset.act !== "lib-del")){ libDelArmed = ""; if(!b){ renderPaints(); return; } }
+      if(!b) return;
       const act = b.dataset.act;
       if(editingRecipe) syncRecipeDraft();
       if(act === "new-recipe"){ editingRecipe = {id: S.newId(), name: "", area: "", notes: "", steps: [{t: "Prime", p: ""}, {t: "Basecoat", p: ""}, {t: "Shade / wash", p: ""}, {t: "Edge highlight", p: ""}], isNew: true}; renderPaints(); }
@@ -1510,19 +1569,39 @@
         if(!r.name){ $("re-msg").textContent = "Give the recipe a name."; $("re-name").focus(); return; }
         const list = (scheme.recipes || []).filter(x => x.id !== r.id);
         const idx = (scheme.recipes || []).findIndex(x => x.id === r.id);
-        const clean = {id: r.id, name: r.name, area: r.area, notes: r.notes, steps: r.steps};
+        const clean = {id: r.id, name: r.name, area: r.area, notes: r.notes, steps: r.steps, at: new Date().toISOString()};
         if(idx >= 0) list.splice(idx, 0, clean); else list.push(clean);
         b.disabled = true;
-        try { await saveRecipes(list); editingRecipe = null; renderPaints(); toast(`Saved recipe ${clean.name}`); }
-        catch(err){ $("re-msg").textContent = "Couldn't save: " + errText(err); b.disabled = false; }
+        try { await saveRecipes(list); editingRecipe = null; renderPaints(); }
+        catch(err){ $("re-msg").textContent = "Couldn't save: " + errText(err); b.disabled = false; return; }
+        try { await saveToLibrary([clean]); toast(`Saved recipe ${clean.name}`); }
+        catch(err){ toast(`Saved ${clean.name} in this ledger, but not to your recipe library: ${errText(err)}`); }
+        refreshRecipes();
       }
       else if(act === "del-recipe"){
-        if(!delArmed){ delArmed = true; b.classList.add("armed"); b.textContent = "Click again to delete"; return; }
-        const gone = editingRecipe;
+        if(!delArmed){ delArmed = true; b.classList.add("armed"); b.textContent = library ? "Click again to remove" : "Click again to delete"; return; }
+        const gone = editingRecipe, kept = libLive().some(x => x.id === gone.id);
         try {
           await saveRecipes((scheme.recipes || []).filter(x => x.id !== gone.id)); editingRecipe = null; delArmed = false; renderPaints();
-          toast(`Deleted recipe ${gone.name}`, async () => { await saveRecipes((scheme.recipes || []).concat({id: gone.id, name: gone.name, area: gone.area, notes: gone.notes, steps: gone.steps})); renderPaints(); });
+          toast(kept ? `Removed ${gone.name} from this ledger. It's still in your library.` : `Deleted recipe ${gone.name}`, async () => { await saveRecipes((scheme.recipes || []).concat(recipeOnly(gone))); renderPaints(); });
         } catch(err){ $("re-msg").textContent = "Couldn't delete: " + errText(err); }
+      }
+      else if(act === "lib-add" || act === "lib-add-all"){
+        const here = new Set((scheme.recipes || []).map(r => r.id));
+        const add = libLive().filter(r => !here.has(r.id) && (act === "lib-add-all" || r.id === b.dataset.id)).sort((x, y) => x.name.localeCompare(y.name));
+        if(!add.length) return;
+        b.disabled = true;
+        try { await saveRecipes((scheme.recipes || []).concat(add.map(recipeOnly))); renderPaints(); toast(add.length === 1 ? `Added ${add[0].name} to this ledger` : `Added ${plural(add.length, "recipe")} to this ledger`); }
+        catch(err){ b.disabled = false; toast("Couldn't add: " + errText(err)); }
+      }
+      else if(act === "lib-del"){
+        const r = libLive().find(x => x.id === b.dataset.id); if(!r) return;
+        if(libDelArmed !== r.id){ libDelArmed = r.id; renderPaints(); return; }
+        libDelArmed = "";
+        try {
+          await saveToLibrary([{...r, deleted: true, at: new Date().toISOString()}]); renderPaints(); renderRecipePicks();
+          toast(`Deleted ${r.name} from your library`, async () => { await saveToLibrary([{...r, deleted: false, at: new Date().toISOString()}]); refreshRecipes(); });
+        } catch(err){ toast("Couldn't delete: " + errText(err)); renderPaints(); }
       }
       else if(act === "add-owned") addOwned();
       else if(act === "rm-owned"){ try { await saveOwned(ownedList.filter(p => p !== b.dataset.p)); renderPaints(); } catch(err){ toast("Couldn't save: " + errText(err)); } }
@@ -1546,6 +1625,7 @@
     try { units = await store.listUnits(army.id); }
     catch(err){ console.error(err); $("cards").innerHTML = `<div class="empty">Couldn't load units: ${esc(errText(err))}</div>`; return; }
     newUnit(false);
+    loadLibrary();
   }
 
   /* ============================================================
