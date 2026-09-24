@@ -1450,7 +1450,8 @@
       }
       return null;
     }
-    const titleCase = sl => String(sl || "").split("-").filter(Boolean).map(w => w[0].toUpperCase() + w.slice(1)).join(" ");
+    // "emperor-s-shield" -> "Emperor's Shield"
+    const titleCase = sl => String(sl || "").replace(/([a-z0-9])-s(?=-|$)/g, "$1's").split("-").filter(Boolean).map(w => w[0].toUpperCase() + w.slice(1)).join(" ");
     function parseCode(text){
       const d = decodeListCode(text);
       if(!d) return null;
@@ -1479,21 +1480,29 @@
         const weapons = [...(sh.wm || []).map(n => [n, "melee"]), ...(sh.wr || []).map(n => [n, "ranged"])]
           .map(([n, kind]) => [n, kind, codeSlug(n)]).filter(w => w[2]).sort((a, b) => b[2].length - a[2].length);
         const other = [];
-        Object.values(ex.o && typeof ex.o === "object" ? ex.o : {}).flat().forEach(v => {
+        Object.entries(ex.o && typeof ex.o === "object" ? ex.o : {}).forEach(([group, val]) => {
+          // A choice is a slug, a list of slugs, or {slug: how many}.
+          const picks = typeof val === "string" ? [val] : Array.isArray(val) ? val : val && typeof val === "object" ? Object.keys(val).filter(k => val[k]) : [];
+          picks.forEach(v => pickOption(group, v));
+        });
+        function pickOption(group, v){
           if(typeof v !== "string") return;
-          let rest = "-" + codeSlug(v) + "-", hit = false;
+          const vs = codeSlug(v).split("-").filter(x => x !== "w").join("-"); // "initiate-w-bolt-rifle": w = with
+          let rest = "-" + vs + "-", hit = false;
           weapons.forEach(([n, kind, ws]) => {
             if(!rest.includes("-" + ws + "-")) return;
             rest = rest.replace("-" + ws + "-", "-"); hit = true;
             const list = kind === "melee" ? u.melee : u.ranged; if(!list.includes(n)) list.push(n);
           });
-          if(!hit && !/sergeant$/.test(codeSlug(v))) other.push(titleCase(v)); // "which model is the sergeant" isn't worth a note
-        });
+          // Skip picks that only say which model is which ("devastator-centurion", "...-sergeant").
+          const g = codeSlug(group);
+          if(!hit && !/sergeant$/.test(vs) && !g.startsWith(vs) && !codeSlug(sh.n).includes(vs)) other.push(titleCase(vs));
+        }
         if(other.length) u.notes.push(other.join(", "));
         out.push(u);
       });
       const limit = parseInt(d.l, 10);
-      return {units: out, unmatched, limit: limit >= 500 && limit <= 10000 ? limit : 0, codeFaction: from ? from.name : (d.f || ""), codeFactionId: d.f || ""};
+      return {units: out, unmatched, limit: limit >= 500 && limit <= 10000 ? limit : 0, codeFaction: from ? from.name : (d.f || ""), codeFactionId: d.f || "", detachment: typeof d.d === "string" && d.d ? titleCase(d.d) : ""};
     }
     const HEAD = /^(?:[a-z]+\d*\s*:\s*)?(?:(\d+)\s*x\s+)?(.+?)\s*[\(\[]\s*([\d,]+)\s*(?:pts?|points)\s*[\)\]]\s*:?\s*(.*)$/i;
     function parseList(text){
@@ -1565,7 +1574,7 @@
       const box = $("ld-out");
       if(!parsed){ box.innerHTML = ""; return; }
       const us = parsed.units;
-      $("ld-sum").textContent = us.length ? `${plural(us.length, "unit")} · ${fmt(us.reduce((a, u) => a + (u.include ? u.points : 0), 0))} pts` : "";
+      $("ld-sum").textContent = us.length ? [parsed.detachment, plural(us.length, "unit"), fmt(us.reduce((a, u) => a + (u.include ? u.points : 0), 0)) + " pts"].filter(Boolean).join(" · ") : "";
       box.innerHTML = (us.length ? `<div class="ld-table" role="table">
           <div class="ld-row ld-head" role="row"><span></span><span>Datasheet</span><span>Models</span><span>Points</span><span>Weapons</span></div>
           ${us.map((u, i) => `<label class="ld-row" role="row"><span><input type="checkbox" data-inc="${i}" ${u.include ? "checked" : ""}></span><span><strong>${esc(u.name)}</strong><small>${esc(u.sheet.r)}${u.notes.length ? " · " + esc(u.notes.join(", ")) : ""}</small></span><span><input type="number" min="1" max="99" data-cnt="${i}" value="${u.count}"></span><span>${u.points}</span><span>${esc([...u.melee, ...u.ranged].slice(0, 3).join(", ") || "—")}</span></label>`).join("")}
