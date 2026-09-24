@@ -1136,6 +1136,7 @@ Redemptor Dreadnought (210 points)</pre>
             </div>
           </div>
           <div class="list-tools arrange">
+            ${canWrite ? `<button type="button" class="btn-sm b-select" id="b-select" aria-pressed="false"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="m8 12 3 3 5-6"/></svg>Select units</button>` : ""}
             <label class="inline">Group by<select id="g-by">
               <option value="none">Nothing</option><option value="role">Role</option><option value="rank">Rank</option><option value="status">Status</option></select></label>
             <label class="inline">Sort by<select id="s-by">
@@ -1143,7 +1144,18 @@ Redemptor Dreadnought (210 points)</pre>
           </div>
           <div class="cards" id="cards"><div class="empty">Loading units…</div></div>
         </section>
-      ${canWrite ? `<button type="button" class="fab primary" id="b-fab" aria-label="Add a unit">+ Add unit</button>` : ""}
+      ${canWrite ? `<button type="button" class="fab primary" id="b-fab" aria-label="Add a unit">+ Add unit</button>
+      <div class="batch-bar" id="batch-bar" role="toolbar" aria-label="Update the selected units" hidden>
+        <span class="bb-count" id="bb-count" aria-live="polite">0 selected</span>
+        <button type="button" class="btn-sm" id="bb-all">Select all</button>
+        <span class="bb-sep" aria-hidden="true"></span>
+        <label class="bb-stage"><span>Set stage</span><select id="bb-stage"><option value="">Choose…</option><option value="none">Not started</option>${STAGES.map(([k, l]) => `<option value="${k}">${esc(l)}</option>`).join("")}</select></label>
+        <button type="button" class="btn-sm" id="bb-done">All painted</button>
+        <button type="button" class="btn-sm" id="bb-star">${STAR(true).replace('width="18" height="18"', 'width="14" height="14"')}Star</button>
+        <button type="button" class="btn-sm" id="bb-unstar">Unstar</button>
+        <button type="button" class="btn-sm danger" id="bb-del">Delete</button>
+        <button type="button" class="btn-sm primary" id="bb-exit">Done</button>
+      </div>` : ""}
 
       <dialog id="editdlg" class="editdlg" aria-labelledby="ed-title">
         <form id="form" class="editor-form" autocomplete="off" novalidate>
@@ -1315,6 +1327,7 @@ Redemptor Dreadnought (210 points)</pre>
 
     /* ---------- state ---------- */
     let units = [], selId = null, filter = "all", query = "", armed = false, dirty = false, busy = false;
+    let selecting = false, picked = new Set();   // batch updates
     let pendingPhoto = null, removePhoto = false, tierTouched = false, pointsTouched = false;
     const form = $("form");
     // Pauldrons last: an unset one copies the unit's armour, secondary or emblem colour.
@@ -1599,7 +1612,9 @@ Redemptor Dreadnought (210 points)</pre>
       const img = safeImg(u.image), tier = scheme.tiers[u.tier] || {};
       const nx = canWrite ? nextStep(u) : null;
       const segs = STAGE_KEYS.map(k => `<i class="${(u.stages || []).includes(k) ? "on" : ""}"></i>`).join("");
-      return `<div class="card${u.id === selId ? " sel" : ""}" tabindex="0" role="button" data-id="${esc(u.id)}" aria-label="View ${esc(u.name)}">
+      const pk = selecting && picked.has(u.id);
+      return `<div class="card${u.id === selId && !selecting ? " sel" : ""}${pk ? " picked" : ""}" tabindex="0" role="button" data-id="${esc(u.id)}" ${selecting ? `aria-pressed="${pk}" aria-label="Select ${esc(u.name)}"` : `aria-label="View ${esc(u.name)}"`}>
+        ${selecting ? `<span class="pick" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg></span>` : ""}
         ${img ? `<div class="photo"><img src="${esc(img)}" alt="" loading="lazy" decoding="async"></div>` : ""}
         <div class="body">
           <div class="card-top">${unitBadge(u, scheme, 60)}<div><h3>${esc(u.name)}</h3><div class="type">${esc([u.datasheet && u.datasheet !== u.name ? u.datasheet : "", u.role].filter(Boolean).join(" · ") || "Unit")}</div></div>${u.points ? `<span class="pts">${fmt(u.points)}<small>pts</small></span>` : ""}${starBtn(u)}</div>
@@ -1827,13 +1842,78 @@ Redemptor Dreadnought (210 points)</pre>
     $("b-del").addEventListener("blur", () => setTimeout(() => { if(armed && document.activeElement !== $("b-del")) disarm(); }, 0));
 
     $("cards").addEventListener("click", e => {
+      if(selecting){ const c = e.target.closest(".card"); if(c){ e.stopPropagation(); togglePick(c.dataset.id); } return; }
       const st = e.target.closest("[data-step]");
       if(st){ e.stopPropagation(); stepUnit(st.dataset.step); return; }
       const sr = e.target.closest("[data-star]");
       if(sr){ e.stopPropagation(); toggleStar(sr.dataset.star); return; }
       const c = e.target.closest(".card"); if(c) openDetail(c.dataset.id);
     });
-    $("cards").addEventListener("keydown", e => { if((e.key === "Enter" || e.key === " ") && e.target.classList.contains("card")){ e.preventDefault(); openDetail(e.target.dataset.id); } });
+    $("cards").addEventListener("keydown", e => { if((e.key === "Enter" || e.key === " ") && e.target.classList.contains("card")){ e.preventDefault(); if(selecting) togglePick(e.target.dataset.id); else openDetail(e.target.dataset.id); } });
+
+    /* ---------- batch updates: select several units, then change them together ---------- */
+    function setSelecting(on){
+      selecting = on; picked.clear();
+      document.body.classList.toggle("selecting", on);
+      $("batch-bar").hidden = !on;
+      $("b-select").setAttribute("aria-pressed", on);
+      $("bb-del").classList.remove("armed"); $("bb-del").textContent = "Delete";
+      render(); updateBatch();
+    }
+    function togglePick(id){
+      if(picked.has(id)) picked.delete(id); else picked.add(id);
+      const c = $("cards").querySelector(`.card[data-id="${CSS.escape(id)}"]`);
+      if(c){ c.classList.toggle("picked", picked.has(id)); c.setAttribute("aria-pressed", picked.has(id)); }
+      updateBatch();
+    }
+    function updateBatch(){
+      const n = picked.size;
+      $("bb-count").textContent = `${n} selected`;
+      ["bb-stage", "bb-done", "bb-star", "bb-unstar", "bb-del"].forEach(id => $(id).disabled = !n || busy);
+      const vis = visible();
+      $("bb-all").textContent = vis.length && vis.every(u => picked.has(u.id)) ? "Select none" : "Select all";
+      $("bb-del").classList.remove("armed"); $("bb-del").textContent = n ? `Delete ${n}` : "Delete";
+    }
+    async function batchSave(label, change){
+      const list = units.filter(u => picked.has(u.id)); if(!list.length || busy) return;
+      busy = true; updateBatch(); $("bb-count").textContent = `Updating ${plural(list.length, "unit")}…`;
+      let ok = 0;
+      for(const u of list){
+        try { const row = await store.saveUnit(army.id, {...u, ...change(u)}, u.id, null, false, u); units = units.map(x => x.id === row.id ? row : x); ok++; }
+        catch(err){ console.error(err); }
+      }
+      busy = false; render(); updateBatch();
+      toast(ok === list.length ? `${label}: ${plural(ok, "unit")}` : `Updated ${ok} of ${list.length}. Some couldn't be saved.`);
+    }
+    if(canWrite){
+      $("b-select").addEventListener("click", () => setSelecting(!selecting));
+      $("bb-exit").addEventListener("click", () => setSelecting(false));
+      $("bb-all").addEventListener("click", () => {
+        const vis = visible(), all = vis.length && vis.every(u => picked.has(u.id));
+        vis.forEach(u => all ? picked.delete(u.id) : picked.add(u.id));
+        render(); updateBatch();
+      });
+      $("bb-stage").addEventListener("change", e => {
+        const k = e.target.value; e.target.value = ""; if(!k) return;
+        const i = STAGE_KEYS.indexOf(k);
+        const name = k === "none" ? "Not started" : STAGES[i][1];
+        batchSave(`Set to ${name}`, u => k === "none" ? {stages: [], painted: 0} : {stages: STAGE_KEYS.slice(0, i + 1), painted: k === "varnish" ? u.count : Math.min(u.painted, u.count)});
+      });
+      $("bb-done").addEventListener("click", () => batchSave("All painted", u => ({stages: STAGE_KEYS.slice(), painted: u.count})));
+      $("bb-star").addEventListener("click", () => batchSave("Starred", () => ({fav: true})));
+      $("bb-unstar").addEventListener("click", () => batchSave("Unstarred", () => ({fav: false})));
+      $("bb-del").addEventListener("click", async () => {
+        const b = $("bb-del"), list = units.filter(u => picked.has(u.id)); if(!list.length || busy) return;
+        if(!b.classList.contains("armed")){ b.classList.add("armed"); b.textContent = `Click again to delete ${list.length}`; return; }
+        busy = true; updateBatch(); $("bb-count").textContent = `Deleting ${plural(list.length, "unit")}…`;
+        let ok = 0;
+        for(const u of list){ try { await store.removeUnit(u, false); units = units.filter(x => x.id !== u.id); picked.delete(u.id); ok++; } catch(err){ console.error(err); } }
+        busy = false; render(); updateBatch();
+        toast(ok === list.length ? `Deleted ${plural(ok, "unit")}` : `Deleted ${ok} of ${list.length}. Some couldn't be deleted.`);
+      });
+      document.addEventListener("keydown", onBatchKey);
+    }
+    function onBatchKey(e){ if(e.key === "Escape" && selecting && !document.querySelector("dialog[open]")) setSelecting(false); }
     $("filters").addEventListener("click", e => {
       const b = e.target.closest("button[data-f]"); if(!b) return;
       filter = b.dataset.f; $("filters").querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b ? "true" : "false")); render();
@@ -2188,6 +2268,7 @@ Redemptor Dreadnought (210 points)</pre>
     document.addEventListener("click", onDocMore); document.addEventListener("keydown", onKeyMore);
     view.guard = () => okToLeave();
     view.cleanup = () => {
+      document.removeEventListener("keydown", onBatchKey); document.body.classList.remove("selecting");
       document.removeEventListener("click", onDocMore); document.removeEventListener("keydown", onKeyMore); window.removeEventListener("resize", keyFade);
       window.removeEventListener("beforeunload", onBeforeUnload); $("detail").removeEventListener("click", onDetailClick); clearPending();
       clearTimeout(toastTimer); $("toast").hidden = true; if(toastDone){ const fn = toastDone; toastDone = null; fn(); }
