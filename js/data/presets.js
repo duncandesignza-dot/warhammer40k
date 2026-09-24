@@ -107,10 +107,15 @@
      follows the unit's rank. Units pick a head type: helmet, bare (a face in the skin colour) or none;
      bare is only offered when the profile allows it. */
   const SKIN = "#c79a7e";
+  // Space Marine pauldrons: each one's colour, secondary and emblem, and the armour colour each starts from.
+  const PAULDRON_BASE = {lpauldron:"armour", lpsecondary:"secondary", lpemblem:"emblem", rpauldron:"armour", rpsecondary:"secondary", rpemblem:"emblem"};
+  const PAULDRON_KEYS = Object.keys(PAULDRON_BASE);
   const BASE = {
     head: "helmet",
     labels: {helmet:"Helmet", lens:"Lenses / eyes", armour:"Armour", secondary:"Secondary", trim:"Trim", emblem:"Emblem",
-             cloth:"Robes / cloth", metal:"Weapons / metal", skin:"Skin"},
+             cloth:"Robes / cloth", metal:"Weapons / metal", skin:"Skin",
+             lpauldron:"Left pauldron", lpsecondary:"Left pauldron secondary", lpemblem:"Left pauldron emblem",
+             rpauldron:"Right pauldron", rpsecondary:"Right pauldron secondary", rpemblem:"Right pauldron emblem"},
     legends: {head:"Helmet", body:"Armour & pauldrons", details:"Cloth & details"},
     detail: ["Helmet detail", "e.g. laurel wreath, centre stripe"],
     detailOpts: ["Laurel wreath","Centre stripe","Crest","Battle damage","Squad markings"],
@@ -124,7 +129,8 @@
     tiers: [["Line","Standard troops"],["Veteran","Veterans and elites"],["Leader","Sergeants and characters"],["Hero","Your warlord and heroes"]]
   };
   const KINDS = {
-    astartes: {},
+    // Space Marines can paint each shoulder pad its own colour (e.g. Deathwatch's silver left pauldron).
+    astartes: {pauldrons: true},
     chaos: {
       labels: {emblem:"Icon / mark"},
       detailOpts: ["Horns","Crest","Face stripes","Battle damage","Warband markings"],
@@ -306,10 +312,10 @@
   const profiles = {};
   function profileFor(factionId){
     if(profiles[factionId]) return profiles[factionId];
-    const pr = merge(merge(BASE, KINDS[KIND_OF[factionId]] || {}), FACTION_OVER[factionId] || {});
+    const pr = merge(merge(BASE, KINDS[KIND_OF[factionId] || "astartes"] || {}), FACTION_OVER[factionId] || {});
     const L = pr.labels;
     pr.kind = KIND_OF[factionId] || "astartes";
-    pr.keys = ["armour","secondary","trim","emblem","lens","cloth","metal","skin"].filter(k => !pr.hide.includes(k));
+    pr.keys = ["armour","secondary","trim","emblem","lens","cloth","metal","skin", ...(pr.pauldrons ? PAULDRON_KEYS : [])].filter(k => !pr.hide.includes(k));
     pr.areas = [...new Set([L.armour, L.secondary, L.trim, L.helmet, L.lens, L.cloth, L.metal, pr.hide.includes("skin") ? "" : L.skin, L.emblem, ...pr.more, "Base", "Other"].filter(Boolean))];
     return (profiles[factionId] = pr);
   }
@@ -385,6 +391,63 @@
   // so every rank colour tells the ranks apart.
   const TIER_FALLBACK = ["trim","@Retributor Armour","emblem","@Corax White","@Abaddon Black","@Mephiston Red","@Averland Sunset","@Macragge Blue","cloth","@Leadbelcher"];
 
+  /* Extra paint areas people can add when their models need them (tapped on as pills), per kind of
+     army: [id, label, starting paint]. "details" sit with cloth & details, "weapons" with weapons. */
+  const XA_BASE = {
+    details: [["leather","Leather & pouches","@Rhinox Hide"],["seals","Purity seals","@Mephiston Red"],["parchment","Parchment & scrolls","@Wraithbone"],
+              ["cloak","Cloak / tabard","@Khorne Red"],["bone","Bone & skulls","@Wraithbone"],["gems","Gems","@Mephiston Red"],["gold","Gold details","@Retributor Armour"],["rope","Rope & cords","@Zandri Dust"]],
+    weapons: [["casing","Gun casing","@Abaddon Black"],["blade","Blade","@Leadbelcher"],["teeth","Chain teeth","@Leadbelcher"],["powerfield","Power field","@Teclis Blue"],
+              ["plasma","Plasma glow","@Teclis Blue"],["flamer","Flamer nozzle / burn","@Troll Slayer Orange"],["grips","Grips & handles","@Rhinox Hide"],["wgold","Gold details","@Retributor Armour"]]
+  };
+  const XA_KIND = {
+    chaos: {details: [["leather","Leather & pouches","@Rhinox Hide"],["trophies","Trophies & skulls","@Wraithbone"],["spikes","Spikes & brass","@Balthasar Gold"],["chains","Chains","@Leadbelcher"],
+                      ["cloak","Cloak / cloth","@Khorne Red"],["runes","Runes & glyphs","@Mephiston Red"],["gems","Gems","@Mephiston Red"]],
+            weapons: [["casing","Gun casing","@Abaddon Black"],["blade","Blade","@Leadbelcher"],["teeth","Chain teeth","@Leadbelcher"],["warpfire","Warpfire glow","@Moot Green"],["brass","Brass details","@Balthasar Gold"],["grips","Grips & handles","@Rhinox Hide"]]},
+    sororitas: {details: [["seals","Purity seals","@Mephiston Red"],["parchment","Parchment & scrolls","@Wraithbone"],["cloak","Cloak / tabard","@Khorne Red"],["halo","Halos & icons","@Retributor Armour"],
+                          ["candles","Candles & wax","@Wraithbone"],["leather","Leather & pouches","@Rhinox Hide"],["hair","Hair","@Corax White"]],
+                weapons: [["casing","Gun casing","@Abaddon Black"],["wgold","Gold details","@Retributor Armour"],["flamer","Flamer nozzle / burn","@Troll Slayer Orange"],["blade","Blade","@Leadbelcher"],["grips","Grips & handles","@Rhinox Hide"]]},
+    mechanicus: {details: [["cables","Cables & tubing","@Abaddon Black"],["hazard","Hazard stripes","@Averland Sunset"],["servo","Servo-skulls & bone","@Wraithbone"],["radium","Radium glow","@Moot Green"],
+                           ["brass","Brass details","@Balthasar Gold"],["seals","Purity seals","@Mephiston Red"]],
+                  weapons: [["casing","Gun casing","@Abaddon Black"],["radium","Radium glow","@Moot Green"],["arc","Arc / power glow","@Teclis Blue"],["blade","Blade","@Leadbelcher"],["grips","Grips & handles","@Rhinox Hide"]]},
+    guard: {details: [["leather","Webbing & pouches","@Rhinox Hide"],["bedroll","Bedroll / blanket","@Zandri Dust"],["camo","Camo pattern","@Castellan Green"],["medals","Medals & insignia","@Retributor Armour"],
+                      ["goggles","Goggles & lenses","@Moot Green"],["tracks","Tank tracks","@Leadbelcher"]],
+            weapons: [["casing","Gun casing","@Abaddon Black"],["stock","Lasgun stock","@Rhinox Hide"],["barrel","Barrels & muzzles","@Leadbelcher"],["blade","Bayonet / blade","@Leadbelcher"],["plasma","Plasma glow","@Teclis Blue"]]},
+    knights: {details: [["heraldry","Heraldry panels","@Corax White"],["pistons","Pistons & cables","@Leadbelcher"],["banners","Banners","@Mephiston Red"],["gold","Gold details","@Retributor Armour"],
+                        ["weathering","Weathering & chips","@Rhinox Hide"]],
+              weapons: [["casing","Gun casing","@Abaddon Black"],["barrel","Gun barrels","@Leadbelcher"],["teeth","Chain teeth","@Leadbelcher"],["powerfield","Power field","@Teclis Blue"],["plasma","Plasma glow","@Teclis Blue"],["missiles","Missiles","@Mephiston Red"]]},
+    aeldari: {details: [["gems","Spirit stones & gems","@Mephiston Red"],["wraithbone","Wraithbone","@Wraithbone"],["plumes","Plumes & hair","@Corax White"],["runes","Runes & freehand","@Corax White"],
+                        ["cloak","Cloak / cloth","@Wraithbone"]],
+              weapons: [["casing","Weapon body","@Abaddon Black"],["blade","Blade","@Leadbelcher"],["glow","Power / fusion glow","@Teclis Blue"],["wgems","Weapon gems","@Mephiston Red"]]},
+    drukhari: {details: [["blades","Blades & spikes","@Leadbelcher"],["hair","Hair & plumes","@Corax White"],["gems","Gems","@Mephiston Red"],["trophies","Trophies","@Wraithbone"],["leather","Leather & straps","@Rhinox Hide"]],
+               weapons: [["casing","Weapon body","@Abaddon Black"],["poison","Splinter poison glow","@Moot Green"],["darklight","Darklight glow","@Teclis Blue"],["blade","Blade","@Leadbelcher"]]},
+    gsc: {details: [["hazard","Hazard stripes","@Averland Sunset"],["patches","Patches & rags","@Zandri Dust"],["mining","Mining gear","@Leadbelcher"],["icons","Cult icons","@Retributor Armour"],["leather","Leather & pouches","@Rhinox Hide"]],
+          weapons: [["casing","Gun casing","@Abaddon Black"],["drill","Drills & saws","@Leadbelcher"],["glow","Laser / rock-saw glow","@Teclis Blue"],["grips","Grips & handles","@Rhinox Hide"]]},
+    votann: {details: [["beard","Beard","@Mournfang Brown"],["hazard","Hazard stripes","@Averland Sunset"],["ironkin","Ironkin glow","@Teclis Blue"],["leather","Leather & pouches","@Rhinox Hide"],["gold","Gold details","@Retributor Armour"]],
+             weapons: [["casing","Gun casing","@Abaddon Black"],["ion","Ion / magna glow","@Teclis Blue"],["blade","Blade","@Leadbelcher"],["grips","Grips & handles","@Rhinox Hide"]]},
+    necrons: {details: [["cables","Cables & tubes","@Abaddon Black"],["verdigris","Verdigris","@Sotek Green"],["gold","Gold details","@Retributor Armour"],["gems","Gems & crystals","@Tesseract Glow"]],
+              weapons: [["casing","Weapon body","@Abaddon Black"],["gauss","Gauss glow","@Tesseract Glow"],["blade","Warscythe / blade","@Leadbelcher"],["tesla","Tesla glow","@Teclis Blue"]]},
+    orks: {details: [["teef","Teef & bone","@Wraithbone"],["rust","Rust","@Skrag Brown"],["checks","Checks & dags","@Corax White"],["rags","Rags & cloth","@Zandri Dust"],["leather","Leather & straps","@Rhinox Hide"],["squigs","Squigs","@Mephiston Red"]],
+           weapons: [["casing","Gun casing","@Abaddon Black"],["choppa","Choppa blade","@Leadbelcher"],["rust","Rust","@Skrag Brown"],["flames","Flame paintwork","@Averland Sunset"],["kustom","Kustom glow","@Moot Green"],["grips","Grips & handles","@Rhinox Hide"]]},
+    tau: {details: [["markings","Sept markings & stripes","@Corax White"],["sensors","Sensor lenses","@Moot Green"],["drones","Drones","@Tau Light Ochre"],["kroot","Kroot quills & skin","@Mournfang Brown"],["leather","Straps & pouches","@Rhinox Hide"]],
+          weapons: [["casing","Weapon body","@Abaddon Black"],["pulse","Pulse / ion glow","@Teclis Blue"],["barrel","Barrels","@Leadbelcher"],["missiles","Missile pods","@Tau Light Ochre"]]},
+    tyranids: {details: [["toxin","Toxin sacs","@Moot Green"],["sinew","Sinew & membranes","@Mephiston Red"],["spines","Spines & tips","@Abaddon Black"],["bioglow","Bio-glow","@Moot Green"],["stripes","Stripes & spots","@Xereus Purple"]],
+               weapons: [["bioweapon","Bio-weapon flesh","@Mephiston Red"],["tips","Talon tips","@Abaddon Black"],["venom","Venom / acid","@Moot Green"],["ammo","Living ammo","@Xereus Purple"]]},
+    daemons: {details: [["flames","Flames & warpfire","@Averland Sunset"],["brass","Brass","@Balthasar Gold"],["horntips","Horn tips","@Abaddon Black"],["pustules","Pustules & boils","@Moot Green"],["tongues","Tongues & mouths","@Pink Horror"]],
+              weapons: [["blade","Hellblade / blade","@Leadbelcher"],["brass","Brass","@Balthasar Gold"],["glow","Warp glow","@Teclis Blue"]]},
+    custodes: {details: [["plumes","Plumes","@Khorne Red"],["leather","Leather & straps","@Rhinox Hide"],["parchment","Parchment & scrolls","@Wraithbone"],["gems","Gems","@Mephiston Red"],["cloak","Cloak","@Khorne Red"]],
+               weapons: [["blade","Blade","@Leadbelcher"],["powerfield","Power field","@Teclis Blue"],["casing","Gun casing","@Abaddon Black"],["wgold","Gold details","@Retributor Armour"]]}
+  };
+  // The extra areas a faction can add, grouped, with each one's starting colour and paint.
+  function extrasFor(factionId){
+    const def = XA_KIND[profileFor(factionId).kind] || XA_BASE;
+    const out = {};
+    ["details","weapons"].forEach(g => out[g] = (def[g] || XA_BASE[g]).map(([id, label, n]) => {
+      const name = n.replace(/^@/, "");
+      return {id: g[0] + ":" + id, label, hex: citHex(name) || "#8a8d91", paint: citLabel(name)};
+    }));
+    return out;
+  }
+
   // Rank colours (and their paints) from a set of army colours.
   function tiersFor(factionId, c, paints){
     const pr = profileFor(factionId), base = P[factionId] || {};
@@ -399,6 +462,18 @@
     });
   }
   // Colours plus their paint labels from an F(...) set, over plain fallback colours.
+  // Each pauldron's colour, secondary and emblem start as the armour's, unless a faction sets its own.
+  // Factions listed here also start with "paint each pauldron differently" on (Deathwatch: silver left pauldron).
+  const PAULDRONS = {"deathwatch": {lpauldron: "@Leadbelcher"}};
+  function withPauldrons(factionId, r, fp){
+    if(!profileFor(factionId).pauldrons) return r;
+    PAULDRON_KEYS.forEach(k => {
+      const n = (fp && fp[k]) || ((PAULDRONS[factionId] || {})[k] || "").replace(/^@/, ""), b = PAULDRON_BASE[k];
+      if(n && CIT[n]){ r.colors[k] = CIT[n][1]; r.slotPaints[k] = CIT[n][0]; }
+      else { r.colors[k] = r.colors[b]; if(r.slotPaints[b]) r.slotPaints[k] = r.slotPaints[b]; else delete r.slotPaints[k]; }
+    });
+    return r;
+  }
   function resolve(fp, fallback){
     const colors = {...fallback}, slotPaints = {};
     Object.entries(fp || {}).forEach(([k, n]) => { if(CIT[n]){ colors[k] = CIT[n][1]; slotPaints[k] = CIT[n][0]; } });
@@ -408,8 +483,8 @@
   function presetFor(factionId){
     const base = P[factionId] || P["space-marines"];
     const plain = {armour:base.armour, secondary:base.secondary, trim:base.trim, emblem:base.emblem, lens:base.lens, cloth:base.cloth, metal:base.metal, skin:base.skin || SKIN_OF[factionId] || SKIN};
-    const {colors, slotPaints} = resolve(FP[factionId], plain);
-    return {style: base.style, colors, slotPaints, shape: defaultIcon(factionId) || base.shape, tiers: tiersFor(factionId, colors, slotPaints)};
+    const {colors, slotPaints} = withPauldrons(factionId, resolve(FP[factionId], plain), FP[factionId]);
+    return {style: base.style, colors, slotPaints, splitPauldrons: !!PAULDRONS[factionId], shape: defaultIcon(factionId) || base.shape, tiers: tiersFor(factionId, colors, slotPaints)};
   }
   const SKIN_OF = {"orks":"#4f7a2a", "tau-empire":"#6b7f93", "genestealer-cults":"#a58ab0", "drukhari":"#e6dccf", "death-guard":"#a9a57a", "tyranids":"#d8cba8", "necrons":"#a9adb3", "chaos-daemons":"#9e1b1b"};
 
@@ -512,7 +587,7 @@
     const list = (SCHEMES[factionId] || []).slice();
     if(own && !list.some(k => JSON.stringify(k.fp) === JSON.stringify(own))) list.unshift(K("Official colours", "", own));
     const base = presetFor(factionId);
-    return list.map(k => { const r = resolve(k.fp, base.colors); return {name: k.name, shape: k.fp === own ? base.shape : iconRef(k.icon), colors: r.colors, paints: r.slotPaints}; });
+    return list.map(k => { const r = withPauldrons(factionId, resolve(k.fp, base.colors), k.fp); return {name: k.name, shape: k.fp === own ? base.shape : iconRef(k.icon), colors: r.colors, paints: r.slotPaints}; });
   }
 
   function colorName(hex){
@@ -528,5 +603,5 @@
     return best;
   }
 
-  window.LEDGER_PRESETS = {NAMED, SHAPES, presetFor, colorName, ICONS, ICON_BY_ID, iconCats, emblemName, defaultIcon, profileFor, tiersFor, schemesFor, SKIN};
+  window.LEDGER_PRESETS = {NAMED, SHAPES, presetFor, colorName, ICONS, ICON_BY_ID, iconCats, emblemName, defaultIcon, profileFor, tiersFor, schemesFor, SKIN, PAULDRON_BASE, PAULDRON_KEYS, extrasFor};
 })();

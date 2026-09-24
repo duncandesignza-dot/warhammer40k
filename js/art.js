@@ -113,20 +113,22 @@
         <rect x="30" y="-40" width="90" height="46" rx="12" fill="${lens}"/>
       </g>`;
     }
-    const edge=edgeFor(emblem);
+    // Shoulder pad: its own colour, rim and emblem colour when the pauldrons are painted differently.
+    const pf=safe(u.pauldron,armour), pt=safe(u.ptrim,trim), pe=safe(u.pemblem,emblem), ptd=shade(pt);
+    const edge=edgeFor(pe);
     const emblemSvg=icon?`<use href="#emi-${esc(icon)}" x="-265" y="-265" width="530" height="530" filter="url(#ll-dilate)" style="color:${edge};--ko:${edge}"/>
-        <use href="#emi-${esc(icon)}" x="-265" y="-265" width="530" height="530" style="color:${emblem};--ko:${armour}"/>`
+        <use href="#emi-${esc(icon)}" x="-265" y="-265" width="530" height="530" style="color:${pe};--ko:${pf}"/>`
       :shape==="none"?"":`<g transform="scale(.6) translate(-500 -500)">
-          <use href="#em-${shape}" fill="none" stroke="${edgeFor(emblem)}" stroke-width="44" stroke-linejoin="round"/>
-          <use href="#em-${shape}" fill="${emblem}"/>
+          <use href="#em-${shape}" fill="none" stroke="${edgeFor(pe)}" stroke-width="44" stroke-linejoin="round"/>
+          <use href="#em-${shape}" fill="${pe}"/>
         </g>`;
     return `<svg class="mini" width="${w}" height="${size}" viewBox="0 0 2000 960" role="img" aria-label="${esc(label||"Colour badge")}">
       ${left}
       <g transform="translate(1520 480)">
-        <circle r="430" fill="${armour}"/>
-        <circle r="430" fill="none" stroke="${trim}" stroke-width="56"/>
-        <circle r="458" fill="none" stroke="${td}" stroke-width="8"/>
-        <circle r="402" fill="none" stroke="${td}" stroke-width="8"/>
+        <circle r="430" fill="${pf}"/>
+        <circle r="430" fill="none" stroke="${pt}" stroke-width="56"/>
+        <circle r="458" fill="none" stroke="${ptd}" stroke-width="8"/>
+        <circle r="402" fill="none" stroke="${ptd}" stroke-width="8"/>
         ${emblemSvg}
       </g>
     </svg>`;
