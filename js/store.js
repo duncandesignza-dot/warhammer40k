@@ -27,6 +27,16 @@
     return o;
   }
 
+  // Extra paint areas added to an army or unit, e.g. {"d:leather": {hex, paint}}; "d:" = cloth & details, "w:" = weapons.
+  function cleanXareas(m){
+    const o = {};
+    if(m && typeof m === "object") Object.keys(m).filter(k => /^[dw]:[a-z0-9-]{1,30}$/.test(k)).slice(0, 40).forEach(k => {
+      const v = m[k] || {};
+      if(HEX.test(v.hex)) o[k] = {hex: v.hex, paint: String(v.paint || "").trim().slice(0, 90)};
+    });
+    return o;
+  }
+
   const newId = () => (crypto.randomUUID ? crypto.randomUUID() : "id" + Date.now().toString(36) + Math.random().toString(36).slice(2, 10));
 
   function cleanUnit(r){
@@ -50,6 +60,8 @@
     o.slotPaints = cleanSlotPaints(r.slotPaints);
     // Each pauldron painted in its own colours (Space Marines); off means both follow the armour.
     o.splitPauldrons = r.splitPauldrons === true || r.splitPauldrons === "true";
+    // null = not set on this unit yet, so it shows the army's extra areas.
+    o.xareas = r.xareas && typeof r.xareas === "object" ? cleanXareas(r.xareas) : null;
     if(!o.name) o.name = o.datasheet || "Unnamed unit";
     return o;
   }
@@ -82,7 +94,7 @@
     }));
     const limit = Math.min(20000, Math.max(0, parseInt(s.limit, 10) || 0));
     const recipes = (Array.isArray(s.recipes) ? s.recipes : []).slice(0, 60).filter(r => r && r.id).map(cleanRecipe);
-    return {style: s.style === "roundel" ? "roundel" : "astartes", limit, recipes, colors, slotPaints: cleanSlotPaints(s.slotPaints), splitPauldrons: s.splitPauldrons === true, shape: String(s.shape || "cross").slice(0, 160), tiers: tiers.length ? tiers : [{name:"Line", note:"", color:colors.armour}]};
+    return {style: s.style === "roundel" ? "roundel" : "astartes", limit, recipes, colors, slotPaints: cleanSlotPaints(s.slotPaints), splitPauldrons: s.splitPauldrons === true, xareas: cleanXareas(s.xareas), shape: String(s.shape || "cross").slice(0, 160), tiers: tiers.length ? tiers : [{name:"Line", note:"", color:colors.armour}]};
   }
   const cleanPaints = list => [...new Set((Array.isArray(list) ? list : []).map(p => String(p).trim().slice(0, 90)).filter(Boolean))].slice(0, 600);
   function cleanArmy(a){

@@ -22,6 +22,26 @@
     });
   }
   const PAULDRONS = P.PAULDRON_KEYS;
+  /* Extra paint areas: the added ones as paint pickers (with × to remove), then a "+ area" pill for each
+     one not added yet, so only what the models need takes up space. state maps area id -> {hex, paint}. */
+  function xaUI(host, areas, state, opts){
+    function draw(){
+      const on = areas.filter(a => state[a.id]), off = areas.filter(a => !state[a.id]);
+      host.innerHTML = (on.length ? `<div class="xa-list">${on.map(a => `<div class="xa-item"><span class="xa-l">${esc(a.label)}</span><span class="xa-pick" data-xa="${esc(a.id)}"></span><button type="button" class="xa-rm" data-xrm="${esc(a.id)}" aria-label="Remove ${esc(a.label)}" title="Remove">×</button></div>`).join("")}</div>` : "")
+        + (off.length ? `<div class="xa-add" role="group" aria-label="Add a paint area">${off.map(a => `<button type="button" class="xa-pill" data-xadd="${esc(a.id)}">+ ${esc(a.label)}</button>`).join("")}</div>` : "");
+      host.querySelectorAll("[data-xa]").forEach(h => {
+        const id = h.dataset.xa, a = areas.find(x => x.id === id);
+        PU.slot(h, {...opts.slot, label: a.label, value: state[id], onChange: v => { state[id] = {hex: v.hex, paint: v.paint}; opts.onChange(); }});
+      });
+    }
+    host.addEventListener("click", e => {
+      const add = e.target.closest("[data-xadd]"), rm = e.target.closest("[data-xrm]");
+      if(add){ const a = areas.find(x => x.id === add.dataset.xadd); state[a.id] = opts.start ? opts.start(a) : {hex: a.hex, paint: a.paint}; draw(); opts.onChange(); host.querySelector(`[data-xa="${a.id}"] .cp`).focus(); }
+      else if(rm){ delete state[rm.dataset.xrm]; draw(); opts.onChange(); }
+    });
+    draw();
+    return {redraw(next){ state = next; draw(); }};
+  }
   const BASE_OF = P.PAULDRON_BASE;
   // When the armour, secondary or emblem colour changes, pauldron colours still matching the old one follow it.
   function followBase(base, get, set, old, now){
@@ -312,6 +332,10 @@
                 <span id="s-${k}"></span>
               </div>`).join("")}</div>
             ${PROF.pauldrons ? `<label class="check split-check"><input type="checkbox" id="s-split" ${draft.scheme.splitPauldrons ? "checked" : ""}> Paint each pauldron differently <small>Gives the left and right pauldron their own colour, secondary and emblem colour. New units start with this setting.</small></label>` : ""}
+            <div class="xa-wrap"><h4 class="em-h">Extra paint areas</h4>
+              <p class="hint">Add the areas your models have, like leather or power weapons. They become the starting paints for new units.</p>
+              <h5 class="pd-h">${esc(PROF.legends.details)}</h5><div class="xa" id="s-xa-d"></div>
+              <h5 class="pd-h">Weapons</h5><div class="xa" id="s-xa-w"></div></div>
           </div>
           <div class="panel">
             <h3>Emblem</h3>
@@ -409,6 +433,10 @@
           setupDirty = true; renderPreview();
         }});
     });
+    sch.xareas = sch.xareas || {};
+    const XA = P.extrasFor(f.id);
+    xaUI($("s-xa-d"), XA.details, sch.xareas, {slot: slotOpts, onChange: () => { setupDirty = true; }});
+    xaUI($("s-xa-w"), XA.weapons, sch.xareas, {slot: slotOpts, onChange: () => { setupDirty = true; }});
     renderIcons(); renderTiers(); renderPreview();
 
     let setupDirty = false;
@@ -522,6 +550,13 @@
     PROF = P.profileFor(army.faction);
     fillSkin(scheme, army.faction);
     const LB = PROF.labels;
+    const XA = P.extrasFor(army.faction);
+    // Unit-detail rows for the extra paint areas a unit has in one group ("details" or "weapons").
+    const xaRows = (u, g) => XA[g].filter(a => (u.xareas || {})[a.id]).map(a => {
+      const v = u.xareas[a.id], d = PU.describe(v.paint);
+      return [esc(a.label), chip(v.hex) + (v.paint ? esc(d.name) + (d.meta ? ` <small class="pmeta">${esc(d.meta)}</small>` : "") : esc(cname(v.hex)))
+        + (v.paint && canWrite ? (isOwned(v.paint) ? ` <span class="own ok">Owned</span>` : ` <span class="own no">To buy</span>`) : "")];
+    });
     // Skin sits with the other colours where it always matters (Orks, Tyranids), otherwise it shows for bare heads.
     const skinInHead = PROF.bare && !PROF.skinAlways && !PROF.hide.includes("skin");
     const hasSkin = skinInHead || !!PROF.skinAlways;
@@ -696,12 +731,14 @@
             ${colorField("cloth", esc(LB.cloth))}
             ${colorField("metal", esc(LB.metal))}
             ${PROF.skinAlways ? colorField("skin", esc(LB.skin)) : ""}
+            <div class="full xa-field"><span class="xa-cap">More paint areas</span><div class="xa" id="f-xa-d"></div></div>
             <label class="full">${esc(PROF.extras[0])}<input id="f-extras" maxlength="120" placeholder="${esc(PROF.extras[1])}"></label>
           </fieldset>
           <fieldset>
             <legend>Weapons</legend>
             <label class="full">Melee weapon<input id="f-melee" maxlength="120" placeholder="Choose or type"></label>
             <label class="full">Ranged weapon<input id="f-ranged" maxlength="120" placeholder="Choose or type"></label>
+            <div class="full xa-field"><span class="xa-cap">Weapon paint areas</span><div class="xa" id="f-xa-w"></div></div>
           </fieldset>
           <fieldset>
             <legend>Paint recipes</legend>
@@ -797,7 +834,7 @@
     function defaults(){
       const c = scheme.colors, t = scheme.tiers[0];
       return {datasheet:"", role:"", name:"", count:5, points:0, stages:[], painted:0, recipes:[], tier:0, helmet:t.color, lens:c.lens, hdetail:"", head:PROF.defaultHead, skin:c.skin,
-        armour:c.armour, ...Object.fromEntries(PAULDRONS.map(k => [k, c[k]])), splitPauldrons: !!scheme.splitPauldrons, secondary:c.secondary, trim:c.trim, emblem:c.emblem, shape:"", cloth:c.cloth, metal:c.metal,
+        armour:c.armour, ...Object.fromEntries(PAULDRONS.map(k => [k, c[k]])), splitPauldrons: !!scheme.splitPauldrons, xareas: JSON.parse(JSON.stringify(scheme.xareas || {})), secondary:c.secondary, trim:c.trim, emblem:c.emblem, shape:"", cloth:c.cloth, metal:c.metal,
         extras:"", melee:"", ranged:"", paints:"", notes:""};
     }
     const readStages = () => [...$("f-stages").querySelectorAll("input:checked")].map(i => i.value);
@@ -819,6 +856,7 @@
       o.slotPaints = {};
       COLOR_IDS.forEach(k => { const p = slotApi[k].get().paint; if(p) o.slotPaints[k] = p; });
       o.splitPauldrons = !!($("f-split") && $("f-split").checked);
+      o.xareas = JSON.parse(JSON.stringify(unitXa));
       return o;
     }
     function writeForm(u){
@@ -844,6 +882,8 @@
       });
       ["armour","secondary","emblem"].forEach(k => lastBase[k] = slotApi[k].get());
       if($("f-split")){ $("f-split").checked = !!d.splitPauldrons; showSplit(); }
+      unitXa = JSON.parse(JSON.stringify(d.xareas != null ? d.xareas : scheme.xareas || {}));
+      xaUIs.forEach(x => x.redraw(unitXa));
       fillWeapons(); preview();
     }
     // Paint pickers in the editor. A unit colour that matches the army (or rank) colour shows the
@@ -869,6 +909,12 @@
           setDirty(true); preview();
         }});
     });
+    // Extra paint areas on this unit (start from the army's; adding one starts from the army's paint if it has one).
+    let unitXa = {};
+    const xaOpts = {slot: {owned: () => owned, mine: () => ownedList, plain: PLAIN,
+        swatches: () => Object.keys(scheme.colors).filter(c => COLOR_IDS.includes(c)).map(c => ({hex: scheme.colors[c], paint: (scheme.slotPaints || {})[c] || ""}))},
+      start: a => ({...((scheme.xareas || {})[a.id] || {hex: a.hex, paint: a.paint})}), onChange: () => setDirty(true)};
+    const xaUIs = [xaUI($("f-xa-d"), XA.details, unitXa, xaOpts), xaUI($("f-xa-w"), XA.weapons, unitXa, xaOpts)];
     const sheetNow = () => { const sel = $("f-sheet").value; return sel && sel !== "__custom" ? sheetFor(sel) : null; };
     const FACE_OPTS = ["War paint","Scars","Tattoos","Bionic eye","Beard","Service studs"];
     combo($("f-melee"), () => (sheetNow() || {}).wm || []);
@@ -1022,6 +1068,7 @@
       // (Pauldrons come last in COLOR_IDS, so an unset one can copy the unit's armour, secondary or emblem.)
       COLOR_IDS.forEach(k => { if(!ART.hexOk(o[k])) o[k] = k === "helmet" ? (scheme.tiers[o.tier] || scheme.tiers[0]).color : unsetPauldron(k) ? o[BASE_OF[k]] : scheme.colors[k]; });
       o.head = headOf(o);
+      o.xareas = u.xareas != null ? u.xareas : (scheme.xareas || {});
       o.slotPaints = {};
       COLOR_IDS.forEach(k => { const p = unsetPauldron(k) ? paintOf(u, BASE_OF[k], o[k]) : paintOf(u, k, o[k]); if(p) o.slotPaints[k] = p; });
       return o;
@@ -1081,6 +1128,14 @@
       $("bar").style.width = pct + "%";
       updateBuyBadge();
     }
+    // Which unit-detail sections are open, remembered in this browser (recipes start closed).
+    let detailOpen = {};
+    try { detailOpen = JSON.parse(localStorage.getItem("ll-detail-open") || "{}") || {}; } catch(e){}
+    $("detail-body").addEventListener("toggle", e => {
+      const d = e.target; if(!d.matches || !d.matches("details.dsec")) return;
+      detailOpen[d.dataset.k] = d.open;
+      try { localStorage.setItem("ll-detail-open", JSON.stringify(detailOpen)); } catch(err){}
+    }, true);
     function openDetail(id){
       const found = units.find(x => x.id === id); if(!found) return;
       const u = withColours(found);
@@ -1090,27 +1145,31 @@
       const colk = k => { if(!ART.hexOk(u[k])) return ""; const p = u.slotPaints[k];
         const d = PU.describe(p);
         return chip(u[k]) + (p ? esc(d.name) + (d.meta ? ` <small class="pmeta">${esc(d.meta)}</small>` : "") : esc(cname(u[k]))) + (p && canWrite ? (isOwned(p) ? ` <span class="own ok">Owned</span>` : ` <span class="own no">To buy</span>`) : ""); };
-      const sec = (title, rows) => { const r = rows.filter(x => x[1]); return r.length ? `<section><h4>${title}</h4><dl>${r.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl></section>` : ""; };
+      // Collapsible sections: open unless closed before (remembered in this browser); recipes start closed.
+      const box = (key, title, body, openByDefault = true) => {
+        const open = key in detailOpen ? detailOpen[key] : openByDefault;
+        return `<details class="dsec" data-k="${esc(key)}"${open ? " open" : ""}><summary><h4>${title}</h4></summary>${body}</details>`;
+      };
+      const sec = (title, rows, key) => { const r = rows.filter(x => x[1]); return r.length ? box(key || title, title, `<dl>${r.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>`) : ""; };
       $("detail-body").innerHTML = `<div class="detail">
         <div class="media">${img ? `<img src="${esc(img)}" alt="Photo of ${esc(u.name)}">` : unitBadge(u, scheme, 180)}</div>
         <div class="info">
           <div><h2 id="dt-name">${esc(u.name)}</h2>
             <div class="meta">${esc(u.datasheet || "Unit")}${u.role ? " · " + esc(u.role) : ""} · ${plural(u.count, "model")}${u.points ? " · " + fmt(u.points) + " pts" : ""}</div></div>
           <div class="row">${img ? unitBadge(u, scheme, 64) : ""}<span class="pill s-${esc(u.status)}">${esc(u.status === "done" ? "Painted" : stageLabel(u))}</span></div>
-          <section><h4>Painting</h4>
-            <div class="stage-list">${STAGES.map(([k, l]) => `<span class="${(u.stages || []).includes(k) ? "on" : ""}">${l}</span>`).join("")}</div>
-            <p class="prose" style="margin-top:10px">${u.painted} of ${plural(u.count, "model")} painted</p></section>
-          ${recipesOf(u).map(r => `<section><h4>Recipe · ${esc(r.name)}${r.area ? " · " + esc(r.area) : ""}</h4>${stepsHtml(r)}</section>`).join("")}
-          ${sec("Rank", [["Rank", esc(tier.name)], ["Who", esc(tier.note)]])}
-          ${u.head === "none" ? sec(esc(PROF.legends.head), [["Head", "None (vehicle or monster)"]])
-            : u.head === "bare" ? sec(esc(PROF.legends.head), [["Head", "Bare head"], ["Skin", colk("skin")], ["Eyes", colk("lens")], ["Face paint", esc(u.hdetail)]])
-            : sec(esc(PROF.legends.head), [[esc(LB.helmet), colk("helmet")], [esc(LB.lens), colk("lens")], ["Detail", esc(u.hdetail)]])}
+          ${box("painting", "Painting", `<div class="stage-list">${STAGES.map(([k, l]) => `<span class="${(u.stages || []).includes(k) ? "on" : ""}">${l}</span>`).join("")}</div>
+            <p class="prose" style="margin-top:10px">${u.painted} of ${plural(u.count, "model")} painted</p>`)}
+          ${recipesOf(u).map(r => box("recipes", `Recipe · ${esc(r.name)}${r.area ? " · " + esc(r.area) : ""}`, stepsHtml(r), false)).join("")}
+          ${sec("Rank", [["Rank", esc(tier.name)], ["Who", esc(tier.note)]], "rank")}
+          ${u.head === "none" ? sec(esc(PROF.legends.head), [["Head", "None (vehicle or monster)"]], "head")
+            : u.head === "bare" ? sec(esc(PROF.legends.head), [["Head", "Bare head"], ["Skin", colk("skin")], ["Eyes", colk("lens")], ["Face paint", esc(u.hdetail)]], "head")
+            : sec(esc(PROF.legends.head), [[esc(LB.helmet), colk("helmet")], [esc(LB.lens), colk("lens")], ["Detail", esc(u.hdetail)]], "head")}
           ${sec(esc(PROF.legends.body), [[esc(LB.armour), colk("armour")], [esc(LB.secondary), colk("secondary")], [esc(LB.trim), colk("trim")], [esc(LB.emblem), (u.shape || scheme.shape) === "none" ? "None" : colk("emblem") + " · " + esc(P.emblemName(u.shape || scheme.shape))],
-            ...(PROF.pauldrons && u.splitPauldrons ? PAULDRONS.map(k => [esc(LB[k]), colk(k)]) : [])])}
-          ${sec(esc(PROF.legends.details), [[esc(LB.cloth), colk("cloth")], [esc(LB.metal), colk("metal")], [esc(LB.skin), PROF.skinAlways ? colk("skin") : ""], ["Extras", esc(u.extras)]])}
-          ${sec("Weapons", [["Melee", esc(u.melee)], ["Ranged", esc(u.ranged)]])}
-          ${u.paints ? `<section><h4>Paint notes</h4><p class="prose">${esc(u.paints)}</p></section>` : ""}
-          ${u.notes ? `<section><h4>Notes</h4><p class="prose">${esc(u.notes)}</p></section>` : ""}
+            ...(PROF.pauldrons && u.splitPauldrons ? PAULDRONS.map(k => [esc(LB[k]), colk(k)]) : [])], "body")}
+          ${sec(esc(PROF.legends.details), [[esc(LB.cloth), colk("cloth")], [esc(LB.metal), colk("metal")], [esc(LB.skin), PROF.skinAlways ? colk("skin") : ""], ...xaRows(u, "details"), ["Extras", esc(u.extras)]], "details")}
+          ${sec("Weapons", [["Melee", esc(u.melee)], ["Ranged", esc(u.ranged)], ...xaRows(u, "weapons")], "weapons")}
+          ${u.paints ? box("paintnotes", "Paint notes", `<p class="prose">${esc(u.paints)}</p>`) : ""}
+          ${u.notes ? box("notes", "Notes", `<p class="prose">${esc(u.notes)}</p>`) : ""}
           ${canWrite ? `<section class="row-actions"><button type="button" class="primary" data-edit="${esc(u.id)}">Edit unit</button><button type="button" data-dup="${esc(u.id)}">Duplicate</button><button type="button" class="danger" data-del="${esc(u.id)}">Delete</button></section>` : ""}
         </div></div>`;
       $("detail").showModal(); $("detail").scrollTop = 0;
@@ -1596,6 +1655,8 @@
       COLOR_IDS.forEach(k => add((scheme.slotPaints || {})[k], k === "emblem" ? slotLabel(k) : slotLabel(k) + " colour"));
       scheme.tiers.forEach(t => add(t.paint, `${t.name} rank`));
       units.forEach(u => Object.values(u.slotPaints || {}).forEach(p => add(p, u.name)));
+      [...XA.details, ...XA.weapons].forEach(a => { const v = (scheme.xareas || {})[a.id]; if(v) add(v.paint, a.label); });
+      units.forEach(u => Object.values(u.xareas || {}).forEach(v => add(v.paint, u.name)));
       return [...need.values()].sort((a, b) => a.label.localeCompare(b.label));
     }
     function updateBuyBadge(){

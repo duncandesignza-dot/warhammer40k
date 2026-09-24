@@ -642,3 +642,27 @@ dialog{overflow-x:hidden}
 .pd-h{grid-column:1/-1;margin:0;font-family:var(--mono);font-size:.62rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:700}
 .split-check{margin-top:14px;flex-wrap:wrap}
 .split-check small{flex-basis:100%;color:var(--muted);font-size:.78rem;padding-left:26px}
+/* Unit details: collapsible sections */
+.detail details.dsec{border:1px solid var(--line);border-radius:var(--r);background:var(--surface-2)}
+.detail details.dsec>summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border-radius:var(--r)}
+.detail details.dsec>summary::-webkit-details-marker{display:none}
+.detail details.dsec>summary h4{margin:0}
+.detail details.dsec>summary::after{content:"";width:7px;height:7px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg);margin-right:4px;transition:transform .15s}
+.detail details.dsec[open]>summary::after{transform:rotate(-135deg)}
+.detail details.dsec>summary:hover::after{border-color:var(--ink)}
+.detail details.dsec>summary:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.detail details.dsec>:not(summary){margin:0 14px 12px}
+/* Extra paint areas: added ones as pickers, the rest as "+ area" pills */
+.xa{display:flex;flex-direction:column;gap:10px}
+.xa-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
+.xa-item{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:4px 6px}
+.xa-l{grid-column:1/-1;font-size:.78rem;color:var(--muted);font-weight:500}
+.xa-rm{width:34px;height:40px;padding:0;font-size:1.1rem;line-height:1;color:var(--muted)}
+.xa-rm:hover{color:var(--bad);border-color:var(--bad)}
+.xa-add{display:flex;flex-wrap:wrap;gap:6px}
+.xa-pill{padding:5px 11px;font-size:.78rem;font-weight:500;border-radius:99px;border-style:dashed;color:var(--muted);background:transparent}
+.xa-pill:hover{color:var(--ink);border-color:var(--brand-line);border-style:solid}
+.xa-field{display:flex;flex-direction:column;gap:8px}
+.xa-cap{font-size:.78rem;color:var(--muted);font-weight:500}
+.xa-wrap{margin-top:18px;padding-top:14px;border-top:1px solid var(--line)}
+.xa-wrap .pd-h{margin:12px 0 8px}
