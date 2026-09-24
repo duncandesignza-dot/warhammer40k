@@ -48,6 +48,71 @@
     }
     return scored.sort((a, b) => a[0] - b[0] || a[1].label.localeCompare(b[1].label)).slice(0, limit).map(x => x[1]);
   }
+  /* Similar paints in other brands, by colour (CIELAB distance), matching like for like:
+     shades with shades, metallics with metallics, contrast-style paints with each other. */
+  function lab(hex){
+    const n = parseInt(hex.slice(1), 16), f = c => { c /= 255; return c > .04045 ? Math.pow((c + .055) / 1.055, 2.4) : c / 12.92; };
+    const r = f(n >> 16 & 255), g = f(n >> 8 & 255), b = f(n & 255);
+    const x = (r * .4124 + g * .3576 + b * .1805) / .95047, y = r * .2126 + g * .7152 + b * .0722, z = (r * .0193 + g * .1192 + b * .9505) / 1.08883;
+    const t = v => v > .008856 ? Math.cbrt(v) : 7.787 * v + 16 / 116;
+    return [116 * t(y) - 16, 500 * (t(x) - t(y)), 200 * (t(y) - t(z))];
+  }
+  const METAL = /\b(metal|metallic|silver|gold|golden|brass|bronze|copper|steel|iron|chrome|alloy|gunmetal|pewter|platinum|mithril|leadbelcher|retributor|runefang|ironbreaker|balthasar|stormhost|liberator|gehenna|sycorax|castellax|warplock|hashut|tin bitz)\b/;
+  function kind(p){
+    if(p._k) return p._k;
+    const s = (p.set + " " + p.name).toLowerCase();
+    p._k = /discontinued|\bair\b|spray|primer|thinner|medium|varnish|texture|soil|technical|colou?rshift|chameleon|\bdry\b|\bfx\b|effect|pigment|transparent|fluo|neon/.test(s) ? "skip"
+      : /shade|wash|\bink|\btone\b/.test(s) ? "wash"
+      : /contrast|speedpaint|xpress|instant/.test(s) ? "contrast"
+      : METAL.test(s.replace(/steel legion/g, "")) ? "metal" : "paint";
+    return p._k;
+  }
+  // Shades can't be matched by colour (Citadel's are recorded as brushed over white, others as in the pot),
+  // so Citadel shades use the swaps painters commonly recommend.
+  const WASH_EQ = {
+    "nuln oil": ["Army Painter|Dark Tone", "Vallejo|Black Wash", "Pro Acryl|Black Wash", "Reaper|Black Wash"],
+    "agrax earthshade": ["Army Painter|Strong Tone", "Vallejo|Sepia Wash", "Reaper|Sepia Wash"],
+    "seraphim sepia": ["Army Painter|Soft Tone", "Vallejo|Sepia Wash"],
+    "reikland fleshshade": ["Army Painter|Flesh Wash", "Vallejo|Flesh Wash", "Reaper|Flesh Wash"],
+    "druchii violet": ["Army Painter|Purple Tone", "Vallejo|Violet Wash", "Reaper|Purple Wash"],
+    "drakenhof nightshade": ["Army Painter|Blue Tone", "Vallejo|Blue Wash", "Reaper|Blue Wash"],
+    "carroburg crimson": ["Army Painter|Red Tone", "Vallejo|Red Wash", "Reaper|Red Wash"],
+    "athonian camoshade": ["Army Painter|Military Shader", "Vallejo|Green Wash"],
+    "biel-tan green": ["Army Painter|Green Tone", "Vallejo|Green Wash", "Reaper|Green Wash"],
+    "coelia greenshade": ["Army Painter|Green Tone", "Vallejo|Green Wash"],
+    "casandora yellow": ["Vallejo|Yellow Wash"],
+    "cassandora yellow": ["Vallejo|Yellow Wash"],
+    "fuegan orange": ["Vallejo|Orange Wash"]
+  };
+  function washSwaps(p){
+    const list = WASH_EQ[p.nk] || [];
+    return list.map(bn => {
+      const [brand, name] = bn.split("|"), nk = norm(name);
+      const all = cat.list.filter(c => c.brand === brand && c.nk === nk && !/discontinued|quickshade/i.test(c.set));
+      const c = all.find(x => /fanatic|wash|tone/i.test(x.set)) || all[0];
+      return c ? {...c, d: 0, match: "Common swap"} : null;
+    }).filter(Boolean);
+  }
+  const simMemo = new Map();
+  function similar(label, n){
+    const p = label ? find(label) : null;
+    if(!p || !okHex(p.hex)) return [];
+    const key = p.key + "|" + (n || 4);
+    if(simMemo.has(key)) return simMemo.get(key);
+    if(kind(p) === "wash"){ const w = p.brand === "Citadel" ? washSwaps(p).slice(0, n || 4) : []; simMemo.set(key, w); return w; }
+    const k = kind(p) === "skip" ? "paint" : kind(p), L = p._lab || (p._lab = lab(p.hex)), best = new Map();
+    for(const c of cat.list){
+      if(c.brand === p.brand || !okHex(c.hex) || kind(c) !== k) continue;
+      const q = c._lab || (c._lab = lab(c.hex));
+      const d = Math.sqrt((L[0] - q[0]) ** 2 + (L[1] - q[1]) ** 2 + (L[2] - q[2]) ** 2);
+      const cur = best.get(c.brand);
+      if(!cur || d < cur.d) best.set(c.brand, {...c, d});
+    }
+    const out = [...best.values()].filter(c => c.d < (k === "contrast" ? 10 : 18)).sort((a, b) => a.d - b.d).slice(0, n || 4)
+      .map(c => ({...c, match: c.d < 6 ? "Close match" : c.d < 11 ? "Similar" : "Nearest"}));
+    simMemo.set(key, out);
+    return out;
+  }
   const swatch = (label, cls) => { const p = find(label); return `<span class="pswatch ${cls || ""}" style="${p ? "background:" + p.hex : ""}"></span>`; };
 
   /* Autocomplete on a text input. opts.extra(): extra names (e.g. paints you own); opts.onPick(label). */
@@ -138,7 +203,7 @@
     const row = (p, i) => `<div class="psug${i === active ? " on" : ""}" role="option" data-i="${i}">
       <span class="pswatch" style="${p.hex ? "background:" + p.hex : ""}"></span>
       <span class="pn"><strong>${esc(p.custom ? `Use “${p.label}” as the name` : p.brand ? p.name : p.label)}</strong><small>${esc(p.custom ? "Keeps the current colour" : [p.brand, p.set].filter(Boolean).join(" · "))}</small></span>
-      ${!p.custom && own().has(p.key) ? `<span class="pown">Owned</span>` : ""}</div>`;
+      ${!p.custom && own().has(p.key) ? `<span class="pown">Owned</span>` : p.match ? `<span class="pmatch">${esc(p.match)}</span>` : ""}</div>`;
     function list(){
       if(!pop) return;
       const q = pop.querySelector(".cpop-q").value.trim(), box = pop.querySelector(".cpop-list");
@@ -151,6 +216,13 @@
         if(plain.length) html += `<div class="cpop-h">Plain colours</div><div class="cpop-sws">${plain.map((c, i) => `<button type="button" class="sw" data-plain="${i}" style="background:${c.hex}" title="${esc(c.name)}" aria-label="${esc(c.name)}"></button>`).join("")}</div>`;
         items = (opts.mine ? opts.mine() : []).map(l => find(l) || {label: l, name: l, brand: "", set: "Your paint", hex: "", key: norm(l)}).sort((a, b) => a.name.localeCompare(b.name)).slice(0, 80);
         html += items.length ? `<div class="cpop-h">Your paints</div>${items.map(row).join("")}` : `<p class="cpop-empty">Type to search thousands of paints, or pick a custom colour below.</p>`;
+        // The paint picked now, in other brands.
+        const sim = similar(v.paint, 5);
+        if(sim.length){
+          const from = items.length;
+          html += `<div class="cpop-h">Similar to ${esc(shortName(v.paint))} in other brands</div>${sim.map((p, i) => row(p, from + i)).join("")}`;
+          items = items.concat(sim);
+        }
       } else {
         items = search(q, opts.mine ? opts.mine() : [], 30);
         if(!items.some(p => p.nk === norm(q) || p.key === norm(q))) items.push({label: q, name: q, custom: true});
@@ -216,6 +288,66 @@
     show(); load().then(show);
     return {get: () => ({...v}), set(nv){ v = {hex: okHex(nv.hex) ? nv.hex : v.hex, paint: nv.paint || ""}; show(); }, close};
   }
+  /* A starter recipe for a colour: prime, basecoat, a Citadel shade that suits the colour, then two
+     lighter Citadel layers for the layer and edge highlight. Returns steps [{t, p}] or null. */
+  const citadelBy = (name, setRe) => { const c = cat.list.find(x => x.brand === "Citadel" && x.nk === norm(name) && (!setRe || setRe.test(x.set))); return c ? c.label : ""; };
+  const hueOf = q => (Math.atan2(q[2], q[1]) * 180 / Math.PI + 360) % 360;
+  const hueGap = (a, b) => { const d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d; };
+  function nearestLayer(target, want, not, near){
+    let best = null, bd = 1e9;
+    const colourful = Math.hypot(target[1], target[2]) > 12, th = hueOf(target);
+    const nh = near && Math.hypot(near[1], near[2]) > 12 ? hueOf(near) : null;   // stay near the previous step's hue
+    for(const c of cat.list){
+      if(c.brand !== "Citadel" || c.set !== "Layer" || !okHex(c.hex) || not.includes(c.nk)) continue;
+      const k = kind(c); if(want === "metal" ? k !== "metal" : k !== "paint") continue;
+      const q = c._lab || (c._lab = lab(c.hex));
+      // A colourful base never jumps to a different colour family (blue -> purple, brown -> red).
+      if(colourful && want !== "metal" && Math.hypot(q[1], q[2]) > 12 && (hueGap(hueOf(q), th) > 35 || (nh != null && hueGap(hueOf(q), nh) > 25))) continue;
+      // Compared as lightness, colourfulness and hue, with hue weighted most: a red should
+      // highlight with a lighter red, not a flesh tone or an orange.
+      const C1 = Math.hypot(target[1], target[2]), C2 = Math.hypot(q[1], q[2]);
+      const dh = Math.atan2(q[2], q[1]) - Math.atan2(target[2], target[1]);
+      const dH = 2 * Math.sqrt(C1 * C2) * Math.sin(dh / 2);
+      const d = Math.sqrt(((target[0] - q[0]) * .6) ** 2 + ((C1 - C2) * .7) ** 2 + (dH * 2.2) ** 2);
+      if(d < bd){ bd = d; best = c; }
+    }
+    return best;
+  }
+  function shadeFor(p, L, area){
+    const [l, a, b] = L, chroma = Math.hypot(a, b), hue = (Math.atan2(b, a) * 180 / Math.PI + 360) % 360;
+    if(area === "skin" && hue >= 20 && hue < 85) return "Reikland Fleshshade";   // flesh tones; green or blue skin goes by colour
+    if(kind(p) === "metal") return b > 18 && hue > 55 && hue < 100 ? "Reikland Fleshshade" : "Nuln Oil";
+    if(l < 28) return "Nuln Oil";
+    if(chroma < 12) return l > 60 && b > 4 ? "Seraphim Sepia" : "Nuln Oil";
+    if(hue >= 25 && hue < 85 && l < 50) return "Agrax Earthshade";
+    if(hue < 30 || hue >= 340) return "Carroburg Crimson";
+    if(hue < 60) return "Fuegan Orange";
+    if(hue < 100) return l > 55 ? "Cassandora Yellow" : "Agrax Earthshade";
+    if(hue < 200) return chroma > 35 ? "Biel-Tan Green" : "Athonian Camoshade";
+    if(hue < 290) return "Drakenhof Nightshade";
+    return "Druchii Violet";
+  }
+  function suggestSteps(label, area){
+    const p = label ? find(label) : null;
+    if(!p || !okHex(p.hex)) return null;
+    const k = kind(p), L = p._lab || (p._lab = lab(p.hex));
+    const spray = p.brand === "Citadel" ? citadelBy(p.name, /^Spray$/) : "";
+    const prime = spray || citadelBy(L[0] < 45 ? "Chaos Black" : (L[2] > 6 ? "Wraithbone" : "Grey Seer"), /^Spray$/);
+    if(k === "contrast") return [{t: "Prime", p: citadelBy(L[0] < 35 ? "Grey Seer" : "Wraithbone", /^Spray$/)}, {t: "Contrast", p: label}];
+    if(k === "wash") return null;
+    const want = k === "metal" ? "metal" : "paint";
+    // Dark colours get more colourful as they get lighter (Waaagh! Flesh -> Warboss Green, not a grey).
+    const C0 = Math.hypot(L[1], L[2]), h0 = (Math.atan2(L[2], L[1]) * 180 / Math.PI + 360) % 360;
+    const brown = h0 >= 20 && h0 < 85 && L[0] < 50 && C0 < 40;   // browns and drabs stay earthy
+    const boost = L[0] < 40 && C0 > 8 && want !== "metal" && !brown ? 1.3 : brown ? .85 : 1;
+    const layer = nearestLayer([Math.min(95, L[0] + 12), L[1] * boost, L[2] * boost], want, [p.nk]);
+    const high = nearestLayer([Math.min(98, L[0] + 26), L[1] * .88 * boost, L[2] * .88 * boost], want, [p.nk, layer ? layer.nk : ""], layer && (layer._lab || (layer._lab = lab(layer.hex))));
+    const shade = citadelBy(shadeFor(p, L, area), /^Shade$/);
+    return [{t: "Prime", p: prime}, {t: "Basecoat", p: label}, shade && {t: "Shade / wash", p: shade},
+      layer && {t: "Layer", p: layer.label}, high && {t: "Edge highlight", p: high.label}].filter(st => st && st.p);
+  }
+  // "Or: Army Painter Dark Tone, Vallejo Black Wash" for lists; "" when nothing is close enough.
+  const swapsText = (label, n) => { const sim = cat ? similar(label, n || 2) : []; return sim.length ? "Or: " + sim.map(c => `${c.brand} ${c.name}`).join(", ") : ""; };
   // Short name for a paint label ("Citadel Abaddon Black" -> "Abaddon Black"); other text as it is.
   const shortName = label => { const p = label ? find(label) : null; return p ? p.name : label || ""; };
   // Name plus a small "Citadel · Base" line, for showing a paint in lists.
@@ -224,5 +356,5 @@
     return p ? {name: p.name, meta: [p.brand, p.set].filter(Boolean).join(" · ")} : {name: label || "", meta: ""};
   }
 
-  window.LEDGER_PAINTUI = {load, find, search, swatch, picker, norm, slot, shortName, describe};
+  window.LEDGER_PAINTUI = {load, find, search, swatch, picker, norm, slot, shortName, describe, similar, swapsText, suggestSteps};
 })();

@@ -50,6 +50,7 @@
   // Colours for the badge's shoulder pad: the left pauldron's own when they're painted differently.
   const padColours = (o, split) => split && PROF.pauldrons ? {pauldron: o.lpauldron, ptrim: o.lpsecondary, pemblem: o.lpemblem} : {};
   const STAR = on => `<svg width="18" height="18" viewBox="0 0 24 24" fill="${on ? "currentColor" : "none"}" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 16.8l-5.4 2.9 1.1-6.1-4.5-4.2 6.1-.8Z"/></svg>`;
+  const HEART = on => `<svg width="15" height="15" viewBox="0 0 24 24" fill="${on ? "currentColor" : "none"}" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 20s-7.5-4.6-7.5-10.1A4.4 4.4 0 0 1 12 7.3a4.4 4.4 0 0 1 7.5 2.6C19.5 15.4 12 20 12 20Z"/></svg>`;
   const QUICK = ["Black","White","Bone","Silver","Gunmetal","Gold","Brass","Red","Crimson","Blue","Navy","Green","Purple","Yellow"];
 
   const $ = id => document.getElementById(id);
@@ -151,6 +152,24 @@
   }
   /* ---------- account: who's signed in, the top-bar menu and the log in / sign up / reset forms ---------- */
   const num = n => Number(n || 0).toLocaleString("en");
+  /* ---------- settings: saved in this browser, and on the account when logged in (so they follow you) ---------- */
+  const SETTINGS_KEY = "ll-settings";
+  const CURRENCIES = [["R", "South African rand (R)"], ["$", "US dollar ($)"], ["£", "British pound (£)"], ["€", "Euro (€)"], ["A$", "Australian dollar (A$)"], ["C$", "Canadian dollar (C$)"], ["NZ$", "New Zealand dollar (NZ$)"]];
+  let settings = {hidePoints: false, currency: "R"};
+  function loadSettings(){
+    try { settings = {...settings, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}")}; } catch(e){}
+    const acc = store && store.session && (store.session.user.user_metadata || {}).settings;
+    if(acc && typeof acc === "object") settings = {...settings, ...acc};
+    settings.hidePoints = settings.hidePoints === true;
+    if(!CURRENCIES.some(c => c[0] === settings.currency)) settings.currency = "R";
+    document.body.classList.toggle("no-points", settings.hidePoints);
+  }
+  async function saveSettings(patch){
+    settings = {...settings, ...patch};
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch(e){}
+    document.body.classList.toggle("no-points", settings.hidePoints);
+    if(store.kind === "supabase" && store.session) await store.updateProfile({settings});
+  }
   function acct(){
     const u = store && store.session && store.session.user;
     if(!u) return null;
@@ -166,6 +185,20 @@
   const avatarHtml = (a, cls) => `<span class="avatar${cls ? " " + cls : ""}${a.avatar ? " has-img" : ""}" aria-hidden="true">${avatarInner(a)}</span>`;
   const monthYear = d => { const t = new Date(d); return isNaN(t) ? "" : t.toLocaleDateString("en-GB", {month: "long", year: "numeric"}); };
   const CARET = `<svg class="caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>`;
+  /* ---------- installable app (PWA) ---------- */
+  let installEvt = null;
+  const standalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+  const installable = () => !!installEvt && !standalone();
+  window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); installEvt = e; if(store) setTop(); });
+  window.addEventListener("appinstalled", () => { installEvt = null; if(store) setTop(); });
+  async function installApp(){
+    if(!installEvt) return false;
+    installEvt.prompt();
+    try { await installEvt.userChoice; } catch(e){}
+    installEvt = null; setTop();
+    return true;
+  }
+  const clearOfflineData = () => { try { navigator.serviceWorker && navigator.serviceWorker.controller && navigator.serviceWorker.controller.postMessage({type: "clear-data"}); } catch(e){} };
   function setTop(){
     const nav = $("topnav"), a = store.kind === "supabase" ? acct() : null;
     if(store.kind !== "supabase"){ nav.innerHTML = ""; return; }
@@ -177,11 +210,13 @@
       <button type="button" class="acct-btn" id="b-acct" aria-haspopup="menu" aria-expanded="false" aria-controls="acct-menu" aria-label="Account menu for ${esc(a.name)}">${avatarHtml(a)}<span class="acct-name">${esc(a.name)}</span>${CARET}</button>
       <div class="acct-menu" id="acct-menu" role="menu" hidden>
         <div class="acct-head">${avatarHtml(a, "lg")}<span><strong>${esc(a.name)}</strong><small>${esc(a.email)}</small></span></div>
+        <a role="menuitem" href="#/">Home</a>
         <a role="menuitem" href="#/profile">My profile and ledgers</a>
         <button type="button" role="menuitem" data-roster>Your roster</button>
+        <a role="menuitem" href="#/shame">Pile of shame</a>
         <a role="menuitem" href="#/shared">Shared armies</a>
-        <button type="button" role="menuitem" disabled aria-disabled="true">Settings <span class="soon">Soon</span></button>
-        <a role="menuitem" href="#/">Home</a>
+        <a role="menuitem" href="#/settings">Settings</a>
+        ${installable() ? `<button type="button" role="menuitem" data-install>Install app</button>` : ""}
         <hr>
         <button type="button" role="menuitem" data-logout>Log out</button>
       </div>
@@ -192,6 +227,7 @@
     if(view.guard && !(await view.guard())) return;
     view.guard = null;
     try { await store.signOut(); } catch(e){ console.error(e); }
+    clearOfflineData();
     if(location.hash !== "#/") location.hash = "#/";
   }
   const AUTH = {
@@ -287,7 +323,7 @@
   function openAuth(mode, note){
     if(store.kind !== "supabase") return;
     const d = $("authdlg");
-    if(!dlgAuth) dlgAuth = authForm($("auth-host"), "in", {onDone: () => { if(view.name === "landing" && !/^#\/(shared|profile)\b/.test(location.hash)) location.hash = "#/profile"; setTimeout(() => { if(d.open) d.close(); }, 700); }});
+    if(!dlgAuth) dlgAuth = authForm($("auth-host"), "in", {onDone: () => { if(view.name === "landing" && !/^#\/(shared|profile|settings|shame)\b/.test(location.hash)) location.hash = "#/profile"; setTimeout(() => { if(d.open) d.close(); }, 700); }});
     dlgAuth.set(typeof mode === "string" ? mode : "in", note);
     if(!d.open) d.showModal();
     dlgAuth.focus();
@@ -336,9 +372,18 @@
     try {
       if(parts[0] === "new" && FBY[parts[1]]) await viewSetup({factionId: parts[1]});
       else if(parts[0] === "army" && parts[1] && parts[2] === "colours") await viewSetup({armyId: parts[1]});
+      else if(parts[0] === "army" && parts[1] && parts[2] === "guide") await viewGuide(parts[1]);
       else if(parts[0] === "army" && parts[1] && parts[2] === "unit" && parts[3]) await viewLedger(parts[1], parts[3]);
       else if(parts[0] === "army" && parts[1]) await viewLedger(parts[1]);
       // The list of shared armies is for logged-in painters; a shared ledger itself still opens from its link.
+      else if(parts[0] === "shame"){
+        if(store.kind === "supabase" && !store.session){ await viewLanding(); setTimeout(() => openAuth("in", "Log in to see your pile of shame."), 0); }
+        else await viewShame();
+      }
+      else if(parts[0] === "settings"){
+        if(store.kind === "supabase" && !store.session){ await viewLanding(); setTimeout(() => openAuth("in", "Log in to change your settings."), 0); }
+        else await viewSettings();
+      }
       else if(parts[0] === "shared"){
         if(store.kind === "supabase" && !store.session){ await viewLanding(); setTimeout(() => openAuth("in", "Log in to browse shared armies."), 0); }
         else await viewShared();
@@ -399,7 +444,7 @@
           </form>` : `<h1>Your ledgers</h1>`}
           ${me ? `<p class="sub">${esc(me.email)}${since ? ` · Painting with us since ${esc(since)}` : ""}</p>` : `<p class="sub">Plan how you'll paint your army. Pick your faction, choose your colours, then track every unit with photos, weapons and paint recipes.</p>`}
           ${me ? `<p class="msg" id="ph-msg" role="status" aria-live="polite"></p>` : `<div class="ph-note">${noteHtml()}</div>`}
-          ${armies.length ? `<div class="ph-actions"><button type="button" class="btn-sm" data-roster><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11"/><path d="M9 12h11"/><path d="M9 18h11"/><path d="M4 6h.01"/><path d="M4 12h.01"/><path d="M4 18h.01"/></svg>Your roster<span class="count">${num(tot.units)}</span></button></div>` : ""}
+          ${armies.length ? `<div class="ph-actions"><button type="button" class="btn-sm" data-roster><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11"/><path d="M9 12h11"/><path d="M9 18h11"/><path d="M4 6h.01"/><path d="M4 12h.01"/><path d="M4 18h.01"/></svg>Your roster<span class="count">${num(tot.units)}</span></button><a class="btn btn-sm" href="#/shame">Pile of shame${shameCount() ? `<span class="count">${shameCount()}</span>` : ""}</a><a class="btn btn-sm" href="#/settings">Settings</a></div>` : ""}
         </div>
         <div class="stats" aria-label="Your painting so far">
           <div class="stat"><b>${armies.length}</b><span>${armies.length === 1 ? "Ledger" : "Ledgers"}</span></div>
@@ -419,7 +464,8 @@
             <div class="card-top">${tierBadge(a.scheme, t0, 56)}<div><h3>${esc(a.name)}</h3><div class="meta">${esc(f ? f.name : a.faction)}</div></div></div>
             <div class="prog" aria-hidden="true"><i style="width:${pct}%"></i></div>
             <div class="foot"><span>${plural(s.units, "unit")} · ${plural(s.models, "model")}</span><span>${pct}% painted</span></div>
-          </a>`;}).join("")}</div>` : ""}
+          </a>`;}).join("")}</div>
+        <section class="activity panel" id="activity" aria-labelledby="act-h"><h2 class="act-title" id="act-h">Painting activity</h2><p class="loading">Adding up your painting…</p></section>` : ""}
       <h2 class="section">Start a new ledger <small>Choose your faction</small></h2>
       <div class="row-actions">
         <input type="search" class="fsearch" id="fq" placeholder="Search factions" aria-label="Search factions">
@@ -441,6 +487,7 @@
     });
     app.querySelectorAll("[data-signin]").forEach(b => b.addEventListener("click", openAuth));
     if(me && store.updateProfile) profileEdits();
+    if(armies.length) store.listAllUnits().then(us => { if($("activity")) drawActivity(us); }).catch(err => { console.error(err); if($("activity")) $("activity").querySelector(".loading").textContent = "Couldn't load your painting history."; });
     if(store.canWrite){
       $("b-import-army").addEventListener("click", () => $("f-import-army").click());
       $("f-import-army").addEventListener("change", async e => {
@@ -635,6 +682,111 @@ Redemptor Dreadnought (210 points)</pre>
     }));
   }
   /* ============================================================
+     Painting guide: one printable page with an army's colours, ranks, recipes, units and paints
+     ============================================================ */
+  async function viewGuide(armyId){
+    view.name = "guide";
+    const army = await store.getArmy(armyId);
+    if(!army){ location.hash = "#/profile"; return; }
+    const f = FBY[army.faction] || {name: army.faction};
+    PROF = P.profileFor(army.faction);
+    const scheme = army.scheme; fillSkin(scheme, army.faction);
+    document.title = `${army.name} painting guide · Livery Ledger`;
+    app.innerHTML = `<p class="loading">Building your painting guide…</p>`;
+    const [units] = await Promise.all([store.listUnits(army.id), PU.load()]);
+    const mine = store.canWrite && (!army.owner || !store.session || army.owner === store.session.user.id);
+    let owned = new Set();
+    if(mine){ try { owned = new Set((await store.getPaints()).map(PU.norm)); } catch(e){} }
+    const c = scheme.colors, sp = scheme.slotPaints || {};
+    const paints = new Map();   // label -> {label, hex}
+    const note = (label, hex) => { if(label && !paints.has(PU.norm(label))){ const p = PU.find(label); paints.set(PU.norm(label), {label, hex: p ? p.hex : hex || ""}); } };
+    const paintCell = (hex, label) => {
+      note(label, hex);
+      const d = PU.describe(label), p = label && PU.find(label);
+      const sw = (p && p.hex) || (ART.hexOk(hex) ? hex : "");
+      return `<span class="g-sw" style="${sw ? "background:" + sw : ""}"></span><span class="g-pn">${label ? esc(d.name) : esc(cname(hex))}${d.meta ? `<small>${esc(d.meta)}</small>` : ""}</span>`;
+    };
+    const keys = PROF.keys.filter(k => ART.hexOk(c[k]) && (!PAULDRONS.includes(k) || (scheme.splitPauldrons && PROF.pauldrons)) && (k !== "skin" || PROF.skinAlways || units.some(u => headOf(u) === "bare")));
+    const XA = P.extrasFor(army.faction), xaAll = XA.details.concat(XA.weapons);
+    const xa = Object.entries(scheme.xareas || {}).map(([id, v]) => ({label: (xaAll.find(a => a.id === id) || {label: id.slice(2)}).label, ...v}));
+    const recipes = scheme.recipes || [];
+    const tierOf = u => scheme.tiers[u.tier] || scheme.tiers[0] || {};
+    const sorted = units.slice().sort((a, b) => (b.tier - a.tier) || String(a.name).localeCompare(String(b.name)));
+    // Colours a unit paints differently from the army's scheme.
+    const SLOT_ORDER = ["lens", "skin", "armour", "secondary", "trim", "emblem", "cloth", "metal", ...PAULDRONS];
+    const ownColours = u => SLOT_ORDER.filter(k => ART.hexOk(u[k]) && k !== "helmet" && ART.hexOk(c[k]) && u[k].toLowerCase() !== c[k].toLowerCase())
+      .map(k => { const lbl = (u.slotPaints || {})[k]; note(lbl, u[k]); return `${esc(PROF.labels[k] || k)}: ${esc(lbl ? PU.shortName(lbl) : cname(u[k]))}`; });
+    const models = units.reduce((n, u) => n + (+u.count || 0), 0), done = units.reduce((n, u) => n + Math.min(+u.count || 0, +u.painted || 0), 0);
+    const today = new Date().toLocaleDateString("en-GB", {day: "numeric", month: "long", year: "numeric"});
+    const body = `
+      <div class="guide-actions">
+        <a class="btn btn-sm" href="#/army/${esc(army.id)}">← Back to the ledger</a>
+        <button type="button" class="primary btn-sm" id="g-print">Print or save as PDF</button>
+      </div>
+      <article class="guide">
+        <header class="g-head">
+          <div class="g-badges">${scheme.tiers.slice(0, 4).map(t => tierBadge(scheme, t, 64)).join("")}</div>
+          <div>
+            <p class="eyebrow">Painting guide</p>
+            <h1>${esc(army.name)}</h1>
+            <p class="g-meta">${esc(f.name)} · ${plural(units.length, "unit")} · ${done}/${models} models painted${scheme.by ? ` · by ${esc(scheme.by)}` : ""} · ${esc(today)}</p>
+          </div>
+        </header>
+
+        <section class="g-sec">
+          <h2>Colour scheme</h2>
+          <table class="g-table"><tbody>
+            ${keys.map(k => `<tr><th>${esc(PROF.labels[k] || k)}</th><td>${paintCell(c[k], sp[k])}</td></tr>`).join("")}
+            ${xa.map(a => `<tr><th>${esc(a.label)}</th><td>${paintCell(a.hex, a.paint)}</td></tr>`).join("")}
+          </tbody></table>
+        </section>
+
+        <section class="g-sec">
+          <h2>Ranks <small>${esc(PROF.head)} colour</small></h2>
+          <table class="g-table"><tbody>
+            ${scheme.tiers.map(t => `<tr><th>${esc(t.name)}${t.note ? `<small>${esc(t.note)}</small>` : ""}</th><td>${paintCell(t.color, t.paint)}</td></tr>`).join("")}
+          </tbody></table>
+        </section>
+
+        ${recipes.length ? `<section class="g-sec g-recipes">
+          <h2>Recipes</h2>
+          ${recipes.map(r => `<div class="g-recipe">
+            <h3>${esc(r.name)}${r.area ? ` <small>${esc(r.area)}</small>` : ""}</h3>
+            <ol>${r.steps.map(st => `<li><span class="g-tech">${esc(st.t || "Step")}</span>${st.p ? paintCell("", st.p) : "<span></span><span></span>"}</li>`).join("")}</ol>
+            ${r.notes ? `<p class="g-note">${esc(r.notes)}</p>` : ""}
+          </div>`).join("")}
+        </section>` : ""}
+
+        ${sorted.length ? `<section class="g-sec">
+          <h2>Units</h2>
+          <table class="g-table g-units">
+            <thead><tr><th>Unit</th><th>Models</th><th>Rank</th><th>Progress</th><th>Painted differently</th></tr></thead>
+            <tbody>${sorted.map(u => {
+              const rs = (u.recipes || []).map(id => recipes.find(r => r.id === id)).filter(Boolean).map(r => r.name);
+              const own = ownColours(u);
+              return `<tr><td><strong>${esc(u.name)}</strong>${u.datasheet && u.datasheet !== u.name ? `<small>${esc(u.datasheet)}</small>` : ""}${rs.length ? `<small>Recipes: ${esc(rs.join(", "))}</small>` : ""}</td>
+                <td>${u.count}</td><td>${esc(tierOf(u).name || "")}</td>
+                <td>${u.painted}/${u.count}${u.status === "done" ? " ✓" : ""}</td>
+                <td>${own.length ? own.join("<br>") : "—"}</td></tr>`;
+            }).join("")}</tbody>
+          </table>
+        </section>` : ""}
+
+        <section class="g-sec">
+          <h2>Paints for this army <small>${paints.size} paints</small></h2>
+          <ul class="g-paints">${[...paints.values()].sort((a, b) => a.label.localeCompare(b.label)).map(p => {
+            const d = PU.describe(p.label), have = owned.has(PU.norm(p.label));
+            return `<li class="${have ? "have" : ""}"><span class="g-box" aria-hidden="true">${have ? "✓" : ""}</span><span class="g-sw" style="${p.hex ? "background:" + p.hex : ""}"></span><span class="g-pn">${esc(d.name)}${d.meta ? `<small>${esc(d.meta)}</small>` : ""}${!have && PU.swapsText(p.label) ? `<small class="swaps">${esc(PU.swapsText(p.label))}</small>` : ""}</span></li>`;
+          }).join("")}</ul>
+          ${mine ? `<p class="g-note">Ticked paints are ones you've marked as owned.</p>` : ""}
+        </section>
+        <footer class="g-foot">Made with Livery Ledger · ${esc(location.host || "liveryledger.co.za")}</footer>
+      </article>`;
+    app.innerHTML = body;
+    $("g-print").addEventListener("click", () => window.print());
+  }
+
+  /* ============================================================
      Shared armies: every ledger someone has chosen to share
      ============================================================ */
   async function viewShared(){
@@ -650,7 +802,12 @@ Redemptor Dreadnought (210 points)</pre>
       <div class="sh-tools">
         <input type="search" id="sh-q" placeholder="Search armies, factions or painters" aria-label="Search shared armies">
         <select id="sh-f" aria-label="Faction"><option value="">All factions</option></select>
-        ${mine ? `<label class="check sh-mine"><input type="checkbox" id="sh-mine"> Only mine</label>` : ""}
+        <div class="filters" id="sh-show" role="group" aria-label="Show">
+          <button type="button" data-show="all" aria-pressed="true">All</button>
+          <button type="button" data-show="following" aria-pressed="false" hidden>Following</button>
+          <button type="button" data-show="mine" aria-pressed="false">Mine</button>
+        </div>
+        <label class="inline sh-sort">Sort<select id="sh-sort"><option value="recent">Recently updated</option><option value="liked" hidden>Most liked</option></select></label>
         <span class="sh-count" id="sh-count" aria-live="polite"></span>
       </div>
       <div id="sh-list"><p class="loading">Loading shared armies…</p></div>`;
@@ -660,33 +817,387 @@ Redemptor Dreadnought (210 points)</pre>
     catch(err){ console.error(err); if($("sh-list")) $("sh-list").innerHTML = `<div class="banner"><span class="dot warn"></span>Couldn't load shared armies: ${esc(errText(err))}</div>`; return; }
     if(!$("sh-list")) return;   // left the page while loading
     const {armies, sum} = data;
+    let social = null, show = "all";
+    try { social = await store.communityState(armies.map(a => a.id)); } catch(err){ console.warn("Likes and follows unavailable", err); }
+    if(!social) console.info("Likes and follows need the one-time setup in supabase/features.sql.");
+    if(social){ $("sh-show").querySelector('[data-show="following"]').hidden = false; $("sh-sort").querySelector('[value="liked"]').hidden = false; }
     const present = [...new Set(armies.map(a => a.faction))].filter(id => FBY[id]).sort((a, b) => FBY[a].name.localeCompare(FBY[b].name));
     $("sh-f").insertAdjacentHTML("beforeend", present.map(id => `<option value="${esc(id)}">${esc(FBY[id].name)}</option>`).join(""));
     const keep = PROF;
     function draw(){
-      const q = $("sh-q").value.trim().toLowerCase(), fid = $("sh-f").value, onlyMine = $("sh-mine") && $("sh-mine").checked;
-      const list = armies.filter(a => (!fid || a.faction === fid) && (!onlyMine || a.owner === mine)
+      const q = $("sh-q").value.trim().toLowerCase(), fid = $("sh-f").value;
+      const likesOf = a => (social && social.likes[a.id]) || 0;
+      const list = armies.filter(a => (!fid || a.faction === fid) && (show !== "mine" || a.owner === mine) && (show !== "following" || (social && social.following.has(a.owner)))
         && (!q || [a.name, (FBY[a.faction] || {}).name, a.scheme.by].join(" ").toLowerCase().includes(q)));
+      if($("sh-sort").value === "liked") list.sort((a, b) => likesOf(b) - likesOf(a) || String(b.updatedAt).localeCompare(String(a.updatedAt)));
       $("sh-count").textContent = armies.length ? (list.length === armies.length ? `${armies.length} ${armies.length === 1 ? "army" : "armies"}` : `${list.length} of ${armies.length}`) : "";
       if(!armies.length){ $("sh-list").innerHTML = `<div class="ro-empty"><strong>No shared armies yet</strong><p>Be the first: open one of your ledgers and press Share.</p></div>`; return; }
-      if(!list.length){ $("sh-list").innerHTML = `<p class="hint">No shared armies match. Try a different search or faction.</p>`; return; }
+      if(!list.length){ $("sh-list").innerHTML = `<p class="hint">${show === "following" && !q && !fid ? "You're not following anyone yet, or they haven't shared anything. Follow a painter from one of their armies." : "No shared armies match. Try a different search or faction."}</p>`; return; }
       $("sh-list").innerHTML = `<div class="ledgers">${list.map(a => {
         const s = sum[a.id] || {units: 0, models: 0, done: 0}, f = FBY[a.faction];
         const pct = s.models ? Math.round(s.done / s.models * 100) : 0;
         PROF = P.profileFor(a.faction);
         const by = a.owner === mine ? "you" : a.scheme.by;
-        return `<a class="lcard" href="#/army/${esc(a.id)}">
-          <div class="card-top">${tierBadge(a.scheme, a.scheme.tiers[0], 56)}<div><h3>${esc(a.name)}</h3><div class="meta">${esc(f ? f.name : a.faction)}${by ? ` · by ${esc(by)}` : ""}</div></div>${a.owner === mine ? `<span class="tag">Yours</span>` : ""}</div>
-          <div class="prog" aria-hidden="true"><i style="width:${pct}%"></i></div>
-          <div class="foot"><span>${plural(s.units, "unit")} · ${plural(s.models, "model")}</span><span>${pct}% painted</span></div>
-        </a>`;
+        const liked = social && social.liked.has(a.id), n = likesOf(a), follows = social && social.following.has(a.owner);
+        return `<div class="lcard shcard">
+          <a class="sh-open" href="#/army/${esc(a.id)}">
+            <div class="card-top">${tierBadge(a.scheme, a.scheme.tiers[0], 56)}<div><h3>${esc(a.name)}</h3><div class="meta">${esc(f ? f.name : a.faction)}${by ? ` · by ${esc(by)}` : ""}</div></div>${a.owner === mine ? `<span class="tag">Yours</span>` : ""}</div>
+            <div class="prog" aria-hidden="true"><i style="width:${pct}%"></i></div>
+            <div class="foot"><span>${plural(s.units, "unit")} · ${plural(s.models, "model")}</span><span>${pct}% painted</span></div>
+          </a>
+          ${social ? `<div class="sh-actions">
+            <button type="button" class="btn-sm like${liked ? " on" : ""}" data-like="${esc(a.id)}" aria-pressed="${!!liked}" aria-label="${liked ? "Unlike" : "Like"} ${esc(a.name)}${n ? `, ${plural(n, "like")}` : ""}">${HEART(liked)}<span>${n || ""}</span></button>
+            ${a.owner !== mine ? `<button type="button" class="btn-sm follow${follows ? " on" : ""}" data-follow="${esc(a.owner)}" aria-pressed="${!!follows}">${follows ? "Following" : "Follow"}${a.scheme.by ? ` ${esc(a.scheme.by)}` : " painter"}</button>` : ""}
+          </div>` : ""}
+        </div>`;
       }).join("")}</div>`;
       PROF = keep;
     }
     $("sh-q").addEventListener("input", draw);
     $("sh-f").addEventListener("change", draw);
-    if($("sh-mine")) $("sh-mine").addEventListener("change", draw);
+    $("sh-sort").addEventListener("change", draw);
+    $("sh-show").addEventListener("click", e => {
+      const b = e.target.closest("[data-show]"); if(!b) return;
+      show = b.dataset.show; $("sh-show").querySelectorAll("[data-show]").forEach(x => x.setAttribute("aria-pressed", x === b)); draw();
+    });
+    $("sh-list").addEventListener("click", async e => {
+      const lk = e.target.closest("[data-like]"), fo = e.target.closest("[data-follow]");
+      if(!social || (!lk && !fo)) return;
+      const btn = lk || fo; btn.disabled = true;
+      try {
+        if(lk){
+          const id = lk.dataset.like, on = !social.liked.has(id);
+          await store.setLike(id, on);
+          if(on){ social.liked.add(id); social.likes[id] = (social.likes[id] || 0) + 1; } else { social.liked.delete(id); social.likes[id] = Math.max(0, (social.likes[id] || 1) - 1); }
+        } else {
+          const uid = fo.dataset.follow, on = !social.following.has(uid);
+          await store.setFollow(uid, on);
+          if(on) social.following.add(uid); else social.following.delete(uid);
+        }
+        draw();
+      } catch(err){ btn.disabled = false; alertBanner("Couldn't save that: " + errText(err)); }
+    });
     draw();
+  }
+
+  /* ============================================================
+     Pile of shame: kits bought but not started yet
+     ============================================================ */
+  const SHAME_KEY = "ll-shame";
+  const isoDay = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  function cleanShame(list){
+    return (Array.isArray(list) ? list : []).filter(k => k && k.name).slice(0, 200).map(k => ({
+      id: String(k.id || S.newId()).slice(0, 40), name: String(k.name).replace(/\s+/g, " ").trim().slice(0, 80),
+      faction: FBY[k.faction] ? k.faction : "", models: Math.min(999, Math.max(1, parseInt(k.models, 10) || 1)),
+      price: Math.min(100000, Math.max(0, Math.round((parseFloat(k.price) || 0) * 100) / 100)),
+      added: /^\d{4}-\d\d-\d\d$/.test(k.added) ? k.added : isoDay(new Date()), note: String(k.note || "").slice(0, 120)
+    }));
+  }
+  function shameRaw(){
+    if(store.kind === "supabase") return ((store.session && store.session.user.user_metadata) || {}).shame;
+    try { return JSON.parse(localStorage.getItem(SHAME_KEY) || "[]"); } catch(e){ return []; }
+  }
+  const shameCount = () => cleanShame(shameRaw()).length;
+  async function getShame(){ return cleanShame(shameRaw()); }
+  async function putShame(list){
+    list = cleanShame(list);
+    if(store.kind === "supabase") await store.updateProfile({shame: list});
+    else localStorage.setItem(SHAME_KEY, JSON.stringify(list));
+    return list;
+  }
+  const money = n => settings.currency + "\u00a0" + Number(n || 0).toLocaleString("en", {minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2});
+  function ageOf(day){
+    const days = Math.max(0, Math.round((Date.now() - new Date(day + "T12:00:00")) / 864e5));
+    if(days < 1) return "today";
+    if(days < 31) return plural(days, "day") + " ago";
+    const m = Math.round(days / 30.44);
+    return m < 12 ? plural(m, "month") + " ago" : (m % 12 ? `${plural(Math.floor(m / 12), "year")}, ${plural(m % 12, "month")} ago` : plural(m / 12, "year") + " ago");
+  }
+  async function viewShame(){
+    view.name = "shame";
+    document.title = "Pile of shame · Livery Ledger";
+    let list = await getShame(), armies = [];
+    try { armies = await store.listArmies(); } catch(e){}
+    const allNames = [...new Set(FACTIONS.flatMap(f => f.units.filter(u => !u.t).map(u => u.n)))].sort();
+    app.innerHTML = `
+      <div class="crumbs"><a href="#/profile">My ledgers</a> / Pile of shame</div>
+      <section class="page-head shame-head">
+        <div><p class="eyebrow">No judgement</p><h1>Pile of shame</h1>
+        <p class="sub">Kits you've bought but haven't started yet. When you start one, move it into a ledger.</p></div>
+        <div class="stats" id="sh-stats"></div>
+      </section>
+      <form class="panel shame-add" id="kit-form" autocomplete="off" novalidate>
+        <h2>Add a kit</h2>
+        <div class="kit-grid">
+          <label class="kit-name">Kit or datasheet<input id="kit-name" maxlength="80" placeholder="e.g. Intercessor Squad" required></label>
+          <label>Faction<select id="kit-fac"><option value="">Any or not sure</option>${FACTIONS.map(f => `<option value="${esc(f.id)}">${esc(f.name)}</option>`).join("")}</select></label>
+          <label>Models<input id="kit-models" type="number" min="1" max="999" inputmode="numeric" value="1"></label>
+          <label>Price (${esc(settings.currency)})<input id="kit-price" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0"></label>
+          <label>Bought<input id="kit-date" type="date" value="${isoDay(new Date())}" max="${isoDay(new Date())}"></label>
+        </div>
+        <div class="row-actions"><button type="submit" class="primary btn-sm">Add to the pile</button><span class="msg" id="kit-msg" role="status"></span></div>
+      </form>
+      <div id="shame-list"></div>`;
+    combo($("kit-name"), () => {
+      const q = $("kit-name").value.trim().toLowerCase(), fid = $("kit-fac").value;
+      const pool = fid ? FBY[fid].units.filter(u => !u.t).map(u => u.n) : q.length >= 2 ? allNames : [];
+      return pool.filter(n => !q || n.toLowerCase().includes(q)).slice(0, 60);
+    });
+    // Picking a datasheet fills in its usual model count.
+    $("kit-name").addEventListener("change", () => {
+      const fid = $("kit-fac").value, name = $("kit-name").value.trim().toLowerCase();
+      const sh = (fid ? FBY[fid].units : FACTIONS.flatMap(f => f.units)).find(u => u.n.toLowerCase() === name);
+      if(sh && $("kit-models").value === "1"){ const br = sh.pb || []; const n = br.length ? (br[0][0] === br[0][1] ? br[0][0] : Math.max(1, br[0][0] - 1)) : 1; $("kit-models").value = n; }
+      if(sh && !fid){ const f = FACTIONS.find(f => f.units.includes(sh)); if(f) $("kit-fac").value = f.id; }
+    });
+    function draw(){
+      const kits = list.slice().sort((a, b) => a.added.localeCompare(b.added));
+      const models = kits.reduce((n, k) => n + k.models, 0), value = kits.reduce((n, k) => n + k.price, 0);
+      $("sh-stats").innerHTML = `<div class="stat"><b>${kits.length}</b><span>${kits.length === 1 ? "Kit" : "Kits"}</span></div><div class="stat"><b>${num(models)}</b><span>Models</span></div><div class="stat"><b>${esc(money(value))}</b><span>Value</span></div><div class="stat"><b>${kits.length ? esc(ageOf(kits[0].added).replace(" ago", "")) : "—"}</b><span>Oldest kit</span></div>`;
+      $("shame-list").innerHTML = kits.length ? `<div class="kits">${kits.map(k => `<article class="panel kit" data-kit="${esc(k.id)}">
+          <div class="kit-top">${k.faction ? factionBadge(k.faction, 40) : `<span class="kit-box" aria-hidden="true"></span>`}
+            <div><h3>${esc(k.name)}</h3><small>${esc([k.faction ? FBY[k.faction].name : "", plural(k.models, "model"), k.price ? money(k.price) : ""].filter(Boolean).join(" · "))}</small></div>
+            <button type="button" class="kit-rm" data-rmkit="${esc(k.id)}" aria-label="Remove ${esc(k.name)} from the pile" title="Remove">×</button></div>
+          <div class="kit-foot"><span class="kit-age">On the pile ${esc(ageOf(k.added))}</span><button type="button" class="btn-sm primary" data-start="${esc(k.id)}">Start painting</button></div>
+          <div class="kit-start" hidden></div>
+        </article>`).join("")}</div>`
+        : `<div class="ro-empty"><strong>Your pile is empty</strong><p>Either you paint everything you buy, or you haven't added anything yet. Add kits above as you buy them.</p></div>`;
+    }
+    draw();
+    $("kit-form").addEventListener("submit", async e => {
+      e.preventDefault();
+      const name = $("kit-name").value.trim();
+      if(!name){ $("kit-msg").textContent = "Give the kit a name."; $("kit-name").focus(); return; }
+      const kit = {id: S.newId(), name, faction: $("kit-fac").value, models: $("kit-models").value, price: $("kit-price").value, added: $("kit-date").value || isoDay(new Date())};
+      try { list = await putShame(list.concat(kit)); $("kit-name").value = ""; $("kit-models").value = "1"; $("kit-price").value = ""; $("kit-date").value = isoDay(new Date()); $("kit-msg").textContent = `Added ${name}.`; draw(); $("kit-name").focus(); }
+      catch(err){ $("kit-msg").textContent = "Couldn't save: " + errText(err); }
+    });
+    $("shame-list").addEventListener("click", async e => {
+      const rm = e.target.closest("[data-rmkit]");
+      if(rm){
+        if(!rm.classList.contains("armed")){ rm.classList.add("armed"); rm.textContent = "Remove?"; setTimeout(() => { if(rm.isConnected){ rm.classList.remove("armed"); rm.textContent = "×"; } }, 3000); return; }
+        try { list = await putShame(list.filter(k => k.id !== rm.dataset.rmkit)); draw(); } catch(err){ alertBanner("Couldn't remove it: " + errText(err)); }
+        return;
+      }
+      const st = e.target.closest("[data-start]");
+      if(st){
+        const k = list.find(x => x.id === st.dataset.start), box = st.closest(".kit").querySelector(".kit-start");
+        if(!armies.length){ box.innerHTML = `<p class="hint">Start a ledger first, then move this kit into it. <a href="#/profile">Go to your ledgers</a></p>`; box.hidden = false; return; }
+        const pick = armies.find(a => a.faction === k.faction) || armies[0];
+        box.innerHTML = `<label>Add to ledger<select data-to>${armies.map(a => `<option value="${esc(a.id)}"${a === pick ? " selected" : ""}>${esc(a.name)} (${esc((FBY[a.faction] || {name: a.faction}).name)})</option>`).join("")}</select></label>
+          <div class="row-actions"><button type="button" class="btn-sm primary" data-move="${esc(k.id)}">Add as a unit</button><button type="button" class="btn-sm" data-cancel>Cancel</button></div>`;
+        box.hidden = false; st.hidden = true; box.querySelector("select").focus();
+        return;
+      }
+      if(e.target.closest("[data-cancel]")){ draw(); return; }
+      const mv = e.target.closest("[data-move]");
+      if(mv){
+        const k = list.find(x => x.id === mv.dataset.move), armyId = mv.closest(".kit").querySelector("[data-to]").value, army = armies.find(a => a.id === armyId);
+        const units = (FBY[army.faction] || {units: []}).units, low = k.name.toLowerCase();
+        const sh = units.find(u => !u.t && u.n.toLowerCase() === low) || units.find(u => u.n.toLowerCase() === low);
+        mv.disabled = true; mv.textContent = "Adding…";
+        try {
+          await store.importUnits(army.id, [{datasheet: sh ? sh.n : k.name, role: sh ? sh.r : "", name: k.name, count: k.models, points: sh && sh.p ? sh.p : 0, stages: [], painted: 0, tier: 0, notes: k.note || ""}]);
+          list = await putShame(list.filter(x => x.id !== k.id)); draw();
+          alertBanner(`${k.name} is now in ${army.name}. Open the ledger to start painting.`);
+        } catch(err){ mv.disabled = false; mv.textContent = "Add as a unit"; alertBanner("Couldn't add it: " + errText(err)); }
+      }
+    });
+  }
+
+  /* ============================================================
+     Settings
+     ============================================================ */
+  async function viewSettings(){
+    view.name = "settings";
+    document.title = "Settings · Livery Ledger";
+    const me = acct(), online = store.kind === "supabase";
+    let listPrefs = {group: "role", sort: "rank"};
+    try { listPrefs = {...listPrefs, ...JSON.parse(localStorage.getItem("ll-list-prefs") || "{}")}; } catch(e){}
+    const bg = document.documentElement.dataset.bg || "1";
+    const iOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    const opt = (v, cur, label) => `<option value="${esc(v)}"${String(v) === String(cur) ? " selected" : ""}>${esc(label)}</option>`;
+    app.innerHTML = `
+      <div class="crumbs"><a href="#/profile">My ledgers</a> / Settings</div>
+      <section class="page-head"><p class="eyebrow">${me ? esc(me.email) : "This browser"}</p><h1>Settings</h1></section>
+      <div class="settings">
+        ${me ? `<section class="panel set-sec">
+          <h2>Profile</h2>
+          <div class="set-row">${avatarHtml(me, "lg")}<div><strong>${esc(me.name)}</strong><small>${esc(me.email)}</small></div><a class="btn btn-sm" href="#/profile">Change name or picture</a></div>
+        </section>
+        <section class="panel set-sec">
+          <h2>Password</h2>
+          <form id="pw-form" class="set-form" novalidate>
+            <label>New password<input type="password" id="pw-new" autocomplete="new-password" minlength="6"></label>
+            <label>Confirm new password<input type="password" id="pw-new2" autocomplete="new-password" minlength="6"></label>
+            <div class="row-actions"><button type="submit" class="primary btn-sm">Change password</button></div>
+            <div class="msg" id="pw-msg" role="status"></div>
+          </form>
+        </section>` : ""}
+        <section class="panel set-sec">
+          <h2>Display</h2>
+          <label class="switch"><input type="checkbox" id="set-points" ${settings.hidePoints ? "checked" : ""}><span class="track" aria-hidden="true"><i></i></span><span>Hide points<small>For painters who don't play: hides points on unit cards and ledger totals.</small></span></label>
+          <div class="set-grid">
+            <label>Group units by<select id="set-group">${[["none", "Nothing"], ["role", "Role"], ["rank", "Rank"], ["status", "Status"]].map(([v, l]) => opt(v, listPrefs.group, l)).join("")}</select></label>
+            <label>Sort units by<select id="set-sort">${[["rank", "Rank"], ["name", "Name"], ["points", "Points"], ["progress", "Progress"], ["recent", "Recently changed"]].map(([v, l]) => opt(v, listPrefs.sort, l)).join("")}</select></label>
+            <label>Currency<select id="set-cur">${CURRENCIES.map(([v, l]) => opt(v, settings.currency, l)).join("")}</select></label>
+            <label>Background<select id="set-bg">${[["1", "Necrons and Ultramarines"], ["2", "Terminators"], ["3", "Orks and Blood Angels"], ["4", "Tyranids"], ["none", "None"]].map(([v, l]) => opt(v, bg, l)).join("")}</select></label>
+          </div>
+          <p class="hint">Currency is used for your pile of shame. Grouping and sorting are where every ledger starts; you can still change them on each ledger.</p>
+          <div class="msg" id="set-msg" role="status"></div>
+        </section>
+        <section class="panel set-sec">
+          <h2>App</h2>
+          ${standalone() ? `<p class="hint">You're using Livery Ledger as an installed app.</p>`
+            : installable() ? `<p class="hint">Add Livery Ledger to your home screen or desktop. It opens like an app, and still opens without a connection, showing what was last loaded.</p><div class="row-actions"><button type="button" class="primary btn-sm" id="set-install">Install app</button></div>`
+            : iOS ? `<p class="hint">On iPhone or iPad: open this site in Safari, tap the Share button, then <strong>Add to Home Screen</strong>.</p>`
+            : `<p class="hint">In Chrome or Edge, use the install icon in the address bar, or the browser menu's <strong>Install</strong> or <strong>Add to Home screen</strong> option. On iPhone, use Safari's Share button, then Add to Home Screen.</p>`}
+        </section>
+        <section class="panel set-sec">
+          <h2>Your data</h2>
+          <p class="hint">Download everything you've saved: ledgers, units, recipes, paints you own, your pile of shame and your settings, as one file.</p>
+          <div class="row-actions"><button type="button" class="btn-sm" id="set-export">Download all my data</button></div>
+        </section>
+        <section class="panel set-sec danger-zone">
+          <h2>${online ? "Delete my account" : "Clear everything in this browser"}</h2>
+          <p class="hint">${online ? "This permanently deletes your account, all your ledgers, units, photos and recipes. It can't be undone." : "This deletes every ledger, unit, photo and recipe saved in this browser. It can't be undone."} Download your data first if you might want it later.</p>
+          <label class="set-confirm"><span>Type <strong>DELETE</strong> to confirm</span><input id="del-confirm" autocomplete="off" spellcheck="false"></label>
+          <div class="row-actions"><button type="button" class="danger armed" id="del-go" disabled>${online ? "Delete my account" : "Clear everything"}</button></div>
+          <div class="msg" id="del-msg" role="status"></div>
+        </section>
+      </div>`;
+    const say = (id, t, bad) => { $(id).textContent = t || ""; $(id).classList.toggle("err", !!bad); };
+    const saved = async patch => { try { await saveSettings(patch); say("set-msg", "Saved."); } catch(err){ say("set-msg", "Saved on this device, but not to your account: " + errText(err), true); } };
+    $("set-points").addEventListener("change", e => saved({hidePoints: e.target.checked}));
+    $("set-cur").addEventListener("change", e => saved({currency: e.target.value}));
+    const listSave = () => { try { localStorage.setItem("ll-list-prefs", JSON.stringify({group: $("set-group").value, sort: $("set-sort").value})); } catch(e){} say("set-msg", "Saved."); };
+    $("set-group").addEventListener("change", listSave); $("set-sort").addEventListener("change", listSave);
+    $("set-bg").addEventListener("change", e => { document.documentElement.dataset.bg = e.target.value; try { localStorage.setItem("ll-bg", e.target.value); } catch(err){} say("set-msg", "Saved."); });
+    if($("set-install")) $("set-install").addEventListener("click", async () => { await installApp(); viewSettings(); });
+    if($("pw-form")) $("pw-form").addEventListener("submit", async e => {
+      e.preventDefault();
+      const a = $("pw-new").value, b = $("pw-new2").value;
+      if(a.length < 6){ say("pw-msg", "Passwords need at least 6 characters.", true); $("pw-new").focus(); return; }
+      if(a !== b){ say("pw-msg", "The two passwords don't match.", true); $("pw-new2").focus(); return; }
+      say("pw-msg", "Saving…");
+      try { await store.updatePassword(a); $("pw-new").value = $("pw-new2").value = ""; say("pw-msg", "Password changed."); }
+      catch(err){ say("pw-msg", authErr(err), true); }
+    });
+    $("set-export").addEventListener("click", async () => {
+      const b = $("set-export"); b.disabled = true; b.textContent = "Preparing…";
+      try {
+        const [armies, units, library, paints] = await Promise.all([store.listArmies(), store.listAllUnits(), store.getLibrary().catch(() => []), store.getPaints().catch(() => [])]);
+        let shame = []; try { shame = await getShame(); } catch(e){}
+        downloadJSON({app: "livery-ledger", kind: "everything", version: 5, exported: new Date().toISOString(), account: me ? {name: me.name, email: me.email} : null,
+          settings, goal: getGoal(), paintsOwned: paints, recipeLibrary: library, pileOfShame: shame,
+          ledgers: armies.map(a => ({faction: a.faction, name: a.name, scheme: a.scheme, public: a.public, units: units.filter(u => u.armyId === a.id).map(u => ({...S.cleanUnit(u), image: u.image || "", photos: (u.photos || []).map(p => store.photoUrl(p))}))}))},
+          `livery-ledger-everything-${new Date().toISOString().slice(0, 10)}.json`);
+      } catch(err){ alertBanner("Couldn't prepare your data: " + errText(err)); }
+      finally { b.disabled = false; b.textContent = "Download all my data"; }
+    });
+    $("del-confirm").addEventListener("input", e => { $("del-go").disabled = e.target.value.trim() !== "DELETE"; });
+    $("del-go").addEventListener("click", async () => {
+      const b = $("del-go"); if($("del-confirm").value.trim() !== "DELETE") return;
+      b.disabled = true; say("del-msg", online ? "Deleting your account…" : "Clearing…");
+      try {
+        await store.deleteAccount(); clearOfflineData();
+        if(online){ location.hash = "#/"; setTimeout(() => alertBanner("Your account has been deleted."), 300); }
+        else { location.hash = "#/profile"; }
+      } catch(err){ say("del-msg", errText(err), true); b.disabled = false; }
+    });
+  }
+
+  /* ============================================================
+     Painting activity (profile): models painted over time and a monthly goal
+     ============================================================ */
+  const GOAL_KEY = "ll-goal";
+  function getGoal(){
+    if(store.kind === "supabase") return Math.max(0, parseInt(((store.session && store.session.user.user_metadata) || {}).goal, 10) || 0);
+    try { return Math.max(0, parseInt(localStorage.getItem(GOAL_KEY), 10) || 0); } catch(e){ return 0; }
+  }
+  async function setGoal(n){
+    if(store.kind === "supabase"){ await store.updateProfile({goal: n || null}); return; }
+    try { if(n) localStorage.setItem(GOAL_KEY, String(n)); else localStorage.removeItem(GOAL_KEY); } catch(e){}
+  }
+  const monthKey = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  function activityOf(units){
+    const byDay = new Map();
+    units.forEach(u => (u.log || []).forEach(e => byDay.set(e.d, (byDay.get(e.d) || 0) + e.n)));
+    const sumWhere = pre => { let n = 0; byDay.forEach((v, d) => { if(d.startsWith(pre)) n += v; }); return n; };
+    const now = new Date();
+    const months = [];
+    for(let i = 11; i >= 0; i--){
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1), key = monthKey(d);
+      months.push({key, n: sumWhere(key), short: d.toLocaleDateString("en-GB", {month: "short"}), long: d.toLocaleDateString("en-GB", {month: "long", year: "numeric"})});
+    }
+    // Weeks (Monday to Sunday) in a row with something painted, counting this week or, if nothing yet, last week.
+    const weekOf = ds => { const [y, m, d] = ds.split("-").map(Number); const t = Date.UTC(y, m - 1, d); return Math.floor((t / 864e5 + 3) / 7); };
+    const weeks = new Set([...byDay.keys()].map(weekOf));
+    const tw = weekOf(monthKey(now) + "-" + String(now.getDate()).padStart(2, "0"));
+    let streak = 0, w = weeks.has(tw) ? tw : tw - 1;
+    while(weeks.has(w)){ streak++; w--; }
+    const monthTotals = new Map(); byDay.forEach((v, d) => monthTotals.set(d.slice(0, 7), (monthTotals.get(d.slice(0, 7)) || 0) + v));
+    let best = null; monthTotals.forEach((v, k) => { if(!best || v > best.n) best = {k, n: v}; });
+    const total = [...byDay.values()].reduce((a, b) => a + b, 0);
+    return {months, thisMonth: months[11].n, lastMonth: months[10], thisYear: sumWhere(String(now.getFullYear())), streak, best, total};
+  }
+  function drawActivity(units){
+    const box = $("activity"), A = activityOf(units), goal = getGoal();
+    const max = Math.max(...A.months.map(m => m.n), goal || 0, 4);
+    const step = max <= 8 ? 2 : max <= 20 ? 5 : max <= 50 ? 10 : Math.ceil(max / 50) * 10;
+    let top = Math.ceil(max / step) * step;
+    if(top % 2) top += step;   // keep the middle gridline a whole number
+    const peak = A.months.reduce((b, m, i) => m.n > A.months[b].n ? i : b, 0);
+    const diff = A.thisMonth - A.lastMonth.n, lastName = A.lastMonth.long.split(" ")[0];
+    const bestName = A.best ? new Date(A.best.k + "-01T12:00:00").toLocaleDateString("en-GB", {month: "long", year: "numeric"}) : "";
+    const pct = goal ? Math.min(100, Math.round(A.thisMonth / goal * 100)) : 0;
+    box.innerHTML = `
+      <div class="act-head"><h2 class="act-title" id="act-h">Painting activity</h2><small>Models you've marked painted across all your ledgers</small></div>
+      <div class="act-top">
+        <div class="act-stats">
+          <div class="stat"><b>${A.thisMonth}</b><span>This month</span><em>${A.lastMonth.n || A.thisMonth ? (diff === 0 ? `Same as ${lastName}` : `${Math.abs(diff)} ${diff > 0 ? "more" : "fewer"} than ${lastName}`) : "&nbsp;"}</em></div>
+          <div class="stat"><b>${A.thisYear}</b><span>This year</span></div>
+          <div class="stat"><b>${A.streak}</b><span>Week streak</span><em>${A.streak ? `${plural(A.streak, "week")} in a row` : "Paint this week to start one"}</em></div>
+          <div class="stat"><b>${A.best ? A.best.n : 0}</b><span>Best month</span><em>${esc(bestName) || "&nbsp;"}</em></div>
+        </div>
+        <div class="act-goal" id="act-goal">
+          ${goal ? `<div class="ag-row"><span class="ag-l">Monthly goal</span><button type="button" class="linkish" data-goal="edit">Change</button></div>
+            <div class="ag-val"><b>${A.thisMonth}</b> of ${goal} models${A.thisMonth >= goal ? ` <span class="ag-done">Goal reached</span>` : ""}</div>
+            <div class="meter" role="progressbar" aria-label="Monthly goal" aria-valuemin="0" aria-valuemax="${goal}" aria-valuenow="${Math.min(A.thisMonth, goal)}"><i style="width:${pct}%"></i></div>
+            <small>${A.thisMonth >= goal ? "Nice work. Anything more is a bonus." : `${goal - A.thisMonth} to go this month.`}</small>`
+          : `<div class="ag-row"><span class="ag-l">Monthly goal</span></div>
+            <p>Pick how many models you'd like to paint each month and track it here.</p>
+            <button type="button" class="btn-sm primary" data-goal="edit">Set a goal</button>`}
+        </div>
+      </div>
+      <figure class="act-chart">
+        <figcaption>Models painted each month</figcaption>
+        <div class="bars" style="--top:${top}">
+          <div class="grid" aria-hidden="true"><span style="bottom:100%"><i>${top}</i></span><span style="bottom:50%"><i>${top / 2}</i></span><span style="bottom:0"><i>0</i></span></div>
+          ${A.months.map((m, i) => `<div class="col${i === 11 ? " now" : ""}" tabindex="0" aria-label="${esc(m.long)}: ${plural(m.n, "model")} painted">
+            <div class="bar-wrap"><div class="mbar" style="height:${m.n / top * 100}%">${m.n && (i === 11 || i === peak) ? `<span class="bar-val">${m.n}</span>` : ""}</div></div>
+            <span class="tip" role="tooltip">${esc(m.long)}<b>${plural(m.n, "model")}</b></span>
+            <span class="mo" aria-hidden="true">${esc(m.short)}</span>
+          </div>`).join("")}
+        </div>
+        ${!A.total ? `<p class="hint act-empty">Your chart fills in as you mark models painted. History starts from today, so models painted before now aren't dated.</p>` : ""}
+      </figure>`;
+    box.querySelectorAll("[data-goal]").forEach(b => b.addEventListener("click", () => editGoal(units)));
+  }
+  function editGoal(units){
+    const g = $("act-goal"), goal = getGoal();
+    g.innerHTML = `<div class="ag-row"><span class="ag-l">Monthly goal</span></div>
+      <form class="ag-form" id="goal-form"><label>Models a month<input type="number" id="goal-in" min="1" max="999" inputmode="numeric" value="${goal || ""}" placeholder="10"></label>
+      <div class="row-actions"><button type="submit" class="btn-sm primary">Save</button><button type="button" class="btn-sm" id="goal-cancel">Cancel</button>${goal ? `<button type="button" class="btn-sm danger" id="goal-clear">Remove goal</button>` : ""}</div>
+      <div class="msg" id="goal-msg" role="status"></div></form>`;
+    $("goal-in").focus();
+    const done = async n => {
+      try { await setGoal(n); drawActivity(units); }
+      catch(err){ $("goal-msg").textContent = "Couldn't save your goal: " + errText(err); $("goal-msg").classList.add("err"); }
+    };
+    $("goal-form").addEventListener("submit", e => { e.preventDefault(); const n = Math.min(999, Math.max(1, parseInt($("goal-in").value, 10) || 0)); if(!parseInt($("goal-in").value, 10)){ $("goal-in").focus(); return; } done(n); });
+    $("goal-cancel").addEventListener("click", () => drawActivity(units));
+    if($("goal-clear")) $("goal-clear").addEventListener("click", () => done(0));
   }
 
   /* Profile page: change your display name (pencil) and picture (click the circle). */
@@ -1092,6 +1603,7 @@ Redemptor Dreadnought (210 points)</pre>
           <div class="more">
             <button type="button" class="btn-sm" id="b-more" aria-expanded="false" aria-controls="more-menu">More</button>
             <div class="more-menu" id="more-menu" hidden>
+              <a href="#/army/${esc(army.id)}/guide">Painting guide (print)</a>
               <button type="button" id="b-export">Export backup</button>
               ${canWrite ? `<button type="button" id="b-import">Import backup</button>` : ""}
               ${canWrite ? `<hr><button type="button" class="menu-danger" id="b-delarmy">Delete ledger</button>` : ""}
@@ -1101,7 +1613,7 @@ Redemptor Dreadnought (210 points)</pre>
         </div>
       </div>
 
-      ${!canWrite ? `<div class="banner viewonly"><span class="dot on"></span><span>You're viewing a shared ledger. You can look but not change anything.</span>${store.kind === "supabase" && !store.session ? `<button type="button" class="btn-sm" data-signin>Sign in</button>` : ""}</div>` : ""}
+      ${!canWrite ? `<div class="banner viewonly"><span class="dot on"></span><span>You're viewing a shared ledger. You can look but not change anything.</span>${store.kind === "supabase" && !store.session ? `<button type="button" class="btn-sm" data-signin>Sign in</button>` : `<span class="vo-social" id="vo-social"></span>`}</div>` : ""}
       <section class="key" id="key" aria-label="Rank colours">${scheme.tiers.map(t => `<div>${tierBadge(scheme, t, 44)}<span><strong>${esc(t.name)}</strong><small>${esc(t.note || cname(t.color) + " " + PROF.head)}</small></span></div>`).join("")}</section>
 
         <section class="list" aria-labelledby="army-h">
@@ -1120,6 +1632,7 @@ Redemptor Dreadnought (210 points)</pre>
             </div>
           </div>
           <div class="list-tools arrange">
+            ${canWrite ? `<button type="button" class="btn-sm b-select" id="b-select" aria-pressed="false"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="m8 12 3 3 5-6"/></svg>Select units</button>` : ""}
             <label class="inline">Group by<select id="g-by">
               <option value="none">Nothing</option><option value="role">Role</option><option value="rank">Rank</option><option value="status">Status</option></select></label>
             <label class="inline">Sort by<select id="s-by">
@@ -1127,7 +1640,18 @@ Redemptor Dreadnought (210 points)</pre>
           </div>
           <div class="cards" id="cards"><div class="empty">Loading units…</div></div>
         </section>
-      ${canWrite ? `<button type="button" class="fab primary" id="b-fab" aria-label="Add a unit">+ Add unit</button>` : ""}
+      ${canWrite ? `<button type="button" class="fab primary" id="b-fab" aria-label="Add a unit">+ Add unit</button>
+      <div class="batch-bar" id="batch-bar" role="toolbar" aria-label="Update the selected units" hidden>
+        <span class="bb-count" id="bb-count" aria-live="polite">0 selected</span>
+        <button type="button" class="btn-sm" id="bb-all">Select all</button>
+        <span class="bb-sep" aria-hidden="true"></span>
+        <label class="bb-stage"><span>Set stage</span><select id="bb-stage"><option value="">Choose…</option><option value="none">Not started</option>${STAGES.map(([k, l]) => `<option value="${k}">${esc(l)}</option>`).join("")}</select></label>
+        <button type="button" class="btn-sm" id="bb-done">All painted</button>
+        <button type="button" class="btn-sm" id="bb-star">${STAR(true).replace('width="18" height="18"', 'width="14" height="14"')}Star</button>
+        <button type="button" class="btn-sm" id="bb-unstar">Unstar</button>
+        <button type="button" class="btn-sm danger" id="bb-del">Delete</button>
+        <button type="button" class="btn-sm primary" id="bb-exit">Done</button>
+      </div>` : ""}
 
       <dialog id="editdlg" class="editdlg" aria-labelledby="ed-title">
         <form id="form" class="editor-form" autocomplete="off" novalidate>
@@ -1299,6 +1823,7 @@ Redemptor Dreadnought (210 points)</pre>
 
     /* ---------- state ---------- */
     let units = [], selId = null, filter = "all", query = "", armed = false, dirty = false, busy = false;
+    let selecting = false, picked = new Set();   // batch updates
     let pendingPhoto = null, removePhoto = false, tierTouched = false, pointsTouched = false;
     const form = $("form");
     // Pauldrons last: an unset one copies the unit's armour, secondary or emblem colour.
@@ -1578,12 +2103,15 @@ Redemptor Dreadnought (210 points)</pre>
       } catch(err){ msg("Couldn't update: " + errText(err), true); }
       finally { busy = false; }
     }
+    const photoSrc = p => safeImg(store.photoUrl ? store.photoUrl(p) : p);
     function cardHtml(u){
       u = withColours(u);
-      const img = safeImg(u.image), tier = scheme.tiers[u.tier] || {};
+      const img = safeImg(u.image) || ((u.photos || [])[0] ? photoSrc(u.photos[0]) : ""), tier = scheme.tiers[u.tier] || {};
       const nx = canWrite ? nextStep(u) : null;
       const segs = STAGE_KEYS.map(k => `<i class="${(u.stages || []).includes(k) ? "on" : ""}"></i>`).join("");
-      return `<div class="card${u.id === selId ? " sel" : ""}" tabindex="0" role="button" data-id="${esc(u.id)}" aria-label="View ${esc(u.name)}">
+      const pk = selecting && picked.has(u.id);
+      return `<div class="card${u.id === selId && !selecting ? " sel" : ""}${pk ? " picked" : ""}" tabindex="0" role="button" data-id="${esc(u.id)}" ${selecting ? `aria-pressed="${pk}" aria-label="Select ${esc(u.name)}"` : `aria-label="View ${esc(u.name)}"`}>
+        ${selecting ? `<span class="pick" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg></span>` : ""}
         ${img ? `<div class="photo"><img src="${esc(img)}" alt="" loading="lazy" decoding="async"></div>` : ""}
         <div class="body">
           <div class="card-top">${unitBadge(u, scheme, 60)}<div><h3>${esc(u.name)}</h3><div class="type">${esc([u.datasheet && u.datasheet !== u.name ? u.datasheet : "", u.role].filter(Boolean).join(" · ") || "Unit")}</div></div>${u.points ? `<span class="pts">${fmt(u.points)}<small>pts</small></span>` : ""}${starBtn(u)}</div>
@@ -1656,7 +2184,15 @@ Redemptor Dreadnought (210 points)</pre>
       };
       const sec = (title, rows, key) => { const r = rows.filter(x => x[1]); return r.length ? box(key || title, title, `<dl>${r.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>`) : ""; };
       $("detail-body").innerHTML = `<div class="detail">
-        <div class="media">${img ? `<img src="${esc(img)}" alt="Photo of ${esc(u.name)}">` : unitBadge(u, scheme, 180)}</div>
+        <div class="media">${(() => {
+          const shots = [img ? {src: img, main: true} : null, ...(u.photos || []).map(p => ({src: photoSrc(p), path: p}))].filter(x => x && x.src);
+          const first = shots[0];
+          return `<div class="media-main" id="dt-main">${first ? `<img src="${esc(first.src)}" alt="Photo of ${esc(u.name)}">` : unitBadge(u, scheme, 180)}</div>
+            ${shots.length > 1 || canWrite ? `<div class="gallery" role="list" aria-label="Photos of ${esc(u.name)}">
+              ${shots.map((x, i) => `<div class="g-item${i === 0 ? " on" : ""}" role="listitem"><button type="button" class="g-thumb" data-show="${esc(x.src)}" aria-label="Show photo ${i + 1}"><img src="${esc(x.src)}" alt="" loading="lazy"></button>${canWrite && x.path ? `<button type="button" class="g-rm" data-rmphoto="${esc(x.path)}" aria-label="Remove this photo" title="Remove photo">×</button>` : ""}</div>`).join("")}
+              ${canWrite && (u.photos || []).length < S.MAX_PHOTOS ? `<label class="g-add" title="Add photos"><input type="file" accept="image/*" multiple data-addphoto="${esc(u.id)}" hidden><span aria-hidden="true">+</span><small>Add photo</small></label>` : ""}
+            </div>` : ""}`;
+        })()}</div>
         <div class="info">
           <div><h2 id="dt-name">${esc(u.name)}</h2>
             <div class="meta">${esc(u.datasheet || "Unit")}${u.role ? " · " + esc(u.role) : ""} · ${plural(u.count, "model")}${u.points ? " · " + fmt(u.points) + " pts" : ""}</div></div>
@@ -1777,6 +2313,7 @@ Redemptor Dreadnought (210 points)</pre>
       if(!u.name) u.name = u.datasheet;
       const cur = currentUnit();
       u.fav = !!(cur && cur.fav);
+      u.photos = cur ? cur.photos || [] : [];
       busy = true; const b = $("b-save"), label = b.textContent; b.disabled = true; b.textContent = "Saving…";
       try {
         const row = await store.saveUnit(army.id, u, cur ? cur.id : null, pendingPhoto, removePhoto, cur);
@@ -1811,13 +2348,78 @@ Redemptor Dreadnought (210 points)</pre>
     $("b-del").addEventListener("blur", () => setTimeout(() => { if(armed && document.activeElement !== $("b-del")) disarm(); }, 0));
 
     $("cards").addEventListener("click", e => {
+      if(selecting){ const c = e.target.closest(".card"); if(c){ e.stopPropagation(); togglePick(c.dataset.id); } return; }
       const st = e.target.closest("[data-step]");
       if(st){ e.stopPropagation(); stepUnit(st.dataset.step); return; }
       const sr = e.target.closest("[data-star]");
       if(sr){ e.stopPropagation(); toggleStar(sr.dataset.star); return; }
       const c = e.target.closest(".card"); if(c) openDetail(c.dataset.id);
     });
-    $("cards").addEventListener("keydown", e => { if((e.key === "Enter" || e.key === " ") && e.target.classList.contains("card")){ e.preventDefault(); openDetail(e.target.dataset.id); } });
+    $("cards").addEventListener("keydown", e => { if((e.key === "Enter" || e.key === " ") && e.target.classList.contains("card")){ e.preventDefault(); if(selecting) togglePick(e.target.dataset.id); else openDetail(e.target.dataset.id); } });
+
+    /* ---------- batch updates: select several units, then change them together ---------- */
+    function setSelecting(on){
+      selecting = on; picked.clear();
+      document.body.classList.toggle("selecting", on);
+      $("batch-bar").hidden = !on;
+      $("b-select").setAttribute("aria-pressed", on);
+      $("bb-del").classList.remove("armed"); $("bb-del").textContent = "Delete";
+      render(); updateBatch();
+    }
+    function togglePick(id){
+      if(picked.has(id)) picked.delete(id); else picked.add(id);
+      const c = $("cards").querySelector(`.card[data-id="${CSS.escape(id)}"]`);
+      if(c){ c.classList.toggle("picked", picked.has(id)); c.setAttribute("aria-pressed", picked.has(id)); }
+      updateBatch();
+    }
+    function updateBatch(){
+      const n = picked.size;
+      $("bb-count").textContent = `${n} selected`;
+      ["bb-stage", "bb-done", "bb-star", "bb-unstar", "bb-del"].forEach(id => $(id).disabled = !n || busy);
+      const vis = visible();
+      $("bb-all").textContent = vis.length && vis.every(u => picked.has(u.id)) ? "Select none" : "Select all";
+      $("bb-del").classList.remove("armed"); $("bb-del").textContent = n ? `Delete ${n}` : "Delete";
+    }
+    async function batchSave(label, change){
+      const list = units.filter(u => picked.has(u.id)); if(!list.length || busy) return;
+      busy = true; updateBatch(); $("bb-count").textContent = `Updating ${plural(list.length, "unit")}…`;
+      let ok = 0;
+      for(const u of list){
+        try { const row = await store.saveUnit(army.id, {...u, ...change(u)}, u.id, null, false, u); units = units.map(x => x.id === row.id ? row : x); ok++; }
+        catch(err){ console.error(err); }
+      }
+      busy = false; render(); updateBatch();
+      toast(ok === list.length ? `${label}: ${plural(ok, "unit")}` : `Updated ${ok} of ${list.length}. Some couldn't be saved.`);
+    }
+    if(canWrite){
+      $("b-select").addEventListener("click", () => setSelecting(!selecting));
+      $("bb-exit").addEventListener("click", () => setSelecting(false));
+      $("bb-all").addEventListener("click", () => {
+        const vis = visible(), all = vis.length && vis.every(u => picked.has(u.id));
+        vis.forEach(u => all ? picked.delete(u.id) : picked.add(u.id));
+        render(); updateBatch();
+      });
+      $("bb-stage").addEventListener("change", e => {
+        const k = e.target.value; e.target.value = ""; if(!k) return;
+        const i = STAGE_KEYS.indexOf(k);
+        const name = k === "none" ? "Not started" : STAGES[i][1];
+        batchSave(`Set to ${name}`, u => k === "none" ? {stages: [], painted: 0} : {stages: STAGE_KEYS.slice(0, i + 1), painted: k === "varnish" ? u.count : Math.min(u.painted, u.count)});
+      });
+      $("bb-done").addEventListener("click", () => batchSave("All painted", u => ({stages: STAGE_KEYS.slice(), painted: u.count})));
+      $("bb-star").addEventListener("click", () => batchSave("Starred", () => ({fav: true})));
+      $("bb-unstar").addEventListener("click", () => batchSave("Unstarred", () => ({fav: false})));
+      $("bb-del").addEventListener("click", async () => {
+        const b = $("bb-del"), list = units.filter(u => picked.has(u.id)); if(!list.length || busy) return;
+        if(!b.classList.contains("armed")){ b.classList.add("armed"); b.textContent = `Click again to delete ${list.length}`; return; }
+        busy = true; updateBatch(); $("bb-count").textContent = `Deleting ${plural(list.length, "unit")}…`;
+        let ok = 0;
+        for(const u of list){ try { await store.removeUnit(u, false); units = units.filter(x => x.id !== u.id); picked.delete(u.id); ok++; } catch(err){ console.error(err); } }
+        busy = false; render(); updateBatch();
+        toast(ok === list.length ? `Deleted ${plural(ok, "unit")}` : `Deleted ${ok} of ${list.length}. Some couldn't be deleted.`);
+      });
+      document.addEventListener("keydown", onBatchKey);
+    }
+    function onBatchKey(e){ if(e.key === "Escape" && selecting && !document.querySelector("dialog[open]")) setSelecting(false); }
     $("filters").addEventListener("click", e => {
       const b = e.target.closest("button[data-f]"); if(!b) return;
       filter = b.dataset.f; $("filters").querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b ? "true" : "false")); render();
@@ -1854,6 +2456,22 @@ Redemptor Dreadnought (210 points)</pre>
       const ed = e.target.closest("[data-edit]"), dup = e.target.closest("[data-dup]"), del = e.target.closest("[data-del]");
       const sr = e.target.closest("[data-star]");
       if(sr){ toggleStar(sr.dataset.star); return; }
+      const sh = e.target.closest("[data-show]");
+      if(sh){
+        $("dt-main").innerHTML = `<img src="${esc(sh.dataset.show)}" alt="">`;
+        $("detail").querySelectorAll(".g-item").forEach(g => g.classList.toggle("on", g.contains(sh)));
+        return;
+      }
+      const rp = e.target.closest("[data-rmphoto]");
+      if(rp){
+        const u = units.find(x => x.id === $("detail").dataset.unit); if(!u || busy) return;
+        if(!rp.classList.contains("armed")){ rp.classList.add("armed"); rp.textContent = "Remove?"; setTimeout(() => { if(rp.isConnected){ rp.classList.remove("armed"); rp.textContent = "×"; } }, 3000); return; }
+        busy = true;
+        try { const row = await store.removeUnitPhoto(army.id, u, rp.dataset.rmphoto); units = units.map(x => x.id === row.id ? row : x); render(); openDetail(row.id); toast("Photo removed"); }
+        catch(err){ toast("Couldn't remove the photo: " + errText(err)); }
+        finally { busy = false; }
+        return;
+      }
       if(del){
         const u = units.find(x => x.id === del.dataset.del); if(!u || busy) return;
         if(!del.classList.contains("armed")){ del.classList.add("armed"); del.textContent = "Click again to delete"; return; }
@@ -1870,6 +2488,21 @@ Redemptor Dreadnought (210 points)</pre>
       }
     }
     $("detail").addEventListener("click", onDetailClick);
+    async function onDetailChange(e){
+      const inp = e.target.closest("[data-addphoto]"); if(!inp) return;
+      const files = [...(inp.files || [])]; inp.value = "";
+      let u = units.find(x => x.id === inp.dataset.addphoto); if(!u || !files.length || busy) return;
+      const room = S.MAX_PHOTOS - (u.photos || []).length, pick = files.slice(0, room);
+      const tile = inp.closest(".g-add"); if(tile){ tile.classList.add("busy"); tile.querySelector("small").textContent = "Uploading…"; }
+      busy = true; let added = 0;
+      try {
+        for(const f of pick){ u = await store.addUnitPhoto(army.id, u, f); units = units.map(x => x.id === u.id ? u : x); added++; }
+      } catch(err){ toast("Couldn't add the photo: " + errText(err)); }
+      finally { busy = false; }
+      render(); openDetail(u.id);
+      if(added) toast(files.length > room ? `Added ${plural(added, "photo")} (${S.MAX_PHOTOS} is the most per unit)` : `Added ${plural(added, "photo")}`);
+    }
+    $("detail").addEventListener("change", onDetailChange);
     ["listdlg", "sharedlg"].forEach(id => $(id).addEventListener("click", e => { if(e.target.closest("[data-close]") || e.target === $(id)) $(id).close(); }));
 
     /* ---------- share read-only ---------- */
@@ -2172,8 +2805,9 @@ Redemptor Dreadnought (210 points)</pre>
     document.addEventListener("click", onDocMore); document.addEventListener("keydown", onKeyMore);
     view.guard = () => okToLeave();
     view.cleanup = () => {
+      document.removeEventListener("keydown", onBatchKey); document.body.classList.remove("selecting");
       document.removeEventListener("click", onDocMore); document.removeEventListener("keydown", onKeyMore); window.removeEventListener("resize", keyFade);
-      window.removeEventListener("beforeunload", onBeforeUnload); $("detail").removeEventListener("click", onDetailClick); clearPending();
+      window.removeEventListener("beforeunload", onBeforeUnload); $("detail").removeEventListener("click", onDetailClick); $("detail").removeEventListener("change", onDetailChange); clearPending();
       clearTimeout(toastTimer); $("toast").hidden = true; if(toastDone){ const fn = toastDone; toastDone = null; fn(); }
       view.guard = null;
     };
@@ -2292,6 +2926,20 @@ Redemptor Dreadnought (210 points)</pre>
     }
 
     let pdTab = "recipes", editingRecipe = null, buyAll = false, ownedQuery = "", libDelArmed = "";
+    let suggesting = null;   // starter recipes waiting to be added: [{recipe, on, have}]
+    // Starter recipes from this army's colours (one per colour area that has a paint picked).
+    const SUG_AREAS = [["armour", "Armour"], ["secondary", "Secondary"], ["trim", "Trim"], ["cloth", "Robes / cloth"], ["metal", "Weapons / metal"], ["skin", "Skin"]];
+    function buildSuggestions(){
+      const sp = scheme.slotPaints || {}, existing = scheme.recipes || [], seen = new Set();
+      return SUG_AREAS.filter(([k]) => k !== "skin" || PROF.skinAlways || units.some(u => headOf(u) === "bare")).map(([k, area]) => {
+        const base = sp[k]; if(!base || seen.has(PU.norm(base))) return null;
+        const steps = PU.suggestSteps(base, k); if(!steps) return null;
+        seen.add(PU.norm(base));
+        const have = existing.some(r => r.area === area || r.steps.some(st => /basecoat/i.test(st.t) && PU.norm(st.p) === PU.norm(base)));
+        const label = PROF.labels[k] || area;
+        return {on: !have, have, recipe: {id: S.newId(), name: `${label}: ${PU.shortName(base)}`, area: AREAS.includes(area) ? area : label, notes: "Suggested from your colours. Change anything you like.", steps}};
+      }).filter(Boolean);
+    }
     function openPaints(tab){
       pdTab = tab || pdTab; editingRecipe = null;
       $("pd-tabs").querySelectorAll("[data-tab]").forEach(b => b.setAttribute("aria-pressed", b.dataset.tab === pdTab));
@@ -2303,11 +2951,22 @@ Redemptor Dreadnought (210 points)</pre>
       const body = $("pd-body");
       $("pd-tabs").querySelectorAll("[data-tab]").forEach(b => b.setAttribute("aria-pressed", b.dataset.tab === pdTab));
       if(editingRecipe){ renderRecipeEditor(body); return; }
+      if(pdTab === "recipes" && suggesting){
+        const n = suggesting.filter(x => x.on).length;
+        body.innerHTML = `
+          <div class="pd-head"><p class="hint">Suggested from your army's colours: prime, basecoat, a Citadel shade that suits the colour, then a layer and an edge highlight. Untick any you don't want; you can edit them afterwards.</p></div>
+          ${suggesting.length ? `<div class="recipes">${suggesting.map((x, i) => `<article class="recipe sug${x.on ? " on" : ""}">
+            <header><label class="check"><input type="checkbox" data-sug="${i}" ${x.on ? "checked" : ""}> <span><strong>${esc(x.recipe.name)}</strong>${x.have ? `<small>You already have a recipe for this</small>` : ""}</span></label></header>
+            ${stepsHtml(x.recipe)}</article>`).join("")}</div>`
+            : `<div class="empty">Pick paints for your army's colours first (Edit colours), then come back for suggestions.</div>`}
+          <div class="row-actions">${suggesting.length ? `<button type="button" class="primary" data-act="sug-add" ${n ? "" : "disabled"}>Add ${plural(n, "recipe")}</button>` : ""}<button type="button" data-act="sug-cancel">${suggesting.length ? "Cancel" : "Back"}</button></div>`;
+        return;
+      }
       if(pdTab === "recipes"){
         const list = scheme.recipes || [];
         body.innerHTML = `
           <div class="pd-head"><p class="hint">Write a recipe once, then tick it on every unit that uses it. Paints you don't own show as <span class="own no">To buy</span>.</p>
-          ${canWrite ? `<button type="button" class="primary btn-sm" data-act="new-recipe">+ New recipe</button>` : ""}</div>
+          ${canWrite ? `<span class="row-actions"><button type="button" class="btn-sm" data-act="suggest">Suggest recipes</button><button type="button" class="primary btn-sm" data-act="new-recipe">+ New recipe</button></span>` : ""}</div>
           ${canWrite ? `<h4 class="em-h">In this ledger</h4>` : ""}
           ${list.length ? `<div class="recipes">${list.map(r => {
             const n = units.filter(u => (u.recipes || []).includes(r.id)).length;
@@ -2338,7 +2997,7 @@ Redemptor Dreadnought (210 points)</pre>
         body.innerHTML = `
           <div class="pd-head"><p class="hint">Paints in your colours and recipes that aren't in <em>My paints</em>.</p>
           <label class="check"><input type="checkbox" id="buy-all" ${buyAll ? "checked" : ""}> Include recipes not used by any unit</label></div>
-          ${list.length ? `<ul class="buy">${list.map(it => `<li>${PU.swatch(it.label)}<span class="b-n">${paintLine(it.label)}<small>For ${esc(it.recipes.length > 3 ? it.recipes.slice(0, 3).join(", ") + ` and ${it.recipes.length - 3} more` : it.recipes.join(", "))}</small></span><button type="button" class="btn-sm" data-act="got" data-p="${esc(it.label)}">I have it</button></li>`).join("")}</ul>
+          ${list.length ? `<ul class="buy">${list.map(it => `<li>${PU.swatch(it.label)}<span class="b-n">${paintLine(it.label)}<small>For ${esc(it.recipes.length > 3 ? it.recipes.slice(0, 3).join(", ") + ` and ${it.recipes.length - 3} more` : it.recipes.join(", "))}</small>${PU.swapsText(it.label) ? `<small class="swaps">${esc(PU.swapsText(it.label))}</small>` : ""}</span><button type="button" class="btn-sm" data-act="got" data-p="${esc(it.label)}">I have it</button></li>`).join("")}</ul>
             <div class="row-actions"><button type="button" class="btn-sm" data-act="copy-buy">Copy list</button><span class="hint" id="buy-msg"></span></div>`
           : `<div class="empty">${(scheme.recipes || []).length || Object.keys(scheme.slotPaints || {}).length || units.some(u => Object.keys(u.slotPaints || {}).length) ? "You have every paint you need." : "Pick paints for your colours, or add some recipes first."}</div>`}`;
         $("buy-all").addEventListener("change", e => { buyAll = e.target.checked; renderPaints(); });
@@ -2391,13 +3050,29 @@ Redemptor Dreadnought (210 points)</pre>
     });
     $("paintdlg").addEventListener("click", async e => {
       if(e.target === $("paintdlg")){ $("paintdlg").close(); return; }
+      const sg = e.target.closest("[data-sug]");
+      if(sg){ suggesting[+sg.dataset.sug].on = sg.checked; renderPaints(); return; }
       const tab = e.target.closest("[data-tab]");
-      if(tab){ libDelArmed = ""; syncRecipeDraft(); if(editingRecipe && !confirmDropRecipe()) return; editingRecipe = null; pdTab = tab.dataset.tab; renderPaints(); return; }
+      if(tab){ libDelArmed = ""; suggesting = null; syncRecipeDraft(); if(editingRecipe && !confirmDropRecipe()) return; editingRecipe = null; pdTab = tab.dataset.tab; renderPaints(); return; }
       const b = e.target.closest("[data-act]");
       if(libDelArmed && (!b || b.dataset.act !== "lib-del")){ libDelArmed = ""; if(!b){ renderPaints(); return; } }
       if(!b) return;
       const act = b.dataset.act;
       if(editingRecipe) syncRecipeDraft();
+      if(act === "suggest"){ await PU.load(); suggesting = buildSuggestions(); renderPaints(); return; }
+      if(act === "sug-cancel"){ suggesting = null; renderPaints(); return; }
+      if(act === "sug-add"){
+        const add = suggesting.filter(x => x.on).map(x => ({...x.recipe, at: new Date().toISOString()}));
+        if(!add.length) return;
+        b.disabled = true;
+        try { await saveRecipes((scheme.recipes || []).concat(add)); }
+        catch(err){ b.disabled = false; toast("Couldn't add the recipes: " + errText(err)); return; }
+        suggesting = null; renderPaints();
+        try { await saveToLibrary(add); } catch(err){ console.warn(err); }
+        refreshRecipes();
+        toast(`Added ${plural(add.length, "recipe")}`);
+        return;
+      }
       if(act === "new-recipe"){ editingRecipe = {id: S.newId(), name: "", area: "", notes: "", steps: [{t: "Prime", p: ""}, {t: "Basecoat", p: ""}, {t: "Shade / wash", p: ""}, {t: "Edge highlight", p: ""}], isNew: true}; renderPaints(); }
       else if(act === "edit-recipe" || act === "dup-recipe"){
         const r = (scheme.recipes || []).find(x => x.id === b.dataset.id); if(!r) return;
@@ -2459,10 +3134,32 @@ Redemptor Dreadnought (210 points)</pre>
     });
     function confirmDropRecipe(){ return true; }
     $("pd-close").addEventListener("click", () => $("paintdlg").close());
-    $("paintdlg").addEventListener("close", () => { editingRecipe = null; renderRecipePicks(); });
+    $("paintdlg").addEventListener("close", () => { editingRecipe = null; suggesting = null; renderRecipePicks(); });
     $("b-paints").addEventListener("click", () => openPaints("recipes"));
     $("f-manage-recipes").addEventListener("click", () => openPaints("recipes"));
     $("f-recipes").addEventListener("change", () => { setDirty(true); preview(); });
+
+    // Viewing someone else's shared ledger while logged in: like it and follow its painter.
+    async function viewerSocial(){
+      let st = null;
+      try { st = await store.communityState([army.id]); } catch(e){}
+      const box = $("vo-social"); if(!st || !box) return;
+      const draw = () => {
+        const liked = st.liked.has(army.id), n = st.likes[army.id] || 0, fol = st.following.has(army.owner);
+        box.innerHTML = `<button type="button" class="btn-sm like${liked ? " on" : ""}" data-vlike aria-pressed="${liked}">${HEART(liked)}<span>${liked ? "Liked" : "Like"}${n ? ` · ${n}` : ""}</span></button>
+          <button type="button" class="btn-sm follow${fol ? " on" : ""}" data-vfollow aria-pressed="${fol}">${fol ? "Following" : "Follow"}${army.scheme.by ? ` ${esc(army.scheme.by)}` : " painter"}</button>`;
+      };
+      draw();
+      box.addEventListener("click", async e => {
+        const b = e.target.closest("button"); if(!b) return;
+        b.disabled = true;
+        try {
+          if(b.hasAttribute("data-vlike")){ const on = !st.liked.has(army.id); await store.setLike(army.id, on); if(on){ st.liked.add(army.id); st.likes[army.id] = (st.likes[army.id] || 0) + 1; } else { st.liked.delete(army.id); st.likes[army.id] = Math.max(0, (st.likes[army.id] || 1) - 1); } }
+          else { const on = !st.following.has(army.owner); await store.setFollow(army.owner, on); if(on) st.following.add(army.owner); else st.following.delete(army.owner); }
+          draw();
+        } catch(err){ b.disabled = false; msg("Couldn't save that: " + errText(err), true); }
+      });
+    }
 
     /* ---------- load ---------- */
     if(canWrite){ try { ownedList = await store.getPaints(); owned = new Set(ownedList.map(PU.norm)); } catch(e){} }
@@ -2472,6 +3169,7 @@ Redemptor Dreadnought (210 points)</pre>
     catch(err){ console.error(err); $("cards").innerHTML = `<div class="empty">Couldn't load units: ${esc(errText(err))}</div>`; return; }
     newUnit(false);
     loadLibrary();
+    if($("vo-social")) viewerSocial();
     // Came from the roster: show that unit, and tidy the address back to the ledger's.
     if(openUnit){
       history.replaceState(null, "", "#/army/" + army.id); lastHash = location.hash;
@@ -2574,6 +3272,7 @@ Redemptor Dreadnought (210 points)</pre>
     if(o){ openAuth(o.dataset.authOpen); return; }
     if(e.target.closest("#b-acct")){ e.stopPropagation(); acctOpen($("acct-menu").hidden); return; }
     if(e.target.closest("[data-logout]")){ acctOpen(false); logOut(); return; }
+    if(e.target.closest("[data-install]")){ acctOpen(false); installApp(); return; }
     if(e.target.closest("#acct-menu a")) acctOpen(false);
   });
   $("topnav").addEventListener("keydown", e => {
@@ -2601,6 +3300,10 @@ Redemptor Dreadnought (210 points)</pre>
     document.addEventListener("keydown", e => { if(e.key === "Escape" && !menu.hidden){ toggle(false); btn.focus(); } });
   })();
 
+  // Offline support (only on the real site: https, not local test copies).
+  if("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(e => console.warn("Service worker not registered", e));
+  const onlineState = () => { $("offline").hidden = navigator.onLine !== false; };
+  window.addEventListener("online", onlineState); window.addEventListener("offline", onlineState); onlineState();
   ART.injectDefs();
   // A reset or confirm link that has expired comes back as #error=...&error_description=...: note it before anything reads the address.
   const linkErr = (() => {
@@ -2619,7 +3322,7 @@ Redemptor Dreadnought (210 points)</pre>
       const changed = first || (!!session) !== (!!was) || (session && was && session.user.id !== was.user.id);
       const wasFirst = first;
       store.setSession(session); first = false;
-      setTop();
+      loadSettings(); setTop();
       if(changed) setTimeout(route, 0);
       // Opened the link in a password reset email: they're signed in, now ask for the new password.
       if(event === "PASSWORD_RECOVERY") setTimeout(() => openAuth("reset"), 60);
@@ -2627,6 +3330,7 @@ Redemptor Dreadnought (210 points)</pre>
         /expired|invalid/i.test(linkErr.code + linkErr.text) ? "That link has expired or was already used. Enter your email and we'll send a new one." : linkErr.text), 60);
     });
   } else {
+    loadSettings();
     route();
   }
 })();
