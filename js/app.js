@@ -151,6 +151,24 @@
   }
   /* ---------- account: who's signed in, the top-bar menu and the log in / sign up / reset forms ---------- */
   const num = n => Number(n || 0).toLocaleString("en");
+  /* ---------- settings: saved in this browser, and on the account when logged in (so they follow you) ---------- */
+  const SETTINGS_KEY = "ll-settings";
+  const CURRENCIES = [["R", "South African rand (R)"], ["$", "US dollar ($)"], ["£", "British pound (£)"], ["€", "Euro (€)"], ["A$", "Australian dollar (A$)"], ["C$", "Canadian dollar (C$)"], ["NZ$", "New Zealand dollar (NZ$)"]];
+  let settings = {hidePoints: false, currency: "R"};
+  function loadSettings(){
+    try { settings = {...settings, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}")}; } catch(e){}
+    const acc = store && store.session && (store.session.user.user_metadata || {}).settings;
+    if(acc && typeof acc === "object") settings = {...settings, ...acc};
+    settings.hidePoints = settings.hidePoints === true;
+    if(!CURRENCIES.some(c => c[0] === settings.currency)) settings.currency = "R";
+    document.body.classList.toggle("no-points", settings.hidePoints);
+  }
+  async function saveSettings(patch){
+    settings = {...settings, ...patch};
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch(e){}
+    document.body.classList.toggle("no-points", settings.hidePoints);
+    if(store.kind === "supabase" && store.session) await store.updateProfile({settings});
+  }
   function acct(){
     const u = store && store.session && store.session.user;
     if(!u) return null;
@@ -195,7 +213,7 @@
         <a role="menuitem" href="#/profile">My profile and ledgers</a>
         <button type="button" role="menuitem" data-roster>Your roster</button>
         <a role="menuitem" href="#/shared">Shared armies</a>
-        <button type="button" role="menuitem" disabled aria-disabled="true">Settings <span class="soon">Soon</span></button>
+        <a role="menuitem" href="#/settings">Settings</a>
         ${installable() ? `<button type="button" role="menuitem" data-install>Install app</button>` : ""}
         <hr>
         <button type="button" role="menuitem" data-logout>Log out</button>
@@ -303,7 +321,7 @@
   function openAuth(mode, note){
     if(store.kind !== "supabase") return;
     const d = $("authdlg");
-    if(!dlgAuth) dlgAuth = authForm($("auth-host"), "in", {onDone: () => { if(view.name === "landing" && !/^#\/(shared|profile)\b/.test(location.hash)) location.hash = "#/profile"; setTimeout(() => { if(d.open) d.close(); }, 700); }});
+    if(!dlgAuth) dlgAuth = authForm($("auth-host"), "in", {onDone: () => { if(view.name === "landing" && !/^#\/(shared|profile|settings)\b/.test(location.hash)) location.hash = "#/profile"; setTimeout(() => { if(d.open) d.close(); }, 700); }});
     dlgAuth.set(typeof mode === "string" ? mode : "in", note);
     if(!d.open) d.showModal();
     dlgAuth.focus();
@@ -356,6 +374,10 @@
       else if(parts[0] === "army" && parts[1] && parts[2] === "unit" && parts[3]) await viewLedger(parts[1], parts[3]);
       else if(parts[0] === "army" && parts[1]) await viewLedger(parts[1]);
       // The list of shared armies is for logged-in painters; a shared ledger itself still opens from its link.
+      else if(parts[0] === "settings"){
+        if(store.kind === "supabase" && !store.session){ await viewLanding(); setTimeout(() => openAuth("in", "Log in to change your settings."), 0); }
+        else await viewSettings();
+      }
       else if(parts[0] === "shared"){
         if(store.kind === "supabase" && !store.session){ await viewLanding(); setTimeout(() => openAuth("in", "Log in to browse shared armies."), 0); }
         else await viewShared();
@@ -416,7 +438,7 @@
           </form>` : `<h1>Your ledgers</h1>`}
           ${me ? `<p class="sub">${esc(me.email)}${since ? ` · Painting with us since ${esc(since)}` : ""}</p>` : `<p class="sub">Plan how you'll paint your army. Pick your faction, choose your colours, then track every unit with photos, weapons and paint recipes.</p>`}
           ${me ? `<p class="msg" id="ph-msg" role="status" aria-live="polite"></p>` : `<div class="ph-note">${noteHtml()}</div>`}
-          ${armies.length ? `<div class="ph-actions"><button type="button" class="btn-sm" data-roster><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11"/><path d="M9 12h11"/><path d="M9 18h11"/><path d="M4 6h.01"/><path d="M4 12h.01"/><path d="M4 18h.01"/></svg>Your roster<span class="count">${num(tot.units)}</span></button></div>` : ""}
+          ${armies.length ? `<div class="ph-actions"><button type="button" class="btn-sm" data-roster><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11"/><path d="M9 12h11"/><path d="M9 18h11"/><path d="M4 6h.01"/><path d="M4 12h.01"/><path d="M4 18h.01"/></svg>Your roster<span class="count">${num(tot.units)}</span></button><a class="btn btn-sm" href="#/settings">Settings</a></div>` : ""}
         </div>
         <div class="stats" aria-label="Your painting so far">
           <div class="stat"><b>${armies.length}</b><span>${armies.length === 1 ? "Ledger" : "Ledgers"}</span></div>
@@ -811,6 +833,108 @@ Redemptor Dreadnought (210 points)</pre>
     $("sh-f").addEventListener("change", draw);
     if($("sh-mine")) $("sh-mine").addEventListener("change", draw);
     draw();
+  }
+
+  /* ============================================================
+     Settings
+     ============================================================ */
+  async function viewSettings(){
+    view.name = "settings";
+    document.title = "Settings · Livery Ledger";
+    const me = acct(), online = store.kind === "supabase";
+    let listPrefs = {group: "role", sort: "rank"};
+    try { listPrefs = {...listPrefs, ...JSON.parse(localStorage.getItem("ll-list-prefs") || "{}")}; } catch(e){}
+    const bg = document.documentElement.dataset.bg || "1";
+    const iOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    const opt = (v, cur, label) => `<option value="${esc(v)}"${String(v) === String(cur) ? " selected" : ""}>${esc(label)}</option>`;
+    app.innerHTML = `
+      <div class="crumbs"><a href="#/profile">My ledgers</a> / Settings</div>
+      <section class="page-head"><p class="eyebrow">${me ? esc(me.email) : "This browser"}</p><h1>Settings</h1></section>
+      <div class="settings">
+        ${me ? `<section class="panel set-sec">
+          <h2>Profile</h2>
+          <div class="set-row">${avatarHtml(me, "lg")}<div><strong>${esc(me.name)}</strong><small>${esc(me.email)}</small></div><a class="btn btn-sm" href="#/profile">Change name or picture</a></div>
+        </section>
+        <section class="panel set-sec">
+          <h2>Password</h2>
+          <form id="pw-form" class="set-form" novalidate>
+            <label>New password<input type="password" id="pw-new" autocomplete="new-password" minlength="6"></label>
+            <label>Confirm new password<input type="password" id="pw-new2" autocomplete="new-password" minlength="6"></label>
+            <div class="row-actions"><button type="submit" class="primary btn-sm">Change password</button></div>
+            <div class="msg" id="pw-msg" role="status"></div>
+          </form>
+        </section>` : ""}
+        <section class="panel set-sec">
+          <h2>Display</h2>
+          <label class="switch"><input type="checkbox" id="set-points" ${settings.hidePoints ? "checked" : ""}><span class="track" aria-hidden="true"><i></i></span><span>Hide points<small>For painters who don't play: hides points on unit cards and ledger totals.</small></span></label>
+          <div class="set-grid">
+            <label>Group units by<select id="set-group">${[["none", "Nothing"], ["role", "Role"], ["rank", "Rank"], ["status", "Status"]].map(([v, l]) => opt(v, listPrefs.group, l)).join("")}</select></label>
+            <label>Sort units by<select id="set-sort">${[["rank", "Rank"], ["name", "Name"], ["points", "Points"], ["progress", "Progress"], ["recent", "Recently changed"]].map(([v, l]) => opt(v, listPrefs.sort, l)).join("")}</select></label>
+            <label>Currency<select id="set-cur">${CURRENCIES.map(([v, l]) => opt(v, settings.currency, l)).join("")}</select></label>
+            <label>Background<select id="set-bg">${[["1", "Necrons and Ultramarines"], ["2", "Terminators"], ["3", "Orks and Blood Angels"], ["4", "Tyranids"], ["none", "None"]].map(([v, l]) => opt(v, bg, l)).join("")}</select></label>
+          </div>
+          <p class="hint">Currency is used for your pile of shame. Grouping and sorting are where every ledger starts; you can still change them on each ledger.</p>
+          <div class="msg" id="set-msg" role="status"></div>
+        </section>
+        <section class="panel set-sec">
+          <h2>App</h2>
+          ${standalone() ? `<p class="hint">You're using Livery Ledger as an installed app.</p>`
+            : installable() ? `<p class="hint">Add Livery Ledger to your home screen or desktop. It opens like an app, and still opens without a connection, showing what was last loaded.</p><div class="row-actions"><button type="button" class="primary btn-sm" id="set-install">Install app</button></div>`
+            : iOS ? `<p class="hint">On iPhone or iPad: open this site in Safari, tap the Share button, then <strong>Add to Home Screen</strong>.</p>`
+            : `<p class="hint">In Chrome or Edge, use the install icon in the address bar, or the browser menu's <strong>Install</strong> or <strong>Add to Home screen</strong> option. On iPhone, use Safari's Share button, then Add to Home Screen.</p>`}
+        </section>
+        <section class="panel set-sec">
+          <h2>Your data</h2>
+          <p class="hint">Download everything you've saved: ledgers, units, recipes, paints you own, your pile of shame and your settings, as one file.</p>
+          <div class="row-actions"><button type="button" class="btn-sm" id="set-export">Download all my data</button></div>
+        </section>
+        <section class="panel set-sec danger-zone">
+          <h2>${online ? "Delete my account" : "Clear everything in this browser"}</h2>
+          <p class="hint">${online ? "This permanently deletes your account, all your ledgers, units, photos and recipes. It can't be undone." : "This deletes every ledger, unit, photo and recipe saved in this browser. It can't be undone."} Download your data first if you might want it later.</p>
+          <label class="set-confirm"><span>Type <strong>DELETE</strong> to confirm</span><input id="del-confirm" autocomplete="off" spellcheck="false"></label>
+          <div class="row-actions"><button type="button" class="danger armed" id="del-go" disabled>${online ? "Delete my account" : "Clear everything"}</button></div>
+          <div class="msg" id="del-msg" role="status"></div>
+        </section>
+      </div>`;
+    const say = (id, t, bad) => { $(id).textContent = t || ""; $(id).classList.toggle("err", !!bad); };
+    const saved = async patch => { try { await saveSettings(patch); say("set-msg", "Saved."); } catch(err){ say("set-msg", "Saved on this device, but not to your account: " + errText(err), true); } };
+    $("set-points").addEventListener("change", e => saved({hidePoints: e.target.checked}));
+    $("set-cur").addEventListener("change", e => saved({currency: e.target.value}));
+    const listSave = () => { try { localStorage.setItem("ll-list-prefs", JSON.stringify({group: $("set-group").value, sort: $("set-sort").value})); } catch(e){} say("set-msg", "Saved."); };
+    $("set-group").addEventListener("change", listSave); $("set-sort").addEventListener("change", listSave);
+    $("set-bg").addEventListener("change", e => { document.documentElement.dataset.bg = e.target.value; try { localStorage.setItem("ll-bg", e.target.value); } catch(err){} say("set-msg", "Saved."); });
+    if($("set-install")) $("set-install").addEventListener("click", async () => { await installApp(); viewSettings(); });
+    if($("pw-form")) $("pw-form").addEventListener("submit", async e => {
+      e.preventDefault();
+      const a = $("pw-new").value, b = $("pw-new2").value;
+      if(a.length < 6){ say("pw-msg", "Passwords need at least 6 characters.", true); $("pw-new").focus(); return; }
+      if(a !== b){ say("pw-msg", "The two passwords don't match.", true); $("pw-new2").focus(); return; }
+      say("pw-msg", "Saving…");
+      try { await store.updatePassword(a); $("pw-new").value = $("pw-new2").value = ""; say("pw-msg", "Password changed."); }
+      catch(err){ say("pw-msg", authErr(err), true); }
+    });
+    $("set-export").addEventListener("click", async () => {
+      const b = $("set-export"); b.disabled = true; b.textContent = "Preparing…";
+      try {
+        const [armies, units, library, paints] = await Promise.all([store.listArmies(), store.listAllUnits(), store.getLibrary().catch(() => []), store.getPaints().catch(() => [])]);
+        let shame = []; try { shame = await getShame(); } catch(e){}
+        downloadJSON({app: "livery-ledger", kind: "everything", version: 5, exported: new Date().toISOString(), account: me ? {name: me.name, email: me.email} : null,
+          settings, goal: getGoal(), paintsOwned: paints, recipeLibrary: library, pileOfShame: shame,
+          ledgers: armies.map(a => ({faction: a.faction, name: a.name, scheme: a.scheme, public: a.public, units: units.filter(u => u.armyId === a.id).map(u => ({...S.cleanUnit(u), image: u.image || "", photos: (u.photos || []).map(p => store.photoUrl(p))}))}))},
+          `livery-ledger-everything-${new Date().toISOString().slice(0, 10)}.json`);
+      } catch(err){ alertBanner("Couldn't prepare your data: " + errText(err)); }
+      finally { b.disabled = false; b.textContent = "Download all my data"; }
+    });
+    $("del-confirm").addEventListener("input", e => { $("del-go").disabled = e.target.value.trim() !== "DELETE"; });
+    $("del-go").addEventListener("click", async () => {
+      const b = $("del-go"); if($("del-confirm").value.trim() !== "DELETE") return;
+      b.disabled = true; say("del-msg", online ? "Deleting your account…" : "Clearing…");
+      try {
+        await store.deleteAccount(); clearOfflineData();
+        if(online){ location.hash = "#/"; setTimeout(() => alertBanner("Your account has been deleted."), 300); }
+        else { location.hash = "#/profile"; }
+      } catch(err){ say("del-msg", errText(err), true); b.disabled = false; }
+    });
   }
 
   /* ============================================================
@@ -3005,7 +3129,7 @@ Redemptor Dreadnought (210 points)</pre>
       const changed = first || (!!session) !== (!!was) || (session && was && session.user.id !== was.user.id);
       const wasFirst = first;
       store.setSession(session); first = false;
-      setTop();
+      loadSettings(); setTop();
       if(changed) setTimeout(route, 0);
       // Opened the link in a password reset email: they're signed in, now ask for the new password.
       if(event === "PASSWORD_RECOVERY") setTimeout(() => openAuth("reset"), 60);
@@ -3013,6 +3137,7 @@ Redemptor Dreadnought (210 points)</pre>
         /expired|invalid/i.test(linkErr.code + linkErr.text) ? "That link has expired or was already used. Enter your email and we'll send a new one." : linkErr.text), 60);
     });
   } else {
+    loadSettings();
     route();
   }
 })();

@@ -234,6 +234,11 @@
       },
       async removeUnit(u){ db.units = db.units.filter(x => x.id !== u.id); save(); },
       photoUrl: p => p,
+      // "Delete account" when saving in this browser: clear everything this site saved here.
+      async deleteAccount(){
+        ["livery-ledger-v3", "livery-paints-v1", "livery-recipes-v1", "ll-goal", "ll-settings", "ll-shame", "ll-list-prefs", "ll-detail-open", "ll-roster-group"].forEach(k => { try { localStorage.removeItem(k); } catch(e){} });
+        db = {armies: [], units: []};
+      },
       async addUnitPhoto(armyId, u, file){ const url = await blobToDataURL(await resizeImage(file, 900, .78)); return this.saveUnit(armyId, {...u, photos: [...(u.photos || []), url]}, u.id, null, false, u); },
       async removeUnitPhoto(armyId, u, p){ return this.saveUnit(armyId, {...u, photos: (u.photos || []).filter(x => x !== p)}, u.id, null, false, u); },
       async restoreUnit(armyId, u){ db.units = db.units.filter(x => x.id !== u.id).concat({...u, armyId}); save(); return {...u, armyId}; },
@@ -352,6 +357,22 @@
       // The unit's main photo and gallery photos.
       purgeImage(u){ const paths = [u && u.imagePath, ...((u && u.photos) || [])].filter(p => p && !/^data:/.test(p)); if(paths.length) sb.storage.from(B).remove(paths).catch(() => {}); },
       photoUrl: p => /^data:/.test(p) ? p : pub(p),
+      // Delete the account: check the database is set up, remove every photo, then the rows and the login.
+      async deleteAccount(){
+        need();
+        const setup = await sb.rpc("delete_my_account", {dry: true});
+        if(setup.error) throw Object.assign(new Error("Deleting accounts needs a one-time database setup: run supabase/features.sql in Supabase, then try again."), {code: "nosetup"});
+        const uid = session.user.id, paths = [];
+        const top = mustOk(await sb.storage.from(B).list(uid, {limit: 1000})) || [];
+        for(const f of top){
+          if(f.id){ paths.push(`${uid}/${f.name}`); continue; }
+          const inner = mustOk(await sb.storage.from(B).list(`${uid}/${f.name}`, {limit: 1000})) || [];
+          inner.filter(x => x.id).forEach(x => paths.push(`${uid}/${f.name}/${x.name}`));
+        }
+        for(let i = 0; i < paths.length; i += 100) await sb.storage.from(B).remove(paths.slice(i, i + 100));
+        mustOk(await sb.rpc("delete_my_account", {dry: false}));
+        try { await sb.auth.signOut(); } catch(e){}
+      },
       async addUnitPhoto(armyId, u, file){
         need();
         const path = await upload(armyId, await resizeImage(file, 1600, .85));
