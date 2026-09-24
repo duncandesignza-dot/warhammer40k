@@ -1967,7 +1967,7 @@ Redemptor Dreadnought (210 points)</pre>
       $("pv-svg").innerHTML = unitBadge(u, scheme, 120);
       $("pv-name").textContent = u.name || u.datasheet || "Unnamed unit";
       const tier = scheme.tiers[u.tier];
-      $("pv-meta").textContent = [u.datasheet || "Unit", tier && tier.name, plural(u.count, "model"), u.points ? u.points + " pts" : ""].filter(Boolean).join(" · ");
+      $("pv-meta").textContent = [u.datasheet || "Unit", tier && tier.name, plural(u.count, "model"), u.points ? u.points + "\u00a0pts" : ""].filter(Boolean).join(" · ");
       $("painted-of").textContent = "of " + u.count;
       $("f-painted").max = u.count;
       updatePointsHint();
@@ -2211,7 +2211,7 @@ Redemptor Dreadnought (210 points)</pre>
         })()}</div>
         <div class="info">
           <div><h2 id="dt-name">${esc(u.name)}</h2>
-            <div class="meta">${esc(u.datasheet || "Unit")}${u.role ? " · " + esc(u.role) : ""} · ${plural(u.count, "model")}${u.points ? " · " + fmt(u.points) + " pts" : ""}</div></div>
+            <div class="meta">${esc(u.datasheet || "Unit")}${u.role ? " · " + esc(u.role) : ""} · ${plural(u.count, "model")}${u.points ? " · " + fmt(u.points) + "\u00a0pts" : ""}</div></div>
           <div class="row">${img ? unitBadge(u, scheme, 64) : ""}<span class="row-end">${starBtn(u, true)}<span class="pill s-${esc(u.status)}">${esc(u.status === "done" ? "Painted" : stageLabel(u))}</span></span></div>
           ${box("painting", "Painting", `<div class="stage-list">${STAGES.map(([k, l]) => `<span class="${(u.stages || []).includes(k) ? "on" : ""}">${l}</span>`).join("")}</div>
             <p class="prose" style="margin-top:10px">${u.painted} of ${plural(u.count, "model")} painted</p>`)}
@@ -2717,7 +2717,7 @@ Redemptor Dreadnought (210 points)</pre>
       const box = $("ld-out");
       if(!parsed){ box.innerHTML = ""; return; }
       const us = parsed.units;
-      $("ld-sum").textContent = us.length ? [parsed.detachment, plural(us.length, "unit"), fmt(us.reduce((a, u) => a + (u.include ? u.points : 0), 0)) + " pts"].filter(Boolean).join(" · ") : "";
+      $("ld-sum").textContent = us.length ? [parsed.detachment, plural(us.length, "unit"), fmt(us.reduce((a, u) => a + (u.include ? u.points : 0), 0)) + "\u00a0pts"].filter(Boolean).join(" · ") : "";
       box.innerHTML = (us.length ? `<div class="ld-table">
           <div class="ld-row ld-head" aria-hidden="true"><span></span><span>Datasheet</span><span>Models</span><span>Points</span><span>Weapons</span></div>
           ${us.map((u, i) => `<label class="ld-row"><span><input type="checkbox" data-inc="${i}" ${u.include ? "checked" : ""} aria-label="Include ${esc(u.name)}"></span><span><strong>${esc(u.name)}</strong><small>${esc(u.sheet.r)}${u.notes.length ? " · " + esc(u.notes.join(", ")) : ""}</small></span><span><input type="number" min="1" max="99" data-cnt="${i}" value="${u.count}" aria-label="Models in ${esc(u.name)}"></span><span>${u.points}</span><span>${esc([...u.melee, ...u.ranged].slice(0, 3).join(", ") || "—")}</span></label>`).join("")}
@@ -3224,7 +3224,7 @@ Redemptor Dreadnought (210 points)</pre>
       const a = byId[u.armyId], f = FBY[a.faction];
       return !q || [u.name, u.datasheet, u.role, u.melee, u.ranged, u.notes, a.name, f && f.name].join(" ").toLowerCase().includes(q);
     });
-    $("ro-sum").textContent = units.length ? [plural(units.length, "unit"), plural(models, "model"), num(pts) + " pts", (models ? Math.round(done / models * 100) : 0) + "% painted"].join(" · ") + (list.length !== units.length ? ` · showing ${list.length}` : "") : "";
+    $("ro-sum").textContent = units.length ? [plural(units.length, "unit"), plural(models, "model"), num(pts) + "\u00a0pts", (models ? Math.round(done / models * 100) : 0) + "% painted"].join(" · ") + (list.length !== units.length ? ` · showing ${list.length}` : "") : "";
     if(!units.length){
       $("ro-body").innerHTML = `<div class="ro-empty"><strong>No units yet</strong><p>Open a ledger and add your units, or import your army list, and they'll all show up here.</p></div>`;
       return;
@@ -3243,7 +3243,7 @@ Redemptor Dreadnought (210 points)</pre>
         <span class="ro-badge">${unitBadge(u, a.scheme, 44)}</span>
         <span class="ro-name"><strong>${u.fav ? `<span class="star on" title="Starred">${STAR(true)}</span>` : ""}${esc(u.name || u.datasheet || "Unit")}</strong><small>${esc(sub || "Unit")}</small></span>
         <span class="ro-prog"><span class="ro-bar"><i style="width:${pct}%"></i></span><small>${dn}/${c} painted</small></span>
-        <span class="ro-pts">${u.points ? num(u.points) + " pts" : "—"}</span>
+        <span class="ro-pts">${u.points ? num(u.points) + "\u00a0pts" : "—"}</span>
         <span class="ro-st st-${esc(st)}">${esc(STATUS[st] || st)}</span>
       </a>`;
     };
