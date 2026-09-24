@@ -352,6 +352,7 @@
     try {
       if(parts[0] === "new" && FBY[parts[1]]) await viewSetup({factionId: parts[1]});
       else if(parts[0] === "army" && parts[1] && parts[2] === "colours") await viewSetup({armyId: parts[1]});
+      else if(parts[0] === "army" && parts[1] && parts[2] === "guide") await viewGuide(parts[1]);
       else if(parts[0] === "army" && parts[1] && parts[2] === "unit" && parts[3]) await viewLedger(parts[1], parts[3]);
       else if(parts[0] === "army" && parts[1]) await viewLedger(parts[1]);
       // The list of shared armies is for logged-in painters; a shared ledger itself still opens from its link.
@@ -650,6 +651,111 @@ Redemptor Dreadnought (210 points)</pre>
       setTimeout(() => heroAuth.focus(), 350);
     }));
   }
+  /* ============================================================
+     Painting guide: one printable page with an army's colours, ranks, recipes, units and paints
+     ============================================================ */
+  async function viewGuide(armyId){
+    view.name = "guide";
+    const army = await store.getArmy(armyId);
+    if(!army){ location.hash = "#/profile"; return; }
+    const f = FBY[army.faction] || {name: army.faction};
+    PROF = P.profileFor(army.faction);
+    const scheme = army.scheme; fillSkin(scheme, army.faction);
+    document.title = `${army.name} painting guide · Livery Ledger`;
+    app.innerHTML = `<p class="loading">Building your painting guide…</p>`;
+    const [units] = await Promise.all([store.listUnits(army.id), PU.load()]);
+    const mine = store.canWrite && (!army.owner || !store.session || army.owner === store.session.user.id);
+    let owned = new Set();
+    if(mine){ try { owned = new Set((await store.getPaints()).map(PU.norm)); } catch(e){} }
+    const c = scheme.colors, sp = scheme.slotPaints || {};
+    const paints = new Map();   // label -> {label, hex}
+    const note = (label, hex) => { if(label && !paints.has(PU.norm(label))){ const p = PU.find(label); paints.set(PU.norm(label), {label, hex: p ? p.hex : hex || ""}); } };
+    const paintCell = (hex, label) => {
+      note(label, hex);
+      const d = PU.describe(label), p = label && PU.find(label);
+      const sw = (p && p.hex) || (ART.hexOk(hex) ? hex : "");
+      return `<span class="g-sw" style="${sw ? "background:" + sw : ""}"></span><span class="g-pn">${label ? esc(d.name) : esc(cname(hex))}${d.meta ? `<small>${esc(d.meta)}</small>` : ""}</span>`;
+    };
+    const keys = PROF.keys.filter(k => ART.hexOk(c[k]) && (!PAULDRONS.includes(k) || (scheme.splitPauldrons && PROF.pauldrons)) && (k !== "skin" || PROF.skinAlways || units.some(u => headOf(u) === "bare")));
+    const XA = P.extrasFor(army.faction), xaAll = XA.details.concat(XA.weapons);
+    const xa = Object.entries(scheme.xareas || {}).map(([id, v]) => ({label: (xaAll.find(a => a.id === id) || {label: id.slice(2)}).label, ...v}));
+    const recipes = scheme.recipes || [];
+    const tierOf = u => scheme.tiers[u.tier] || scheme.tiers[0] || {};
+    const sorted = units.slice().sort((a, b) => (b.tier - a.tier) || String(a.name).localeCompare(String(b.name)));
+    // Colours a unit paints differently from the army's scheme.
+    const SLOT_ORDER = ["lens", "skin", "armour", "secondary", "trim", "emblem", "cloth", "metal", ...PAULDRONS];
+    const ownColours = u => SLOT_ORDER.filter(k => ART.hexOk(u[k]) && k !== "helmet" && ART.hexOk(c[k]) && u[k].toLowerCase() !== c[k].toLowerCase())
+      .map(k => { const lbl = (u.slotPaints || {})[k]; note(lbl, u[k]); return `${esc(PROF.labels[k] || k)}: ${esc(lbl ? PU.shortName(lbl) : cname(u[k]))}`; });
+    const models = units.reduce((n, u) => n + (+u.count || 0), 0), done = units.reduce((n, u) => n + Math.min(+u.count || 0, +u.painted || 0), 0);
+    const today = new Date().toLocaleDateString("en-GB", {day: "numeric", month: "long", year: "numeric"});
+    const body = `
+      <div class="guide-actions">
+        <a class="btn btn-sm" href="#/army/${esc(army.id)}">← Back to the ledger</a>
+        <button type="button" class="primary btn-sm" id="g-print">Print or save as PDF</button>
+      </div>
+      <article class="guide">
+        <header class="g-head">
+          <div class="g-badges">${scheme.tiers.slice(0, 4).map(t => tierBadge(scheme, t, 64)).join("")}</div>
+          <div>
+            <p class="eyebrow">Painting guide</p>
+            <h1>${esc(army.name)}</h1>
+            <p class="g-meta">${esc(f.name)} · ${plural(units.length, "unit")} · ${done}/${models} models painted${scheme.by ? ` · by ${esc(scheme.by)}` : ""} · ${esc(today)}</p>
+          </div>
+        </header>
+
+        <section class="g-sec">
+          <h2>Colour scheme</h2>
+          <table class="g-table"><tbody>
+            ${keys.map(k => `<tr><th>${esc(PROF.labels[k] || k)}</th><td>${paintCell(c[k], sp[k])}</td></tr>`).join("")}
+            ${xa.map(a => `<tr><th>${esc(a.label)}</th><td>${paintCell(a.hex, a.paint)}</td></tr>`).join("")}
+          </tbody></table>
+        </section>
+
+        <section class="g-sec">
+          <h2>Ranks <small>${esc(PROF.head)} colour</small></h2>
+          <table class="g-table"><tbody>
+            ${scheme.tiers.map(t => `<tr><th>${esc(t.name)}${t.note ? `<small>${esc(t.note)}</small>` : ""}</th><td>${paintCell(t.color, t.paint)}</td></tr>`).join("")}
+          </tbody></table>
+        </section>
+
+        ${recipes.length ? `<section class="g-sec g-recipes">
+          <h2>Recipes</h2>
+          ${recipes.map(r => `<div class="g-recipe">
+            <h3>${esc(r.name)}${r.area ? ` <small>${esc(r.area)}</small>` : ""}</h3>
+            <ol>${r.steps.map(st => `<li><span class="g-tech">${esc(st.t || "Step")}</span>${st.p ? paintCell("", st.p) : "<span></span><span></span>"}</li>`).join("")}</ol>
+            ${r.notes ? `<p class="g-note">${esc(r.notes)}</p>` : ""}
+          </div>`).join("")}
+        </section>` : ""}
+
+        ${sorted.length ? `<section class="g-sec">
+          <h2>Units</h2>
+          <table class="g-table g-units">
+            <thead><tr><th>Unit</th><th>Models</th><th>Rank</th><th>Progress</th><th>Painted differently</th></tr></thead>
+            <tbody>${sorted.map(u => {
+              const rs = (u.recipes || []).map(id => recipes.find(r => r.id === id)).filter(Boolean).map(r => r.name);
+              const own = ownColours(u);
+              return `<tr><td><strong>${esc(u.name)}</strong>${u.datasheet && u.datasheet !== u.name ? `<small>${esc(u.datasheet)}</small>` : ""}${rs.length ? `<small>Recipes: ${esc(rs.join(", "))}</small>` : ""}</td>
+                <td>${u.count}</td><td>${esc(tierOf(u).name || "")}</td>
+                <td>${u.painted}/${u.count}${u.status === "done" ? " ✓" : ""}</td>
+                <td>${own.length ? own.join("<br>") : "—"}</td></tr>`;
+            }).join("")}</tbody>
+          </table>
+        </section>` : ""}
+
+        <section class="g-sec">
+          <h2>Paints for this army <small>${paints.size} paints</small></h2>
+          <ul class="g-paints">${[...paints.values()].sort((a, b) => a.label.localeCompare(b.label)).map(p => {
+            const d = PU.describe(p.label), have = owned.has(PU.norm(p.label));
+            return `<li class="${have ? "have" : ""}"><span class="g-box" aria-hidden="true">${have ? "✓" : ""}</span><span class="g-sw" style="${p.hex ? "background:" + p.hex : ""}"></span><span class="g-pn">${esc(d.name)}${d.meta ? `<small>${esc(d.meta)}</small>` : ""}</span></li>`;
+          }).join("")}</ul>
+          ${mine ? `<p class="g-note">Ticked paints are ones you've marked as owned.</p>` : ""}
+        </section>
+        <footer class="g-foot">Made with Livery Ledger · ${esc(location.host || "liveryledger.co.za")}</footer>
+      </article>`;
+    app.innerHTML = body;
+    $("g-print").addEventListener("click", () => window.print());
+  }
+
   /* ============================================================
      Shared armies: every ledger someone has chosen to share
      ============================================================ */
@@ -1108,6 +1214,7 @@ Redemptor Dreadnought (210 points)</pre>
           <div class="more">
             <button type="button" class="btn-sm" id="b-more" aria-expanded="false" aria-controls="more-menu">More</button>
             <div class="more-menu" id="more-menu" hidden>
+              <a href="#/army/${esc(army.id)}/guide">Painting guide (print)</a>
               <button type="button" id="b-export">Export backup</button>
               ${canWrite ? `<button type="button" id="b-import">Import backup</button>` : ""}
               ${canWrite ? `<hr><button type="button" class="menu-danger" id="b-delarmy">Delete ledger</button>` : ""}
