@@ -318,6 +318,20 @@
         if(!session) return {};
         return totals(mustOk(await sb.from(U).select(SUM_COLS).eq("owner", session.user.id)) || []);
       },
+      /* Pile of shame kits. null means the kits table hasn't been set up (supabase/features.sql). */
+      async listKits(){
+        if(!session) return [];
+        const {data, error} = await sb.from("kits").select("id,data").eq("owner", session.user.id);
+        if(error){ if(/PGRST205|42P01/.test(error.code || "") || /could not find the table|does not exist/i.test(error.message || "")) return null; throw error; }
+        return (data || []).map(r => ({...(r.data || {}), id: r.id}));
+      },
+      async putKits(list){
+        need();
+        const uid = session.user.id, now = new Date().toISOString();
+        if(list.length) mustOk(await sb.from("kits").upsert(list.map(({id, ...data}) => ({owner: uid, id, data, updated_at: now})), {onConflict: "owner,id"}));
+        const keep = list.map(k => `"${String(k.id).replace(/"/g, "")}"`).join(",");
+        mustOk(list.length ? await sb.from("kits").delete().eq("owner", uid).not("id", "in", `(${keep})`) : await sb.from("kits").delete().eq("owner", uid));
+      },
       /* Likes and follows. null means the tables haven't been set up yet (supabase/features.sql). */
       async communityState(armyIds){
         if(!session) return null;
