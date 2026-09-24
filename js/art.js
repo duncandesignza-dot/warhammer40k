@@ -115,7 +115,7 @@
     }
     const edge=edgeFor(emblem);
     const emblemSvg=icon?`<use href="#emi-${esc(icon)}" x="-265" y="-265" width="530" height="530" filter="url(#ll-dilate)" style="color:${edge};--ko:${edge}"/>
-        <use href="#emi-${esc(icon)}" x="-265" y="-265" width="530" height="530" style="color:${emblem};--ko:${armour}"/>`
+        <use href="#emi-${esc(icon)}" x="-265" y="-265" width="530" height="530" style="color:${emblem};--ko:${safe(u.pauldron,armour)}"/>`
       :shape==="none"?"":`<g transform="scale(.6) translate(-500 -500)">
           <use href="#em-${shape}" fill="none" stroke="${edgeFor(emblem)}" stroke-width="44" stroke-linejoin="round"/>
           <use href="#em-${shape}" fill="${emblem}"/>
@@ -123,7 +123,7 @@
     return `<svg class="mini" width="${w}" height="${size}" viewBox="0 0 2000 960" role="img" aria-label="${esc(label||"Colour badge")}">
       ${left}
       <g transform="translate(1520 480)">
-        <circle r="430" fill="${armour}"/>
+        <circle r="430" fill="${safe(u.pauldron,armour)}"/>
         <circle r="430" fill="none" stroke="${trim}" stroke-width="56"/>
         <circle r="458" fill="none" stroke="${td}" stroke-width="8"/>
         <circle r="402" fill="none" stroke="${td}" stroke-width="8"/>

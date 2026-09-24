@@ -110,7 +110,7 @@
   const BASE = {
     head: "helmet",
     labels: {helmet:"Helmet", lens:"Lenses / eyes", armour:"Armour", secondary:"Secondary", trim:"Trim", emblem:"Emblem",
-             cloth:"Robes / cloth", metal:"Weapons / metal", skin:"Skin"},
+             cloth:"Robes / cloth", metal:"Weapons / metal", skin:"Skin", lpauldron:"Left pauldron", rpauldron:"Right pauldron"},
     legends: {head:"Helmet", body:"Armour & pauldrons", details:"Cloth & details"},
     detail: ["Helmet detail", "e.g. laurel wreath, centre stripe"],
     detailOpts: ["Laurel wreath","Centre stripe","Crest","Battle damage","Squad markings"],
@@ -124,7 +124,8 @@
     tiers: [["Line","Standard troops"],["Veteran","Veterans and elites"],["Leader","Sergeants and characters"],["Hero","Your warlord and heroes"]]
   };
   const KINDS = {
-    astartes: {},
+    // Space Marines can paint each shoulder pad its own colour (e.g. Deathwatch's silver left pauldron).
+    astartes: {pauldrons: true},
     chaos: {
       labels: {emblem:"Icon / mark"},
       detailOpts: ["Horns","Crest","Face stripes","Battle damage","Warband markings"],
@@ -306,10 +307,10 @@
   const profiles = {};
   function profileFor(factionId){
     if(profiles[factionId]) return profiles[factionId];
-    const pr = merge(merge(BASE, KINDS[KIND_OF[factionId]] || {}), FACTION_OVER[factionId] || {});
+    const pr = merge(merge(BASE, KINDS[KIND_OF[factionId] || "astartes"] || {}), FACTION_OVER[factionId] || {});
     const L = pr.labels;
     pr.kind = KIND_OF[factionId] || "astartes";
-    pr.keys = ["armour","secondary","trim","emblem","lens","cloth","metal","skin"].filter(k => !pr.hide.includes(k));
+    pr.keys = ["armour", ...(pr.pauldrons ? ["lpauldron","rpauldron"] : []), "secondary","trim","emblem","lens","cloth","metal","skin"].filter(k => !pr.hide.includes(k));
     pr.areas = [...new Set([L.armour, L.secondary, L.trim, L.helmet, L.lens, L.cloth, L.metal, pr.hide.includes("skin") ? "" : L.skin, L.emblem, ...pr.more, "Base", "Other"].filter(Boolean))];
     return (profiles[factionId] = pr);
   }
@@ -399,6 +400,17 @@
     });
   }
   // Colours plus their paint labels from an F(...) set, over plain fallback colours.
+  // Pauldron colours start as the armour unless a faction sets its own (Deathwatch: silver left pauldron).
+  const PAULDRONS = {"deathwatch": {lpauldron: "@Leadbelcher"}};
+  function withPauldrons(factionId, r, fp){
+    if(!profileFor(factionId).pauldrons) return r;
+    ["lpauldron","rpauldron"].forEach(k => {
+      const n = (fp && fp[k]) || ((PAULDRONS[factionId] || {})[k] || "").replace(/^@/, "");
+      if(n && CIT[n]){ r.colors[k] = CIT[n][1]; r.slotPaints[k] = CIT[n][0]; }
+      else { r.colors[k] = r.colors.armour; if(r.slotPaints.armour) r.slotPaints[k] = r.slotPaints.armour; else delete r.slotPaints[k]; }
+    });
+    return r;
+  }
   function resolve(fp, fallback){
     const colors = {...fallback}, slotPaints = {};
     Object.entries(fp || {}).forEach(([k, n]) => { if(CIT[n]){ colors[k] = CIT[n][1]; slotPaints[k] = CIT[n][0]; } });
@@ -408,7 +420,7 @@
   function presetFor(factionId){
     const base = P[factionId] || P["space-marines"];
     const plain = {armour:base.armour, secondary:base.secondary, trim:base.trim, emblem:base.emblem, lens:base.lens, cloth:base.cloth, metal:base.metal, skin:base.skin || SKIN_OF[factionId] || SKIN};
-    const {colors, slotPaints} = resolve(FP[factionId], plain);
+    const {colors, slotPaints} = withPauldrons(factionId, resolve(FP[factionId], plain), FP[factionId]);
     return {style: base.style, colors, slotPaints, shape: defaultIcon(factionId) || base.shape, tiers: tiersFor(factionId, colors, slotPaints)};
   }
   const SKIN_OF = {"orks":"#4f7a2a", "tau-empire":"#6b7f93", "genestealer-cults":"#a58ab0", "drukhari":"#e6dccf", "death-guard":"#a9a57a", "tyranids":"#d8cba8", "necrons":"#a9adb3", "chaos-daemons":"#9e1b1b"};
@@ -512,7 +524,7 @@
     const list = (SCHEMES[factionId] || []).slice();
     if(own && !list.some(k => JSON.stringify(k.fp) === JSON.stringify(own))) list.unshift(K("Official colours", "", own));
     const base = presetFor(factionId);
-    return list.map(k => { const r = resolve(k.fp, base.colors); return {name: k.name, shape: k.fp === own ? base.shape : iconRef(k.icon), colors: r.colors, paints: r.slotPaints}; });
+    return list.map(k => { const r = withPauldrons(factionId, resolve(k.fp, base.colors), k.fp); return {name: k.name, shape: k.fp === own ? base.shape : iconRef(k.icon), colors: r.colors, paints: r.slotPaints}; });
   }
 
   function colorName(hex){

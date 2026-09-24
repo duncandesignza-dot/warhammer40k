@@ -4,7 +4,7 @@
   const CFG = window.LEDGER_CONFIG || {};
 
   const FIELDS = ["datasheet","role","name","count","status","tier","head","helmet","skin","lens","hdetail","noHelmet",
-    "armour","secondary","trim","emblem","shape","cloth","metal","extras","melee","ranged","paints","notes","points","painted"];
+    "armour","lpauldron","rpauldron","secondary","trim","emblem","shape","cloth","metal","extras","melee","ranged","paints","notes","points","painted"];
   const STAGES = [["built","Built"],["primed","Primed"],["base","Basecoat"],["shade","Shade"],["highlight","Highlight"],["basing","Basing"],["varnish","Varnish"]];
   const STAGE_KEYS = STAGES.map(s => s[0]);
   const STAGES_FOR_STATUS = {unbuilt:[], built:["built"], primed:["built","primed"], progress:["built","primed","base"], done:STAGE_KEYS.slice()};
@@ -17,10 +17,10 @@
   }
   const STATUS = {unbuilt:"Unbuilt",built:"Built",primed:"Primed",progress:"In progress",done:"Painted"};
   const HEX = /^#[0-9a-f]{6}$/i;
-  const COLOR_FIELDS = ["helmet","skin","lens","armour","secondary","trim","emblem","cloth","metal"];
+  const COLOR_FIELDS = ["helmet","skin","lens","armour","lpauldron","rpauldron","secondary","trim","emblem","cloth","metal"];
 
   // Paint chosen for each colour area, e.g. {armour: "Citadel Abaddon Black"}. The colour itself stays in the hex fields.
-  const SLOT_KEYS = ["helmet","skin","lens","armour","secondary","trim","emblem","cloth","metal"];
+  const SLOT_KEYS = ["helmet","skin","lens","armour","lpauldron","rpauldron","secondary","trim","emblem","cloth","metal"];
   function cleanSlotPaints(m){
     const o = {};
     if(m && typeof m === "object") SLOT_KEYS.forEach(k => { const v = String(m[k] || "").trim().slice(0, 90); if(v) o[k] = v; });
@@ -70,6 +70,8 @@
     ["armour","secondary","trim","emblem","lens","cloth","metal"].forEach(k => { colors[k] = HEX.test((s.colors||{})[k]) ? s.colors[k] : "#1f1f22"; });
     // Skin came later: leave it out when missing so the app can use the faction's starting skin.
     if(HEX.test((s.colors||{}).skin)) colors.skin = s.colors.skin;
+    // Separate pauldron colours (Space Marines) are optional too: missing means "same as the armour".
+    ["lpauldron","rpauldron"].forEach(k => { if(HEX.test((s.colors||{})[k])) colors[k] = s.colors[k]; });
     const tiers = (Array.isArray(s.tiers) ? s.tiers : []).slice(0, 8).map(t => ({
       name: String((t && t.name) || "Tier").slice(0, 40),
       note: String((t && t.note) || "").slice(0, 80),
