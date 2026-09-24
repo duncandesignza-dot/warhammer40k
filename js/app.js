@@ -746,7 +746,7 @@ Redemptor Dreadnought (210 points)</pre>
           <h2>Paints for this army <small>${paints.size} paints</small></h2>
           <ul class="g-paints">${[...paints.values()].sort((a, b) => a.label.localeCompare(b.label)).map(p => {
             const d = PU.describe(p.label), have = owned.has(PU.norm(p.label));
-            return `<li class="${have ? "have" : ""}"><span class="g-box" aria-hidden="true">${have ? "✓" : ""}</span><span class="g-sw" style="${p.hex ? "background:" + p.hex : ""}"></span><span class="g-pn">${esc(d.name)}${d.meta ? `<small>${esc(d.meta)}</small>` : ""}</span></li>`;
+            return `<li class="${have ? "have" : ""}"><span class="g-box" aria-hidden="true">${have ? "✓" : ""}</span><span class="g-sw" style="${p.hex ? "background:" + p.hex : ""}"></span><span class="g-pn">${esc(d.name)}${d.meta ? `<small>${esc(d.meta)}</small>` : ""}${!have && PU.swapsText(p.label) ? `<small class="swaps">${esc(PU.swapsText(p.label))}</small>` : ""}</span></li>`;
           }).join("")}</ul>
           ${mine ? `<p class="g-note">Ticked paints are ones you've marked as owned.</p>` : ""}
         </section>
@@ -2542,7 +2542,7 @@ Redemptor Dreadnought (210 points)</pre>
         body.innerHTML = `
           <div class="pd-head"><p class="hint">Paints in your colours and recipes that aren't in <em>My paints</em>.</p>
           <label class="check"><input type="checkbox" id="buy-all" ${buyAll ? "checked" : ""}> Include recipes not used by any unit</label></div>
-          ${list.length ? `<ul class="buy">${list.map(it => `<li>${PU.swatch(it.label)}<span class="b-n">${paintLine(it.label)}<small>For ${esc(it.recipes.length > 3 ? it.recipes.slice(0, 3).join(", ") + ` and ${it.recipes.length - 3} more` : it.recipes.join(", "))}</small></span><button type="button" class="btn-sm" data-act="got" data-p="${esc(it.label)}">I have it</button></li>`).join("")}</ul>
+          ${list.length ? `<ul class="buy">${list.map(it => `<li>${PU.swatch(it.label)}<span class="b-n">${paintLine(it.label)}<small>For ${esc(it.recipes.length > 3 ? it.recipes.slice(0, 3).join(", ") + ` and ${it.recipes.length - 3} more` : it.recipes.join(", "))}</small>${PU.swapsText(it.label) ? `<small class="swaps">${esc(PU.swapsText(it.label))}</small>` : ""}</span><button type="button" class="btn-sm" data-act="got" data-p="${esc(it.label)}">I have it</button></li>`).join("")}</ul>
             <div class="row-actions"><button type="button" class="btn-sm" data-act="copy-buy">Copy list</button><span class="hint" id="buy-msg"></span></div>`
           : `<div class="empty">${(scheme.recipes || []).length || Object.keys(scheme.slotPaints || {}).length || units.some(u => Object.keys(u.slotPaints || {}).length) ? "You have every paint you need." : "Pick paints for your colours, or add some recipes first."}</div>`}`;
         $("buy-all").addEventListener("change", e => { buyAll = e.target.checked; renderPaints(); });
