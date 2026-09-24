@@ -969,4 +969,3 @@ button.star.big:hover:not(:disabled){border:1px solid rgba(251,191,36,.5)}
 .lcard .card-top .tag{grid-row:1;grid-column:3;justify-self:end;align-self:start;margin:0}
 .lp-cta-btns{display:flex;gap:10px;flex-wrap:wrap}
 @media (max-width:640px){.lp-cta-btns{width:100%}.sh-tools select{flex:1 1 100%}.sh-count{margin-left:0}}
-@media (max-width:560px){.nav-shared{display:none}}

@@ -170,7 +170,7 @@
     const nav = $("topnav"), a = store.kind === "supabase" ? acct() : null;
     if(store.kind !== "supabase"){ nav.innerHTML = ""; return; }
     if(!a){
-      nav.innerHTML = `<a class="btn btn-sm ghost nav-shared" href="#/shared">Shared armies</a><button type="button" class="btn-sm ghost" data-auth-open="in">Log in</button><button type="button" class="btn-sm primary" data-auth-open="up">Sign up</button>`;
+      nav.innerHTML = `<button type="button" class="btn-sm ghost" data-auth-open="in">Log in</button><button type="button" class="btn-sm primary" data-auth-open="up">Sign up</button>`;
       return;
     }
     nav.innerHTML = `<div class="acct">
@@ -287,7 +287,7 @@
   function openAuth(mode, note){
     if(store.kind !== "supabase") return;
     const d = $("authdlg");
-    if(!dlgAuth) dlgAuth = authForm($("auth-host"), "in", {onDone: () => { if(view.name === "landing") location.hash = "#/profile"; setTimeout(() => { if(d.open) d.close(); }, 700); }});
+    if(!dlgAuth) dlgAuth = authForm($("auth-host"), "in", {onDone: () => { if(view.name === "landing" && !/^#\/(shared|profile)\b/.test(location.hash)) location.hash = "#/profile"; setTimeout(() => { if(d.open) d.close(); }, 700); }});
     dlgAuth.set(typeof mode === "string" ? mode : "in", note);
     if(!d.open) d.showModal();
     dlgAuth.focus();
@@ -338,7 +338,11 @@
       else if(parts[0] === "army" && parts[1] && parts[2] === "colours") await viewSetup({armyId: parts[1]});
       else if(parts[0] === "army" && parts[1] && parts[2] === "unit" && parts[3]) await viewLedger(parts[1], parts[3]);
       else if(parts[0] === "army" && parts[1]) await viewLedger(parts[1]);
-      else if(parts[0] === "shared") await viewShared();
+      // The list of shared armies is for logged-in painters; a shared ledger itself still opens from its link.
+      else if(parts[0] === "shared"){
+        if(store.kind === "supabase" && !store.session){ await viewLanding(); setTimeout(() => openAuth("in", "Log in to browse shared armies."), 0); }
+        else await viewShared();
+      }
       else if(parts[0] === "profile"){
         // Your profile and ledgers; logged out, the homepage with the log in form open.
         if(store.kind === "supabase" && !store.session){ await viewLanding(); setTimeout(() => openAuth("in", "Log in to see your profile and ledgers."), 0); }
@@ -612,8 +616,8 @@ Redemptor Dreadnought (210 points)</pre>
       </section>
 
       <section class="lp-cta panel">
-        <div><h2>Your army deserves a plan</h2><p class="sub">Free, and ready in under a minute. Or see what other painters are working on first.</p></div>
-        <div class="lp-cta-btns"><a class="btn lg" href="#/shared">Browse shared armies</a>${cta}</div>
+        <div><h2>Your army deserves a plan</h2><p class="sub">Free, and ready in under a minute.</p></div>
+        <div class="lp-cta-btns">${me ? `<a class="btn lg" href="#/shared">Browse shared armies</a>` : ""}${cta}</div>
       </section>
     `;
     app.querySelectorAll(".shot img").forEach(img => {
@@ -1057,7 +1061,7 @@ Redemptor Dreadnought (210 points)</pre>
     try { prefs = {...prefs, ...JSON.parse(localStorage.getItem(PREF_KEY) || "{}")}; } catch(e){}
 
     app.innerHTML = `
-      <div class="crumbs">${canWrite ? `<a href="#/profile">My ledgers</a>` : `<a href="#/shared">Shared armies</a>`} / ${esc(f.name)}${!canWrite && army.scheme.by ? ` · shared by ${esc(army.scheme.by)}` : ""}</div>
+      <div class="crumbs">${canWrite ? `<a href="#/profile">My ledgers</a>` : store.session ? `<a href="#/shared">Shared armies</a>` : `<a href="#/">Livery Ledger</a>`} / ${esc(f.name)}${!canWrite && army.scheme.by ? ` · shared by ${esc(army.scheme.by)}` : ""}</div>
       <header class="top">
         <div>
           <h1>${esc(army.name)}</h1>
@@ -1267,7 +1271,7 @@ Redemptor Dreadnought (210 points)</pre>
           <h2 id="sh-h">Share this ledger</h2>
           ${store.canShare ? `
           <label class="switch"><input type="checkbox" id="sh-on" ${army.public ? "checked" : ""}><span class="track" aria-hidden="true"><i></i></span><span>Share this ledger</span></label>
-          <p class="hint">Anyone can view it, with the link or on the <a href="#/shared">Shared armies</a> page. They'll see your units, colours, photos, points and progress, and your display name. They can't change anything, and they don't need an account. Turn this off at any time to stop sharing.</p>
+          <p class="hint">Anyone with the link can view it, and logged-in painters can find it on the <a href="#/shared">Shared armies</a> page. They'll see your units, colours, photos, points and progress, and your display name. They can't change anything, and they don't need an account. Turn this off at any time to stop sharing.</p>
           <div class="copyrow" id="sh-row" ${army.public ? "" : "hidden"}><input id="sh-link" readonly value="${esc(location.origin + location.pathname + "#/army/" + army.id)}" aria-label="Share link"><button type="button" class="primary" id="sh-copy">Copy link</button></div>`
           : `<p class="hint">Sharing needs the online database. Add your Supabase details in <code>js/config.js</code> and sign in to share ledgers.</p>`}
           <div class="msg" id="sh-msg" role="status"></div>

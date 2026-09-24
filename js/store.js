@@ -288,6 +288,7 @@
       },
       // Every ledger with sharing on, newest first, with painting totals. Readable without logging in.
       async listShared(){
+        need();
         const armies = (mustOk(await sb.from(A).select("*").eq("public", true).order("updated_at", {ascending: false}).limit(150)) || []).map(toArmy);
         const ids = armies.map(a => a.id);
         const sum = ids.length ? totals(mustOk(await sb.from(U).select(SUM_COLS).in("army_id", ids)) || []) : {};
