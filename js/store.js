@@ -221,6 +221,7 @@
       async listUnits(armyId){ return db.units.filter(u => u.armyId === armyId).map(u => ({...u, ...cleanUnit(u)})); },
       async listAllUnits(){ return db.units.map(u => ({...u, ...cleanUnit(u)})); },
       async listShared(){ return {armies: [], sum: {}}; },
+      async communityState(){ return null; },
       async saveUnit(armyId, u, id, photo, remove){
         const prev = id ? db.units.find(x => x.id === id) : null;
         let image = prev ? prev.image || "" : "";
@@ -316,6 +317,28 @@
       async summary(){
         if(!session) return {};
         return totals(mustOk(await sb.from(U).select(SUM_COLS).eq("owner", session.user.id)) || []);
+      },
+      /* Likes and follows. null means the tables haven't been set up yet (supabase/features.sql). */
+      async communityState(armyIds){
+        if(!session) return null;
+        const missing = e => /PGRST205|42P01/.test(e.code || "") || /could not find the table|does not exist/i.test(e.message || "");
+        const lk = armyIds.length ? await sb.from("likes").select("army_id,user_id").in("army_id", armyIds) : {data: [], error: null};
+        if(lk.error){ if(missing(lk.error)) return null; throw lk.error; }
+        const fl = await sb.from("follows").select("followee").eq("follower", session.user.id);
+        if(fl.error){ if(missing(fl.error)) return null; throw fl.error; }
+        const likes = {}, liked = new Set();
+        (lk.data || []).forEach(r => { likes[r.army_id] = (likes[r.army_id] || 0) + 1; if(r.user_id === session.user.id) liked.add(r.army_id); });
+        return {likes, liked, following: new Set((fl.data || []).map(r => r.followee))};
+      },
+      async setLike(armyId, on){
+        need();
+        const {error} = on ? await sb.from("likes").insert({army_id: armyId, user_id: session.user.id}) : await sb.from("likes").delete().eq("army_id", armyId).eq("user_id", session.user.id);
+        if(error && !/duplicate/i.test(error.message || "")) throw error;
+      },
+      async setFollow(userId, on){
+        need();
+        const {error} = on ? await sb.from("follows").insert({follower: session.user.id, followee: userId}) : await sb.from("follows").delete().eq("follower", session.user.id).eq("followee", userId);
+        if(error && !/duplicate/i.test(error.message || "")) throw error;
       },
       // Every ledger with sharing on, newest first, with painting totals. Readable without logging in.
       async listShared(){

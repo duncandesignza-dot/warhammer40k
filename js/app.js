@@ -50,6 +50,7 @@
   // Colours for the badge's shoulder pad: the left pauldron's own when they're painted differently.
   const padColours = (o, split) => split && PROF.pauldrons ? {pauldron: o.lpauldron, ptrim: o.lpsecondary, pemblem: o.lpemblem} : {};
   const STAR = on => `<svg width="18" height="18" viewBox="0 0 24 24" fill="${on ? "currentColor" : "none"}" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 16.8l-5.4 2.9 1.1-6.1-4.5-4.2 6.1-.8Z"/></svg>`;
+  const HEART = on => `<svg width="15" height="15" viewBox="0 0 24 24" fill="${on ? "currentColor" : "none"}" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 20s-7.5-4.6-7.5-10.1A4.4 4.4 0 0 1 12 7.3a4.4 4.4 0 0 1 7.5 2.6C19.5 15.4 12 20 12 20Z"/></svg>`;
   const QUICK = ["Black","White","Bone","Silver","Gunmetal","Gold","Brass","Red","Crimson","Blue","Navy","Green","Purple","Yellow"];
 
   const $ = id => document.getElementById(id);
@@ -801,7 +802,12 @@ Redemptor Dreadnought (210 points)</pre>
       <div class="sh-tools">
         <input type="search" id="sh-q" placeholder="Search armies, factions or painters" aria-label="Search shared armies">
         <select id="sh-f" aria-label="Faction"><option value="">All factions</option></select>
-        ${mine ? `<label class="check sh-mine"><input type="checkbox" id="sh-mine"> Only mine</label>` : ""}
+        <div class="filters" id="sh-show" role="group" aria-label="Show">
+          <button type="button" data-show="all" aria-pressed="true">All</button>
+          <button type="button" data-show="following" aria-pressed="false" hidden>Following</button>
+          <button type="button" data-show="mine" aria-pressed="false">Mine</button>
+        </div>
+        <label class="inline sh-sort">Sort<select id="sh-sort"><option value="recent">Recently updated</option><option value="liked" hidden>Most liked</option></select></label>
         <span class="sh-count" id="sh-count" aria-live="polite"></span>
       </div>
       <div id="sh-list"><p class="loading">Loading shared armies…</p></div>`;
@@ -811,32 +817,66 @@ Redemptor Dreadnought (210 points)</pre>
     catch(err){ console.error(err); if($("sh-list")) $("sh-list").innerHTML = `<div class="banner"><span class="dot warn"></span>Couldn't load shared armies: ${esc(errText(err))}</div>`; return; }
     if(!$("sh-list")) return;   // left the page while loading
     const {armies, sum} = data;
+    let social = null, show = "all";
+    try { social = await store.communityState(armies.map(a => a.id)); } catch(err){ console.warn("Likes and follows unavailable", err); }
+    if(!social) console.info("Likes and follows need the one-time setup in supabase/features.sql.");
+    if(social){ $("sh-show").querySelector('[data-show="following"]').hidden = false; $("sh-sort").querySelector('[value="liked"]').hidden = false; }
     const present = [...new Set(armies.map(a => a.faction))].filter(id => FBY[id]).sort((a, b) => FBY[a].name.localeCompare(FBY[b].name));
     $("sh-f").insertAdjacentHTML("beforeend", present.map(id => `<option value="${esc(id)}">${esc(FBY[id].name)}</option>`).join(""));
     const keep = PROF;
     function draw(){
-      const q = $("sh-q").value.trim().toLowerCase(), fid = $("sh-f").value, onlyMine = $("sh-mine") && $("sh-mine").checked;
-      const list = armies.filter(a => (!fid || a.faction === fid) && (!onlyMine || a.owner === mine)
+      const q = $("sh-q").value.trim().toLowerCase(), fid = $("sh-f").value;
+      const likesOf = a => (social && social.likes[a.id]) || 0;
+      const list = armies.filter(a => (!fid || a.faction === fid) && (show !== "mine" || a.owner === mine) && (show !== "following" || (social && social.following.has(a.owner)))
         && (!q || [a.name, (FBY[a.faction] || {}).name, a.scheme.by].join(" ").toLowerCase().includes(q)));
+      if($("sh-sort").value === "liked") list.sort((a, b) => likesOf(b) - likesOf(a) || String(b.updatedAt).localeCompare(String(a.updatedAt)));
       $("sh-count").textContent = armies.length ? (list.length === armies.length ? `${armies.length} ${armies.length === 1 ? "army" : "armies"}` : `${list.length} of ${armies.length}`) : "";
       if(!armies.length){ $("sh-list").innerHTML = `<div class="ro-empty"><strong>No shared armies yet</strong><p>Be the first: open one of your ledgers and press Share.</p></div>`; return; }
-      if(!list.length){ $("sh-list").innerHTML = `<p class="hint">No shared armies match. Try a different search or faction.</p>`; return; }
+      if(!list.length){ $("sh-list").innerHTML = `<p class="hint">${show === "following" && !q && !fid ? "You're not following anyone yet, or they haven't shared anything. Follow a painter from one of their armies." : "No shared armies match. Try a different search or faction."}</p>`; return; }
       $("sh-list").innerHTML = `<div class="ledgers">${list.map(a => {
         const s = sum[a.id] || {units: 0, models: 0, done: 0}, f = FBY[a.faction];
         const pct = s.models ? Math.round(s.done / s.models * 100) : 0;
         PROF = P.profileFor(a.faction);
         const by = a.owner === mine ? "you" : a.scheme.by;
-        return `<a class="lcard" href="#/army/${esc(a.id)}">
-          <div class="card-top">${tierBadge(a.scheme, a.scheme.tiers[0], 56)}<div><h3>${esc(a.name)}</h3><div class="meta">${esc(f ? f.name : a.faction)}${by ? ` · by ${esc(by)}` : ""}</div></div>${a.owner === mine ? `<span class="tag">Yours</span>` : ""}</div>
-          <div class="prog" aria-hidden="true"><i style="width:${pct}%"></i></div>
-          <div class="foot"><span>${plural(s.units, "unit")} · ${plural(s.models, "model")}</span><span>${pct}% painted</span></div>
-        </a>`;
+        const liked = social && social.liked.has(a.id), n = likesOf(a), follows = social && social.following.has(a.owner);
+        return `<div class="lcard shcard">
+          <a class="sh-open" href="#/army/${esc(a.id)}">
+            <div class="card-top">${tierBadge(a.scheme, a.scheme.tiers[0], 56)}<div><h3>${esc(a.name)}</h3><div class="meta">${esc(f ? f.name : a.faction)}${by ? ` · by ${esc(by)}` : ""}</div></div>${a.owner === mine ? `<span class="tag">Yours</span>` : ""}</div>
+            <div class="prog" aria-hidden="true"><i style="width:${pct}%"></i></div>
+            <div class="foot"><span>${plural(s.units, "unit")} · ${plural(s.models, "model")}</span><span>${pct}% painted</span></div>
+          </a>
+          ${social ? `<div class="sh-actions">
+            <button type="button" class="btn-sm like${liked ? " on" : ""}" data-like="${esc(a.id)}" aria-pressed="${!!liked}" aria-label="${liked ? "Unlike" : "Like"} ${esc(a.name)}${n ? `, ${plural(n, "like")}` : ""}">${HEART(liked)}<span>${n || ""}</span></button>
+            ${a.owner !== mine ? `<button type="button" class="btn-sm follow${follows ? " on" : ""}" data-follow="${esc(a.owner)}" aria-pressed="${!!follows}">${follows ? "Following" : "Follow"}${a.scheme.by ? ` ${esc(a.scheme.by)}` : " painter"}</button>` : ""}
+          </div>` : ""}
+        </div>`;
       }).join("")}</div>`;
       PROF = keep;
     }
     $("sh-q").addEventListener("input", draw);
     $("sh-f").addEventListener("change", draw);
-    if($("sh-mine")) $("sh-mine").addEventListener("change", draw);
+    $("sh-sort").addEventListener("change", draw);
+    $("sh-show").addEventListener("click", e => {
+      const b = e.target.closest("[data-show]"); if(!b) return;
+      show = b.dataset.show; $("sh-show").querySelectorAll("[data-show]").forEach(x => x.setAttribute("aria-pressed", x === b)); draw();
+    });
+    $("sh-list").addEventListener("click", async e => {
+      const lk = e.target.closest("[data-like]"), fo = e.target.closest("[data-follow]");
+      if(!social || (!lk && !fo)) return;
+      const btn = lk || fo; btn.disabled = true;
+      try {
+        if(lk){
+          const id = lk.dataset.like, on = !social.liked.has(id);
+          await store.setLike(id, on);
+          if(on){ social.liked.add(id); social.likes[id] = (social.likes[id] || 0) + 1; } else { social.liked.delete(id); social.likes[id] = Math.max(0, (social.likes[id] || 1) - 1); }
+        } else {
+          const uid = fo.dataset.follow, on = !social.following.has(uid);
+          await store.setFollow(uid, on);
+          if(on) social.following.add(uid); else social.following.delete(uid);
+        }
+        draw();
+      } catch(err){ btn.disabled = false; alertBanner("Couldn't save that: " + errText(err)); }
+    });
     draw();
   }
 
@@ -1573,7 +1613,7 @@ Redemptor Dreadnought (210 points)</pre>
         </div>
       </div>
 
-      ${!canWrite ? `<div class="banner viewonly"><span class="dot on"></span><span>You're viewing a shared ledger. You can look but not change anything.</span>${store.kind === "supabase" && !store.session ? `<button type="button" class="btn-sm" data-signin>Sign in</button>` : ""}</div>` : ""}
+      ${!canWrite ? `<div class="banner viewonly"><span class="dot on"></span><span>You're viewing a shared ledger. You can look but not change anything.</span>${store.kind === "supabase" && !store.session ? `<button type="button" class="btn-sm" data-signin>Sign in</button>` : `<span class="vo-social" id="vo-social"></span>`}</div>` : ""}
       <section class="key" id="key" aria-label="Rank colours">${scheme.tiers.map(t => `<div>${tierBadge(scheme, t, 44)}<span><strong>${esc(t.name)}</strong><small>${esc(t.note || cname(t.color) + " " + PROF.head)}</small></span></div>`).join("")}</section>
 
         <section class="list" aria-labelledby="army-h">
@@ -3099,6 +3139,28 @@ Redemptor Dreadnought (210 points)</pre>
     $("f-manage-recipes").addEventListener("click", () => openPaints("recipes"));
     $("f-recipes").addEventListener("change", () => { setDirty(true); preview(); });
 
+    // Viewing someone else's shared ledger while logged in: like it and follow its painter.
+    async function viewerSocial(){
+      let st = null;
+      try { st = await store.communityState([army.id]); } catch(e){}
+      const box = $("vo-social"); if(!st || !box) return;
+      const draw = () => {
+        const liked = st.liked.has(army.id), n = st.likes[army.id] || 0, fol = st.following.has(army.owner);
+        box.innerHTML = `<button type="button" class="btn-sm like${liked ? " on" : ""}" data-vlike aria-pressed="${liked}">${HEART(liked)}<span>${liked ? "Liked" : "Like"}${n ? ` · ${n}` : ""}</span></button>
+          <button type="button" class="btn-sm follow${fol ? " on" : ""}" data-vfollow aria-pressed="${fol}">${fol ? "Following" : "Follow"}${army.scheme.by ? ` ${esc(army.scheme.by)}` : " painter"}</button>`;
+      };
+      draw();
+      box.addEventListener("click", async e => {
+        const b = e.target.closest("button"); if(!b) return;
+        b.disabled = true;
+        try {
+          if(b.hasAttribute("data-vlike")){ const on = !st.liked.has(army.id); await store.setLike(army.id, on); if(on){ st.liked.add(army.id); st.likes[army.id] = (st.likes[army.id] || 0) + 1; } else { st.liked.delete(army.id); st.likes[army.id] = Math.max(0, (st.likes[army.id] || 1) - 1); } }
+          else { const on = !st.following.has(army.owner); await store.setFollow(army.owner, on); if(on) st.following.add(army.owner); else st.following.delete(army.owner); }
+          draw();
+        } catch(err){ b.disabled = false; msg("Couldn't save that: " + errText(err), true); }
+      });
+    }
+
     /* ---------- load ---------- */
     if(canWrite){ try { ownedList = await store.getPaints(); owned = new Set(ownedList.map(PU.norm)); } catch(e){} }
     PU.load().then(() => { render(); updateBuyBadge(); });
@@ -3107,6 +3169,7 @@ Redemptor Dreadnought (210 points)</pre>
     catch(err){ console.error(err); $("cards").innerHTML = `<div class="empty">Couldn't load units: ${esc(errText(err))}</div>`; return; }
     newUnit(false);
     loadLibrary();
+    if($("vo-social")) viewerSocial();
     // Came from the roster: show that unit, and tidy the address back to the ledger's.
     if(openUnit){
       history.replaceState(null, "", "#/army/" + army.id); lastHash = location.hash;

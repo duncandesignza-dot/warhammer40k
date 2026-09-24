@@ -1161,3 +1161,15 @@ body.no-points .card-top .pts,body.no-points .stat-pts,body.no-points .ro-pts,bo
 .kit-age{font-family:var(--mono);font-size:.7rem;color:var(--muted)}
 .kit-start{display:flex;flex-direction:column;gap:10px;padding-top:10px;border-top:1px solid var(--line)}
 @media (max-width:900px){.kit-grid{grid-template-columns:1fr 1fr}.kit-grid .kit-name{grid-column:1/-1}}
+
+/* Likes and follows */
+.shcard{padding:0;gap:0}
+.shcard .sh-open{display:flex;flex-direction:column;gap:14px;padding:18px 18px 14px;text-decoration:none;color:inherit;border-radius:var(--r-lg) var(--r-lg) 0 0}
+.sh-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:0 18px 16px}
+.like,.follow{gap:6px}
+.like svg{color:var(--muted)}
+.like.on svg{color:#f472b6}
+.like.on,.follow.on{border-color:var(--brand-line);background:var(--brand-soft)}
+.follow.on{color:var(--brand)}
+.vo-social{display:inline-flex;gap:8px;margin-left:auto;flex-wrap:wrap}
+.sh-sort select{width:auto}
