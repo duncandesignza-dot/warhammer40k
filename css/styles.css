@@ -633,3 +633,6 @@ div.hd-when{display:contents}
 .detail .media,.detail .info{min-width:0}
 dialog{overflow-x:hidden}
 @media (max-width:720px){.detail .media{min-height:0;padding:18px 16px}}
+/* Unit details: the Edit / Duplicate / Delete row stays pinned to the bottom while the details scroll, like the editor's buttons. */
+.detail section.row-actions{position:sticky;bottom:0;z-index:2;margin:0 -24px -24px;padding:14px 24px calc(14px + env(safe-area-inset-bottom,0px));background:rgba(13,17,20,.94);border-top:1px solid var(--line);border-radius:0;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+@media (max-width:720px){.detail section.row-actions{flex-wrap:nowrap;gap:8px}.detail section.row-actions>*{flex:1;white-space:nowrap;padding-left:10px;padding-right:10px}.detail section.row-actions .danger{flex:0 0 auto}}
