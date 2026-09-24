@@ -1,0 +1,10 @@
+# Repo files that aren't part of the website (not uploaded to Cloudflare).
+.git
+.github
+.assetsignore
+wrangler.jsonc
+tools
+supabase
+node_modules
+.wrangler
+.gitignore
