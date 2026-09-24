@@ -3,8 +3,8 @@
   "use strict";
   const CFG = window.LEDGER_CONFIG || {};
 
-  const FIELDS = ["datasheet","role","name","count","status","tier","helmet","lens","hdetail","noHelmet",
-    "armour","secondary","trim","emblem","shape","cloth","metal","skin","extras","melee","ranged","paints","notes","points","painted"];
+  const FIELDS = ["datasheet","role","name","count","status","tier","head","helmet","skin","lens","hdetail","noHelmet",
+    "armour","secondary","trim","emblem","shape","cloth","metal","extras","melee","ranged","paints","notes","points","painted"];
   const STAGES = [["built","Built"],["primed","Primed"],["base","Basecoat"],["shade","Shade"],["highlight","Highlight"],["basing","Basing"],["varnish","Varnish"]];
   const STAGE_KEYS = STAGES.map(s => s[0]);
   const STAGES_FOR_STATUS = {unbuilt:[], built:["built"], primed:["built","primed"], progress:["built","primed","base"], done:STAGE_KEYS.slice()};
@@ -17,7 +17,7 @@
   }
   const STATUS = {unbuilt:"Unbuilt",built:"Built",primed:"Primed",progress:"In progress",done:"Painted"};
   const HEX = /^#[0-9a-f]{6}$/i;
-  const COLOR_FIELDS = ["helmet","lens","armour","secondary","trim","emblem","cloth","metal","skin"];
+  const COLOR_FIELDS = ["helmet","skin","lens","armour","secondary","trim","emblem","cloth","metal"];
 
   const newId = () => (crypto.randomUUID ? crypto.randomUUID() : "id" + Date.now().toString(36) + Math.random().toString(36).slice(2, 10));
 
@@ -32,7 +32,10 @@
     const p = parseInt(r.painted, 10);
     o.painted = Math.min(o.count, Math.max(0, Number.isFinite(p) ? p : (oldStatus === "done" ? o.count : 0)));
     o.tier = Math.max(0, parseInt(r.tier, 10) || 0);
-    o.noHelmet = r.noHelmet === true || r.noHelmet === "true";
+    // head: "helmet", "bare" (face showing, e.g. face paint) or "none" (vehicles, monsters). Older saves used noHelmet.
+    const oldBare = r.noHelmet === true || r.noHelmet === "true";
+    o.head = ["helmet", "bare", "none"].includes(r.head) ? r.head : (oldBare ? "bare" : "helmet");
+    o.noHelmet = o.head === "bare";
     o.status = deriveStatus(o.stages, o.painted, o.count);
     o.recipes = Array.isArray(r.recipes) ? [...new Set(r.recipes.map(x => String(x).slice(0, 40)))].slice(0, 20) : [];
     COLOR_FIELDS.forEach(f => { if(!HEX.test(o[f])) o[f] = ""; });

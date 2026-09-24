@@ -105,7 +105,8 @@
   /* Paint areas per faction. Every army stores the same colour slots (helmet, lens, armour, secondary,
      trim, emblem, cloth, metal, skin); a profile says what each slot means for that faction's models,
      e.g. "armour" is Carapace for Tyranids and Necrodermis for Necrons. "helmet" is the slot that
-     follows the unit's rank. */
+     follows the unit's rank. Units pick a head type: helmet, bare (a face in the skin colour) or none;
+     bare is only offered when the profile allows it. */
   const SKIN = "#c79a7e";
   const BASE = {
     head: "helmet",
@@ -114,7 +115,10 @@
     legends: {head:"Helmet", body:"Armour & pauldrons", details:"Cloth & details"},
     detail: ["Helmet detail", "e.g. laurel wreath, centre stripe"],
     detailOpts: ["Laurel wreath","Centre stripe","Crest","Battle damage","Squad markings"],
-    bare: "Bare head (no helmet)",
+    bare: true,
+    defaultHead: "helmet",
+    // Roles that start with no head to paint.
+    noHeadRoles: ["Vehicle","Monster","Dedicated Transport","Fortification"],
     extras: ["Purity seals, freehand & extras", "e.g. red wax seals, freehand on kneepad"],
     hide: [],
     more: ["Weapons","Leather"],
@@ -136,12 +140,11 @@
       tiers: [["Custodian Guard","Line troops"],["Allarus","Terminators and elites"],["Shield-Captain","Characters"],["Hero","Your warlord and heroes"]]
     },
     sororitas: {
-      head: "head",
-      labels: {helmet:"Hair / helm", armour:"Armour", secondary:"Armour detail", emblem:"Fleur / emblem", cloth:"Robes"},
+      labels: {armour:"Armour", secondary:"Armour detail", emblem:"Fleur / emblem", cloth:"Robes"},
       legends: {head:"Head", body:"Armour", details:"Robes & details"},
-      detail: ["Head detail", "e.g. white bob, veil, halo"],
-      detailOpts: ["Veil","Halo","Helmet","Hood"],
-      bare: "",
+      detail: ["Helmet detail", "e.g. fleur on the brow, red stripe"],
+      detailOpts: ["Fleur","Stripe","Veil","Halo"],
+      defaultHead: "bare",
       extras: ["Purity seals, scrolls & extras", "e.g. red wax seals, scripture scrolls"],
       tiers: [["Battle Sisters","Line troops"],["Celestians","Veterans and elites"],["Sister Superior","Squad leaders and characters"],["Canoness","Your warlord and heroes"]]
     },
@@ -152,7 +155,6 @@
       legends: {head:"Head", body:"Robes & plates", details:"Bionics & details"},
       detail: ["Head detail", "e.g. glowing optics, rebreather"],
       detailOpts: ["Rebreather","Mechadendrites","Hazard stripes","Hood lining"],
-      bare: "Bare head (no hood)",
       extras: ["Hazard stripes, markings & extras", "e.g. yellow-black hazard stripes, binary script"],
       more: ["Weapons","Cables","Hazard stripes"],
       tiers: [["Skitarii","Line troops"],["Elites","Ruststalkers, Infiltrators and Kataphrons"],["Alpha","Squad leaders"],["Tech-Priest","Characters"]]
@@ -173,7 +175,8 @@
       legends: {head:"Helm", body:"Carapace & heraldry", details:"Chassis & details"},
       detail: ["Helm detail", "e.g. crest, face-plate stripe"],
       detailOpts: ["Crest","Face-plate stripe","Laurels","Battle damage"],
-      bare: "",
+      bare: false,
+      noHeadRoles: ["Fortification"],
       extras: ["Heraldry, kill markings & extras", "e.g. checks, kill banners, freehand"],
       more: ["Weapons","Pistons & cables","Heraldry"],
       tiers: [["Armigers","Armiger-class Knights"],["Questoris","Questoris-class Knights"],["Dominus","Dominus-class Knights"],["Hero","Your warlord and characters"]]
@@ -199,12 +202,11 @@
       tiers: [["Kabalites","Kabalite Warriors and Wyches"],["Elites","Incubi, Mandrakes and Trueborn"],["Sybarite","Squad leaders"],["Archon","Archons, Succubi and Haemonculi"]]
     },
     gsc: {
-      skinOnCard: true,
-      head: "head",
-      labels: {helmet:"Head / headgear", lens:"Eyes / lamps", armour:"Overalls / uniform", trim:"Webbing / straps", emblem:"Cult icon", cloth:"Rags / cloth", metal:"Weapons / tools"},
+      skinAlways: true,
+      labels: {helmet:"Helmet / cap", lens:"Eyes / lamps", armour:"Overalls / uniform", trim:"Webbing / straps", emblem:"Cult icon", cloth:"Rags / cloth", metal:"Weapons / tools"},
       legends: {head:"Head", body:"Overalls & uniform", details:"Skin & details"},
-      detail: ["Head detail", "e.g. mining helmet, cranial ridge"],
-      detailOpts: ["Mining helmet","Goggles","Cranial ridge","Cap"],
+      detail: ["Helmet detail", "e.g. mining lamp, hazard stripe"],
+      detailOpts: ["Mining lamp","Goggles","Hazard stripe","Cult icon"],
       extras: ["Cult markings & extras", "e.g. cult icon freehand, hazard stripes"],
       more: ["Weapons","Leather","Hazard stripes"],
       tiers: [["Neophytes","Neophyte Hybrids"],["Acolytes","Acolytes and Aberrants"],["Leader","Leaders and characters"],["Patriarch","The Patriarch and Magus"]]
@@ -224,7 +226,7 @@
       legends: {head:"Head", body:"Necrodermis & carapace", details:"Cloth & details"},
       detail: ["Head detail", "e.g. gold crest, headdress stripes"],
       detailOpts: ["Headdress","Crest","Stripes","Crown"],
-      bare: "",
+      bare: false,
       extras: ["Glyphs, glow & extras", "e.g. green gauss glow on guns, verdigris"],
       hide: ["skin"],
       more: ["Weapons","Gauss glow","Verdigris"],
@@ -233,17 +235,15 @@
       tierColors: c => [c.armour, c.secondary, c.trim, shade(c.trim, .2)]
     },
     orks: {
-      skinOnCard: true,
-      head: "head",
-      labels: {helmet:"Head / helmet", lens:"Eyes", armour:"Armour plates", secondary:"Clan colour", emblem:"Glyph", cloth:"Clothes / trousers"},
+      skinAlways: true,
+      defaultHead: "bare",
+      labels: {lens:"Eyes", armour:"Armour plates", secondary:"Clan colour", emblem:"Glyph", cloth:"Clothes / trousers"},
       legends: {head:"Head", body:"Armour & clan colours", details:"Skin & details"},
-      detail: ["Head detail", "e.g. horns, glyph on helmet"],
+      detail: ["Helmet detail", "e.g. horns, glyph on helmet"],
       detailOpts: ["Horns","Glyph","Checks","Flames","Scars"],
       extras: ["Glyphs, checks & extras", "e.g. black-white checks, teef, rust"],
       more: ["Weapons","Leather","Teef & claws","Rust"],
-      tiers: [["Boyz","Boyz and gretchin"],["Nobz","Nobz and Meganobz"],["Boss","Bosses and characters"],["Warboss","Your Warboss and heroes"]],
-      // Bigger orks are darker green.
-      tierColors: c => [c.skin, shade(c.skin, .15), shade(c.skin, .3), shade(c.skin, .45)]
+      tiers: [["Boyz","Boyz and gretchin"],["Nobz","Nobz and Meganobz"],["Boss","Bosses and characters"],["Warboss","Your Warboss and heroes"]]
     },
     tau: {
       labels: {lens:"Lenses", secondary:"Sept markings", emblem:"Sept symbol", cloth:"Undersuit / cloth", metal:"Weapons"},
@@ -255,14 +255,15 @@
       tiers: [["Shas'la","Fire Warriors and line troops"],["Shas'ui","Team leaders, Stealth and Crisis teams"],["Shas'vre","Veterans, Bodyguards and Broadsides"],["Shas'o","Commanders and heroes"]]
     },
     tyranids: {
-      skinOnCard: true,
+      skinAlways: true,
       head: "head",
       labels: {helmet:"Head / crest", lens:"Eyes", armour:"Carapace", secondary:"Carapace pattern", trim:"Carapace edges", emblem:"Markings",
                cloth:"Tongues / membranes", metal:"Claws & talons"},
       legends: {head:"Head", body:"Carapace", details:"Skin & details"},
       detail: ["Head detail", "e.g. striped crest, dark eye sockets"],
       detailOpts: ["Stripes","Spots","Crest"],
-      bare: "",
+      bare: false,
+      noHeadRoles: ["Fortification"],
       extras: ["Details & extras", "e.g. purple tongues, glowing bio-weapons"],
       more: ["Bio-weapons","Sinew","Toxin sacs"],
       tiers: [["Swarm","Gaunts, Gargoyles and swarms"],["Warrior","Warriors and mid-sized bugs"],["Synapse","Synapse creatures and characters"],["Monster","Hive Tyrants and monsters"]]
@@ -274,7 +275,8 @@
       legends: {head:"Head", body:"Hide & horns", details:"Weapons & details"},
       detail: ["Head detail", "e.g. horn tips, eye glow"],
       detailOpts: ["Horn tips","Flames","Crest"],
-      bare: "",
+      bare: false,
+      noHeadRoles: ["Fortification"],
       extras: ["Details & extras", "e.g. brass armour, pustules, warpfire"],
       hide: ["skin"],
       more: ["Weapons","Warpfire","Brass"],

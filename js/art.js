@@ -32,6 +32,7 @@
     wrap.innerHTML=`<svg id="ll-defs" width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>
       <g id="hx-shell">${HELMET_SHELL}</g><g id="hx-tubes">${HELMET_TUBES}</g>
       ${Object.entries(SHAPE_PATHS).map(([k,v])=>`<g id="em-${k}">${v}</g>`).join("")}
+      <clipPath id="ll-clip"><circle cx="480" cy="480" r="458"/></clipPath>
       <filter id="ll-dilate" x="-10%" y="-10%" width="120%" height="120%"><feMorphology operator="dilate" radius="12"/></filter>
     </defs></svg>`;
     document.body.prepend(wrap.firstChild);
@@ -74,16 +75,42 @@
      style: "astartes" | "roundel". Returns an SVG string 2000 x 960 (two circles). */
   function badge(u, style, size, label){
     size=size||56;
-    const helmet=safe(u.helmet,"#1f1f22"), lens=safe(u.lens,"#b3141c");
+    const helmet=safe(u.helmet,"#1f1f22"), lens=safe(u.lens,"#b3141c"), skin=safe(u.skin,"#c79a7e");
+    const head=u.head||(u.noHelmet?"bare":"helmet");
     const armour=safe(u.armour,"#1f1f22"), second=safe(u.secondary,"#efeee9");
     const trim=safe(u.trim,"#efeee9"), emblem=safe(u.emblem,"#efeee9");
     const icon=iconId(u.shape);
     const shape=icon?"":(SHAPE_PATHS[u.shape]!==undefined?u.shape:"cross");
     if(icon) loadIcon(icon);
     const td=shade(trim), w=Math.round(size*2000/960);
-    if(u.noHelmet){ const r=badge({...u,noHelmet:false},style,size,label); return r.replace('class="mini"','class="mini solo"').replace(/width="\d+" height="\d+" viewBox="0 0 2000 960"/,`width="${size}" height="${size}" viewBox="1040 0 960 960"`); }
     let left;
-    if(style==="astartes"){
+    const sk=shade(skin,.28), skd=shade(skin,.5);
+    // Roundel with no head: the armour colours on their own (vehicles, monsters).
+    const plainRoundel=`<g transform="translate(480 480)">
+        <circle r="458" fill="${trim}"/><circle r="458" fill="none" stroke="${td}" stroke-width="8"/>
+        <circle r="404" fill="${armour}"/>
+        <path d="M-404 0 A404 404 0 0 0 404 0 Z" fill="${second}"/>
+        <circle r="404" fill="none" stroke="${td}" stroke-width="8"/>
+      </g>`;
+    // Bare head: a simple head-and-shoulders bust in the skin colour.
+    const bust=`<circle cx="480" cy="480" r="458" style="fill:var(--tile)"/>
+      <g clip-path="url(#ll-clip)">
+        <path d="M120 980 C130 770 290 700 480 700 C670 700 830 770 840 980 Z" fill="${armour}" stroke="${shade(armour,.4)}" stroke-width="8"/>
+        <path d="M330 712 Q480 780 630 712 L612 668 Q480 722 348 668 Z" fill="${trim}"/>
+        <path d="M402 560 L558 560 L570 700 Q480 740 390 700 Z" fill="${sk}"/>
+        <ellipse cx="312" cy="440" rx="30" ry="56" fill="${sk}"/><ellipse cx="648" cy="440" rx="30" ry="56" fill="${sk}"/>
+        <path d="M480 200 C600 200 650 290 650 400 C650 520 580 620 480 620 C380 620 310 520 310 400 C310 290 360 200 480 200 Z" fill="${skin}" stroke="${skd}" stroke-width="8"/>
+        <path d="M372 388 Q420 366 456 384 M504 384 Q540 366 588 388" fill="none" stroke="${skd}" stroke-width="16" stroke-linecap="round"/>
+        <ellipse cx="416" cy="420" rx="28" ry="15" fill="${lens}"/><ellipse cx="544" cy="420" rx="28" ry="15" fill="${lens}"/>
+        <path d="M480 430 L468 500 L492 504" fill="none" stroke="${skd}" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M430 556 Q480 574 530 556" fill="none" stroke="${skd}" stroke-width="12" stroke-linecap="round"/>
+      </g>
+      <circle cx="480" cy="480" r="458" fill="none" stroke="#000" stroke-opacity=".18" stroke-width="8"/>`;
+    if(head==="none"){
+      left=plainRoundel;
+    } else if(head==="bare" && style==="astartes"){
+      left=bust;
+    } else if(style==="astartes"){
       left=`<circle cx="480" cy="480" r="458" style="fill:var(--tile)"/>
       <circle cx="480" cy="480" r="458" fill="none" stroke="#000" stroke-opacity=".18" stroke-width="8"/>
       <g transform="translate(480 484) scale(.74) translate(-449.7 -456.07)">
@@ -92,13 +119,13 @@
         <use href="#hx-tubes" fill="#5d6166"/>
       </g>`;
     } else {
-      const hd=shade(helmet,.4);
+      const hc=head==="bare"?skin:helmet, hd=shade(hc,.4);
       left=`<g transform="translate(480 480)">
         <circle r="458" fill="${trim}"/><circle r="458" fill="none" stroke="${td}" stroke-width="8"/>
         <circle r="404" fill="${armour}"/>
         <path d="M-404 0 A404 404 0 0 0 404 0 Z" fill="${second}"/>
         <circle r="404" fill="none" stroke="${td}" stroke-width="8"/>
-        <circle r="190" fill="${helmet}" stroke="${hd}" stroke-width="14"/>
+        <circle r="190" fill="${hc}" stroke="${hd}" stroke-width="14"/>
         <rect x="-120" y="-40" width="90" height="46" rx="12" fill="${lens}"/>
         <rect x="30" y="-40" width="90" height="46" rx="12" fill="${lens}"/>
       </g>`;
