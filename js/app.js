@@ -212,6 +212,7 @@
         <a role="menuitem" href="#/">Home</a>
         <a role="menuitem" href="#/profile">My profile and ledgers</a>
         <button type="button" role="menuitem" data-roster>Your roster</button>
+        <a role="menuitem" href="#/shame">Pile of shame</a>
         <a role="menuitem" href="#/shared">Shared armies</a>
         <a role="menuitem" href="#/settings">Settings</a>
         ${installable() ? `<button type="button" role="menuitem" data-install>Install app</button>` : ""}
@@ -321,7 +322,7 @@
   function openAuth(mode, note){
     if(store.kind !== "supabase") return;
     const d = $("authdlg");
-    if(!dlgAuth) dlgAuth = authForm($("auth-host"), "in", {onDone: () => { if(view.name === "landing" && !/^#\/(shared|profile|settings)\b/.test(location.hash)) location.hash = "#/profile"; setTimeout(() => { if(d.open) d.close(); }, 700); }});
+    if(!dlgAuth) dlgAuth = authForm($("auth-host"), "in", {onDone: () => { if(view.name === "landing" && !/^#\/(shared|profile|settings|shame)\b/.test(location.hash)) location.hash = "#/profile"; setTimeout(() => { if(d.open) d.close(); }, 700); }});
     dlgAuth.set(typeof mode === "string" ? mode : "in", note);
     if(!d.open) d.showModal();
     dlgAuth.focus();
@@ -374,6 +375,10 @@
       else if(parts[0] === "army" && parts[1] && parts[2] === "unit" && parts[3]) await viewLedger(parts[1], parts[3]);
       else if(parts[0] === "army" && parts[1]) await viewLedger(parts[1]);
       // The list of shared armies is for logged-in painters; a shared ledger itself still opens from its link.
+      else if(parts[0] === "shame"){
+        if(store.kind === "supabase" && !store.session){ await viewLanding(); setTimeout(() => openAuth("in", "Log in to see your pile of shame."), 0); }
+        else await viewShame();
+      }
       else if(parts[0] === "settings"){
         if(store.kind === "supabase" && !store.session){ await viewLanding(); setTimeout(() => openAuth("in", "Log in to change your settings."), 0); }
         else await viewSettings();
@@ -438,7 +443,7 @@
           </form>` : `<h1>Your ledgers</h1>`}
           ${me ? `<p class="sub">${esc(me.email)}${since ? ` · Painting with us since ${esc(since)}` : ""}</p>` : `<p class="sub">Plan how you'll paint your army. Pick your faction, choose your colours, then track every unit with photos, weapons and paint recipes.</p>`}
           ${me ? `<p class="msg" id="ph-msg" role="status" aria-live="polite"></p>` : `<div class="ph-note">${noteHtml()}</div>`}
-          ${armies.length ? `<div class="ph-actions"><button type="button" class="btn-sm" data-roster><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11"/><path d="M9 12h11"/><path d="M9 18h11"/><path d="M4 6h.01"/><path d="M4 12h.01"/><path d="M4 18h.01"/></svg>Your roster<span class="count">${num(tot.units)}</span></button><a class="btn btn-sm" href="#/settings">Settings</a></div>` : ""}
+          ${armies.length ? `<div class="ph-actions"><button type="button" class="btn-sm" data-roster><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11"/><path d="M9 12h11"/><path d="M9 18h11"/><path d="M4 6h.01"/><path d="M4 12h.01"/><path d="M4 18h.01"/></svg>Your roster<span class="count">${num(tot.units)}</span></button><a class="btn btn-sm" href="#/shame">Pile of shame${shameCount() ? `<span class="count">${shameCount()}</span>` : ""}</a><a class="btn btn-sm" href="#/settings">Settings</a></div>` : ""}
         </div>
         <div class="stats" aria-label="Your painting so far">
           <div class="stat"><b>${armies.length}</b><span>${armies.length === 1 ? "Ledger" : "Ledgers"}</span></div>
@@ -833,6 +838,131 @@ Redemptor Dreadnought (210 points)</pre>
     $("sh-f").addEventListener("change", draw);
     if($("sh-mine")) $("sh-mine").addEventListener("change", draw);
     draw();
+  }
+
+  /* ============================================================
+     Pile of shame: kits bought but not started yet
+     ============================================================ */
+  const SHAME_KEY = "ll-shame";
+  const isoDay = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  function cleanShame(list){
+    return (Array.isArray(list) ? list : []).filter(k => k && k.name).slice(0, 200).map(k => ({
+      id: String(k.id || S.newId()).slice(0, 40), name: String(k.name).replace(/\s+/g, " ").trim().slice(0, 80),
+      faction: FBY[k.faction] ? k.faction : "", models: Math.min(999, Math.max(1, parseInt(k.models, 10) || 1)),
+      price: Math.min(100000, Math.max(0, Math.round((parseFloat(k.price) || 0) * 100) / 100)),
+      added: /^\d{4}-\d\d-\d\d$/.test(k.added) ? k.added : isoDay(new Date()), note: String(k.note || "").slice(0, 120)
+    }));
+  }
+  function shameRaw(){
+    if(store.kind === "supabase") return ((store.session && store.session.user.user_metadata) || {}).shame;
+    try { return JSON.parse(localStorage.getItem(SHAME_KEY) || "[]"); } catch(e){ return []; }
+  }
+  const shameCount = () => cleanShame(shameRaw()).length;
+  async function getShame(){ return cleanShame(shameRaw()); }
+  async function putShame(list){
+    list = cleanShame(list);
+    if(store.kind === "supabase") await store.updateProfile({shame: list});
+    else localStorage.setItem(SHAME_KEY, JSON.stringify(list));
+    return list;
+  }
+  const money = n => settings.currency + "\u00a0" + Number(n || 0).toLocaleString("en", {minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2});
+  function ageOf(day){
+    const days = Math.max(0, Math.round((Date.now() - new Date(day + "T12:00:00")) / 864e5));
+    if(days < 1) return "today";
+    if(days < 31) return plural(days, "day") + " ago";
+    const m = Math.round(days / 30.44);
+    return m < 12 ? plural(m, "month") + " ago" : (m % 12 ? `${plural(Math.floor(m / 12), "year")}, ${plural(m % 12, "month")} ago` : plural(m / 12, "year") + " ago");
+  }
+  async function viewShame(){
+    view.name = "shame";
+    document.title = "Pile of shame · Livery Ledger";
+    let list = await getShame(), armies = [];
+    try { armies = await store.listArmies(); } catch(e){}
+    const allNames = [...new Set(FACTIONS.flatMap(f => f.units.filter(u => !u.t).map(u => u.n)))].sort();
+    app.innerHTML = `
+      <div class="crumbs"><a href="#/profile">My ledgers</a> / Pile of shame</div>
+      <section class="page-head shame-head">
+        <div><p class="eyebrow">No judgement</p><h1>Pile of shame</h1>
+        <p class="sub">Kits you've bought but haven't started yet. When you start one, move it into a ledger.</p></div>
+        <div class="stats" id="sh-stats"></div>
+      </section>
+      <form class="panel shame-add" id="kit-form" autocomplete="off" novalidate>
+        <h2>Add a kit</h2>
+        <div class="kit-grid">
+          <label class="kit-name">Kit or datasheet<input id="kit-name" maxlength="80" placeholder="e.g. Intercessor Squad" required></label>
+          <label>Faction<select id="kit-fac"><option value="">Any or not sure</option>${FACTIONS.map(f => `<option value="${esc(f.id)}">${esc(f.name)}</option>`).join("")}</select></label>
+          <label>Models<input id="kit-models" type="number" min="1" max="999" inputmode="numeric" value="1"></label>
+          <label>Price (${esc(settings.currency)})<input id="kit-price" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0"></label>
+          <label>Bought<input id="kit-date" type="date" value="${isoDay(new Date())}" max="${isoDay(new Date())}"></label>
+        </div>
+        <div class="row-actions"><button type="submit" class="primary btn-sm">Add to the pile</button><span class="msg" id="kit-msg" role="status"></span></div>
+      </form>
+      <div id="shame-list"></div>`;
+    combo($("kit-name"), () => {
+      const q = $("kit-name").value.trim().toLowerCase(), fid = $("kit-fac").value;
+      const pool = fid ? FBY[fid].units.filter(u => !u.t).map(u => u.n) : q.length >= 2 ? allNames : [];
+      return pool.filter(n => !q || n.toLowerCase().includes(q)).slice(0, 60);
+    });
+    // Picking a datasheet fills in its usual model count.
+    $("kit-name").addEventListener("change", () => {
+      const fid = $("kit-fac").value, name = $("kit-name").value.trim().toLowerCase();
+      const sh = (fid ? FBY[fid].units : FACTIONS.flatMap(f => f.units)).find(u => u.n.toLowerCase() === name);
+      if(sh && $("kit-models").value === "1"){ const br = sh.pb || []; const n = br.length ? (br[0][0] === br[0][1] ? br[0][0] : Math.max(1, br[0][0] - 1)) : 1; $("kit-models").value = n; }
+      if(sh && !fid){ const f = FACTIONS.find(f => f.units.includes(sh)); if(f) $("kit-fac").value = f.id; }
+    });
+    function draw(){
+      const kits = list.slice().sort((a, b) => a.added.localeCompare(b.added));
+      const models = kits.reduce((n, k) => n + k.models, 0), value = kits.reduce((n, k) => n + k.price, 0);
+      $("sh-stats").innerHTML = `<div class="stat"><b>${kits.length}</b><span>${kits.length === 1 ? "Kit" : "Kits"}</span></div><div class="stat"><b>${num(models)}</b><span>Models</span></div><div class="stat"><b>${esc(money(value))}</b><span>Value</span></div><div class="stat"><b>${kits.length ? esc(ageOf(kits[0].added).replace(" ago", "")) : "—"}</b><span>Oldest kit</span></div>`;
+      $("shame-list").innerHTML = kits.length ? `<div class="kits">${kits.map(k => `<article class="panel kit" data-kit="${esc(k.id)}">
+          <div class="kit-top">${k.faction ? factionBadge(k.faction, 40) : `<span class="kit-box" aria-hidden="true"></span>`}
+            <div><h3>${esc(k.name)}</h3><small>${esc([k.faction ? FBY[k.faction].name : "", plural(k.models, "model"), k.price ? money(k.price) : ""].filter(Boolean).join(" · "))}</small></div>
+            <button type="button" class="kit-rm" data-rmkit="${esc(k.id)}" aria-label="Remove ${esc(k.name)} from the pile" title="Remove">×</button></div>
+          <div class="kit-foot"><span class="kit-age">On the pile ${esc(ageOf(k.added))}</span><button type="button" class="btn-sm primary" data-start="${esc(k.id)}">Start painting</button></div>
+          <div class="kit-start" hidden></div>
+        </article>`).join("")}</div>`
+        : `<div class="ro-empty"><strong>Your pile is empty</strong><p>Either you paint everything you buy, or you haven't added anything yet. Add kits above as you buy them.</p></div>`;
+    }
+    draw();
+    $("kit-form").addEventListener("submit", async e => {
+      e.preventDefault();
+      const name = $("kit-name").value.trim();
+      if(!name){ $("kit-msg").textContent = "Give the kit a name."; $("kit-name").focus(); return; }
+      const kit = {id: S.newId(), name, faction: $("kit-fac").value, models: $("kit-models").value, price: $("kit-price").value, added: $("kit-date").value || isoDay(new Date())};
+      try { list = await putShame(list.concat(kit)); $("kit-name").value = ""; $("kit-models").value = "1"; $("kit-price").value = ""; $("kit-date").value = isoDay(new Date()); $("kit-msg").textContent = `Added ${name}.`; draw(); $("kit-name").focus(); }
+      catch(err){ $("kit-msg").textContent = "Couldn't save: " + errText(err); }
+    });
+    $("shame-list").addEventListener("click", async e => {
+      const rm = e.target.closest("[data-rmkit]");
+      if(rm){
+        if(!rm.classList.contains("armed")){ rm.classList.add("armed"); rm.textContent = "Remove?"; setTimeout(() => { if(rm.isConnected){ rm.classList.remove("armed"); rm.textContent = "×"; } }, 3000); return; }
+        try { list = await putShame(list.filter(k => k.id !== rm.dataset.rmkit)); draw(); } catch(err){ alertBanner("Couldn't remove it: " + errText(err)); }
+        return;
+      }
+      const st = e.target.closest("[data-start]");
+      if(st){
+        const k = list.find(x => x.id === st.dataset.start), box = st.closest(".kit").querySelector(".kit-start");
+        if(!armies.length){ box.innerHTML = `<p class="hint">Start a ledger first, then move this kit into it. <a href="#/profile">Go to your ledgers</a></p>`; box.hidden = false; return; }
+        const pick = armies.find(a => a.faction === k.faction) || armies[0];
+        box.innerHTML = `<label>Add to ledger<select data-to>${armies.map(a => `<option value="${esc(a.id)}"${a === pick ? " selected" : ""}>${esc(a.name)} (${esc((FBY[a.faction] || {name: a.faction}).name)})</option>`).join("")}</select></label>
+          <div class="row-actions"><button type="button" class="btn-sm primary" data-move="${esc(k.id)}">Add as a unit</button><button type="button" class="btn-sm" data-cancel>Cancel</button></div>`;
+        box.hidden = false; st.hidden = true; box.querySelector("select").focus();
+        return;
+      }
+      if(e.target.closest("[data-cancel]")){ draw(); return; }
+      const mv = e.target.closest("[data-move]");
+      if(mv){
+        const k = list.find(x => x.id === mv.dataset.move), armyId = mv.closest(".kit").querySelector("[data-to]").value, army = armies.find(a => a.id === armyId);
+        const units = (FBY[army.faction] || {units: []}).units, low = k.name.toLowerCase();
+        const sh = units.find(u => !u.t && u.n.toLowerCase() === low) || units.find(u => u.n.toLowerCase() === low);
+        mv.disabled = true; mv.textContent = "Adding…";
+        try {
+          await store.importUnits(army.id, [{datasheet: sh ? sh.n : k.name, role: sh ? sh.r : "", name: k.name, count: k.models, points: sh && sh.p ? sh.p : 0, stages: [], painted: 0, tier: 0, notes: k.note || ""}]);
+          list = await putShame(list.filter(x => x.id !== k.id)); draw();
+          alertBanner(`${k.name} is now in ${army.name}. Open the ledger to start painting.`);
+        } catch(err){ mv.disabled = false; mv.textContent = "Add as a unit"; alertBanner("Couldn't add it: " + errText(err)); }
+      }
+    });
   }
 
   /* ============================================================
