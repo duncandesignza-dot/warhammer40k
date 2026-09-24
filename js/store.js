@@ -19,6 +19,14 @@
   const HEX = /^#[0-9a-f]{6}$/i;
   const COLOR_FIELDS = ["helmet","skin","lens","armour","secondary","trim","emblem","cloth","metal"];
 
+  // Paint chosen for each colour area, e.g. {armour: "Citadel Abaddon Black"}. The colour itself stays in the hex fields.
+  const SLOT_KEYS = ["helmet","skin","lens","armour","secondary","trim","emblem","cloth","metal"];
+  function cleanSlotPaints(m){
+    const o = {};
+    if(m && typeof m === "object") SLOT_KEYS.forEach(k => { const v = String(m[k] || "").trim().slice(0, 90); if(v) o[k] = v; });
+    return o;
+  }
+
   const newId = () => (crypto.randomUUID ? crypto.randomUUID() : "id" + Date.now().toString(36) + Math.random().toString(36).slice(2, 10));
 
   function cleanUnit(r){
@@ -39,9 +47,23 @@
     o.status = deriveStatus(o.stages, o.painted, o.count);
     o.recipes = Array.isArray(r.recipes) ? [...new Set(r.recipes.map(x => String(x).slice(0, 40)))].slice(0, 20) : [];
     COLOR_FIELDS.forEach(f => { if(!HEX.test(o[f])) o[f] = ""; });
+    o.slotPaints = cleanSlotPaints(r.slotPaints);
     if(!o.name) o.name = o.datasheet || "Unnamed unit";
     return o;
   }
+  // at: when the recipe was last saved, so the newest copy wins between ledgers and the library.
+  function cleanRecipe(r){
+    return {
+      id: String(r.id).slice(0, 40),
+      name: String(r.name || "Recipe").slice(0, 60),
+      area: String(r.area || "").slice(0, 30),
+      notes: String(r.notes || "").slice(0, 300),
+      steps: (Array.isArray(r.steps) ? r.steps : []).slice(0, 20).map(st => ({t: String((st && st.t) || "").slice(0, 30), p: String((st && st.p) || "").slice(0, 90)})).filter(st => st.p || st.t),
+      at: /^\d{4}-\d\d-\d\dT[\d:.]+Z$/.test(r.at) ? r.at : ""
+    };
+  }
+  // Recipe library entries: a recipe, or a deleted marker so other ledgers don't bring it back.
+  const cleanLibrary = list => (Array.isArray(list) ? list : []).filter(r => r && r.id).slice(0, 400).map(r => ({...cleanRecipe(r), deleted: r.deleted === true}));
   function cleanScheme(s){
     s = s || {};
     const colors = {};
@@ -51,17 +73,12 @@
     const tiers = (Array.isArray(s.tiers) ? s.tiers : []).slice(0, 8).map(t => ({
       name: String((t && t.name) || "Tier").slice(0, 40),
       note: String((t && t.note) || "").slice(0, 80),
-      color: HEX.test(t && t.color) ? t.color : "#1f1f22"
+      color: HEX.test(t && t.color) ? t.color : "#1f1f22",
+      paint: String((t && t.paint) || "").trim().slice(0, 90)
     }));
     const limit = Math.min(20000, Math.max(0, parseInt(s.limit, 10) || 0));
-    const recipes = (Array.isArray(s.recipes) ? s.recipes : []).slice(0, 60).filter(r => r && r.id).map(r => ({
-      id: String(r.id).slice(0, 40),
-      name: String(r.name || "Recipe").slice(0, 60),
-      area: String(r.area || "").slice(0, 30),
-      notes: String(r.notes || "").slice(0, 300),
-      steps: (Array.isArray(r.steps) ? r.steps : []).slice(0, 20).map(st => ({t: String((st && st.t) || "").slice(0, 30), p: String((st && st.p) || "").slice(0, 90)})).filter(st => st.p || st.t)
-    }));
-    return {style: s.style === "roundel" ? "roundel" : "astartes", limit, recipes, colors, shape: String(s.shape || "cross").slice(0, 160), tiers: tiers.length ? tiers : [{name:"Line", note:"", color:colors.armour}]};
+    const recipes = (Array.isArray(s.recipes) ? s.recipes : []).slice(0, 60).filter(r => r && r.id).map(cleanRecipe);
+    return {style: s.style === "roundel" ? "roundel" : "astartes", limit, recipes, colors, slotPaints: cleanSlotPaints(s.slotPaints), shape: String(s.shape || "cross").slice(0, 160), tiers: tiers.length ? tiers : [{name:"Line", note:"", color:colors.armour}]};
   }
   const cleanPaints = list => [...new Set((Array.isArray(list) ? list : []).map(p => String(p).trim().slice(0, 90)).filter(Boolean))].slice(0, 600);
   function cleanArmy(a){
@@ -135,6 +152,12 @@
       async listArmies(){ return db.armies.map(a => ({...a})); },
       async getPaints(){ try { const v = JSON.parse(localStorage.getItem("livery-paints-v1") || "[]"); return Array.isArray(v) ? v : []; } catch(e){ return []; } },
       async setPaints(list){ try { localStorage.setItem("livery-paints-v1", JSON.stringify(cleanPaints(list))); } catch(e){ throw Object.assign(new Error("This browser is blocking storage."), {code:"quota"}); } return cleanPaints(list); },
+      async getLibrary(){ try { return cleanLibrary(JSON.parse(localStorage.getItem("livery-recipes-v1") || "[]")); } catch(e){ return []; } },
+      async putLibrary(rows){
+        const lib = await this.getLibrary(), clean = cleanLibrary(rows), ids = new Set(clean.map(r => r.id));
+        try { localStorage.setItem("livery-recipes-v1", JSON.stringify(cleanLibrary(lib.filter(r => !ids.has(r.id)).concat(clean)))); }
+        catch(e){ throw Object.assign(new Error("This browser is out of storage space."), {code:"quota"}); }
+      },
       async getArmy(id){ const a = db.armies.find(x => x.id === id); return a ? {...a} : null; },
       async summary(){
         const m = {};
@@ -175,7 +198,10 @@
      ============================================================ */
   function SupaStore(){
     const sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY);
-    const A = CFG.ARMIES_TABLE || "armies", U = CFG.UNITS_TABLE || "units", B = CFG.BUCKET || "unit-images";
+    const A = CFG.ARMIES_TABLE || "armies", U = CFG.UNITS_TABLE || "units", B = CFG.BUCKET || "unit-images", R = CFG.RECIPES_TABLE || "recipes";
+    // The recipes table is optional (added later): say so plainly when it hasn't been created yet.
+    const libErr = error => /PGRST205|42P01/.test(error.code || "") || /could not find the table|does not exist/i.test(error.message || "")
+      ? Object.assign(new Error("The recipes table hasn't been set up in Supabase yet."), {code: "nolib"}) : error;
     let session = null;
     const pub = path => path ? sb.storage.from(B).getPublicUrl(path).data.publicUrl : "";
     const toArmy = r => ({id: r.id, owner: r.owner, faction: r.faction, name: r.name, scheme: cleanScheme(r.scheme), public: r.public === true, createdAt: r.created_at, updatedAt: r.updated_at});
@@ -203,6 +229,20 @@
         if(error) throw error;
         if(data && data.user) session = {...session, user: data.user};
         return paints;
+      },
+      async getLibrary(){
+        if(!session) return [];
+        const {data, error} = await sb.from(R).select("id,data").eq("owner", session.user.id);
+        if(error) throw libErr(error);
+        return cleanLibrary((data || []).map(r => ({...(r.data || {}), id: r.id})));
+      },
+      async putLibrary(rows){
+        need();
+        const now = new Date().toISOString();
+        const payload = cleanLibrary(rows).map(({id, ...data}) => ({owner: session.user.id, id, data, updated_at: now}));
+        if(!payload.length) return;
+        const {error} = await sb.from(R).upsert(payload, {onConflict: "owner,id"});
+        if(error) throw libErr(error);
       },
       async listArmies(){
         if(!session) return [];
@@ -270,5 +310,5 @@
     return ready ? SupaStore() : LocalStore();
   }
 
-  window.LEDGER_STORE = {create, FIELDS, STATUS, STAGES, STAGE_KEYS, deriveStatus, cleanUnit, cleanScheme, newId};
+  window.LEDGER_STORE = {create, FIELDS, STATUS, STAGES, STAGE_KEYS, deriveStatus, cleanUnit, cleanScheme, cleanRecipe, newId};
 })();

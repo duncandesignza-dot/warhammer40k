@@ -2,7 +2,7 @@
 (function(){
   "use strict";
   const DATA = window.LEDGER_FACTIONS || {factions: []};
-  const P = window.LEDGER_PRESETS, ART = window.LEDGER_ART, S = window.LEDGER_STORE;
+  const P = window.LEDGER_PRESETS, ART = window.LEDGER_ART, S = window.LEDGER_STORE, PU = window.LEDGER_PAINTUI;
   const STATUS = S.STATUS;
   const FACTIONS = DATA.factions;
   const FBY = Object.fromEntries(FACTIONS.map(f => [f.id, f]));
@@ -53,6 +53,53 @@
     };
     const hd = v.head === "bare" ? `bare head (${cname(v.skin)} skin)` : v.head === "none" ? "no head" : `${cname(v.helmet)} ${PROF.head}`;
     return ART.badge(v, scheme.style, size, `${hd}, ${cname(v.armour)} ${PROF.labels.armour.toLowerCase()} with ${cname(v.trim)} ${PROF.labels.trim.toLowerCase()}`);
+  }
+  /* Suggestion dropdown for a text input, styled like the paint picker (the browser's own datalist
+     popup can't be styled). getList() returns the options; typing filters them, and any other
+     text is still allowed. */
+  function combo(input, getList){
+    const box = document.createElement("div");
+    box.className = "psuggest"; box.hidden = true; box.setAttribute("role", "listbox");
+    input.classList.add("combo");
+    input.setAttribute("autocomplete", "off"); input.setAttribute("role", "combobox"); input.setAttribute("aria-expanded", "false");
+    // Outside the label, so a click on an option doesn't also land on the input and reopen the list.
+    (input.closest("label") || input).after(box);
+    let items = [], active = -1;
+    function show(){
+      const all = getList() || [], q = input.value.trim().toLowerCase();
+      // Everything when the box is empty or already holds one of the options, otherwise the matches.
+      items = !q || all.some(o => o.toLowerCase() === q) ? all : all.filter(o => o.toLowerCase().includes(q));
+      if(!items.length){ hide(); return; }
+      box.innerHTML = items.map((o, i) => `<div class="psug${i === active ? " on" : ""}" role="option" data-i="${i}"><span class="pn"><strong>${esc(o)}</strong></span></div>`).join("");
+      box.hidden = false; input.setAttribute("aria-expanded", "true");
+      place();
+    }
+    // Float over everything, below the input or above it if there's no room.
+    function place(){
+      if(box.hidden) return;
+      const r = input.getBoundingClientRect(), vh = window.innerHeight, gap = 6;
+      const below = vh - r.bottom - gap - 12, above = r.top - gap - 12;
+      const up = below < 220 && above > below;
+      Object.assign(box.style, {left: r.left + "px", width: r.width + "px", maxHeight: Math.max(140, Math.min(320, up ? above : below)) + "px",
+        top: up ? "" : (r.bottom + gap) + "px", bottom: up ? (vh - r.top + gap) + "px" : ""});
+    }
+    function hide(){ box.hidden = true; active = -1; input.setAttribute("aria-expanded", "false"); }
+    function pick(i){ if(items[i] == null) return; input.value = items[i]; hide(); input.dispatchEvent(new Event("input", {bubbles: true})); }
+    const onMove = () => { if(!box.isConnected){ window.removeEventListener("resize", onMove); document.removeEventListener("scroll", onMove, true); return; } place(); };
+    window.addEventListener("resize", onMove);
+    document.addEventListener("scroll", onMove, true);
+    input.addEventListener("focus", show);
+    input.addEventListener("click", () => { if(box.hidden) show(); });
+    input.addEventListener("input", e => { active = -1; if(e.isTrusted) show(); });
+    input.addEventListener("blur", () => setTimeout(hide, 150));
+    input.addEventListener("keydown", e => {
+      if(e.key === "ArrowDown"){ e.preventDefault(); if(box.hidden){ show(); return; } active = Math.min(items.length - 1, active + 1); show(); }
+      else if(box.hidden) return;
+      else if(e.key === "ArrowUp"){ e.preventDefault(); active = Math.max(0, active - 1); show(); }
+      else if(e.key === "Enter" && active >= 0){ e.preventDefault(); pick(active); }
+      else if(e.key === "Escape"){ e.stopPropagation(); e.preventDefault(); hide(); }
+    });
+    box.addEventListener("mousedown", e => { const o = e.target.closest("[data-i]"); if(o){ e.preventDefault(); pick(+o.dataset.i); } });
   }
   function tierBadge(scheme, t, size){
     const c = scheme.colors;
@@ -211,7 +258,10 @@
     PROF = P.profileFor(f.id);
     const draft = army ? {name: army.name, scheme: JSON.parse(JSON.stringify(army.scheme))} : {name: "", scheme: P.presetFor(f.id)};
     fillSkin(draft.scheme, f.id);
+    draft.scheme.slotPaints = draft.scheme.slotPaints || {};
     const known = P.schemesFor(f.id);
+    let ownedList = [];
+    if(store.canWrite) store.getPaints().then(l => { ownedList = l; }).catch(() => {});
     const editing = !!army;
     document.title = (editing ? "Colours · " + army.name : "New " + f.name + " ledger") + " · Livery Ledger";
     const locked = !store.canWrite;
@@ -236,12 +286,11 @@
           </div>` : ""}
           <div class="panel">
             <h3>Colours</h3>
-            <p class="hint">Pick a colour, or tap a swatch.</p>
+            <p class="hint">Pick the paint you use for each area, or tap a swatch for a plain colour.</p>
             <div class="cgrid">${colorKeys().map(([k, label]) => `
               <div class="cfield">
-                <label for="s-${k}">${label}</label>
-                <input type="color" id="s-${k}" value="${esc(draft.scheme.colors[k])}">
-                <span class="cname" id="s-${k}-n">${esc(cname(draft.scheme.colors[k]))}</span>
+                <span class="cf-l">${label}</span>
+                <span id="s-${k}"></span>
                 <div class="swatches">${QUICK.map(n => `<button type="button" class="sw" style="background:${quickHex(n)}" title="${n}" aria-label="${label}: ${n}" data-sw="${k}" data-hex="${quickHex(n)}"></button>`).join("")}</div>
               </div>`).join("")}</div>
           </div>
@@ -306,19 +355,34 @@
       $("s-tiers").innerHTML = sch.tiers.map((t, i) => `
         <div class="tier">
           <label>Rank ${i + 1}<input data-tname="${i}" maxlength="40" value="${esc(t.name)}" placeholder="e.g. Veteran"></label>
-          <label>Colour<input type="color" data-tcolor="${i}" value="${esc(t.color)}"></label>
+          <label>Colour<span data-tslot="${i}"></span></label>
           <button type="button" class="btn-sm" data-tdel="${i}" ${sch.tiers.length < 2 ? "disabled" : ""} aria-label="Remove rank ${i + 1}">Remove</button>
           <label class="full" style="grid-column:1/-1">Who uses it<input data-tnote="${i}" maxlength="80" value="${esc(t.note)}" placeholder="e.g. Sword Brethren"></label>
         </div>`).join("");
       $("s-addtier").disabled = sch.tiers.length >= 8;
+      $("s-tiers").querySelectorAll("[data-tslot]").forEach(h => {
+        const i = +h.dataset.tslot;
+        PU.slot(h, {...slotOpts, label: `Rank ${i + 1} colour`, value: {hex: sch.tiers[i].color, paint: sch.tiers[i].paint},
+          onChange: v => { sch.tiers[i].color = v.hex; sch.tiers[i].paint = v.paint; setupDirty = true; renderPreview(); }});
+      });
     }
     function renderPreview(){
       $("s-preview").innerHTML = sch.tiers.map(t => `<div class="pv-tier">${tierBadge(sch, t, 60)}<span><strong>${esc(t.name || "Rank")}</strong><small>${esc(t.note || cname(t.color) + " " + PROF.head)}</small></span></div>`).join("");
       $("s-shapes").querySelectorAll("[data-shape]").forEach(b => { b.setAttribute("aria-pressed", b.dataset.shape === sch.shape); b.innerHTML = ART.shapeIcon(b.dataset.shape, sch.colors.emblem, 34) + esc(P.SHAPES.find(s => s[0] === b.dataset.shape)[1]); });
       renderCurrent();
-      colorKeys().forEach(([k]) => { $("s-" + k).value = sch.colors[k]; $("s-" + k + "-n").textContent = cname(sch.colors[k]); });
+      colorKeys().forEach(([k]) => slots[k].set({hex: sch.colors[k], paint: sch.slotPaints[k] || ""}));
       app.querySelectorAll("[data-style]").forEach(b => b.setAttribute("aria-pressed", b.dataset.style === sch.style));
     }
+    // Paint pickers for the army colours and rank colours.
+    const slotOpts = {
+      owned: () => new Set(ownedList.map(PU.norm)), mine: () => ownedList,
+      swatches: () => colorKeys().map(([k]) => ({hex: sch.colors[k], paint: sch.slotPaints[k] || ""})).concat(sch.tiers.map(t => ({hex: t.color, paint: t.paint || ""})))
+    };
+    const slots = {};
+    colorKeys().forEach(([k, label]) => {
+      slots[k] = PU.slot($("s-" + k), {...slotOpts, label, value: {hex: sch.colors[k], paint: sch.slotPaints[k]},
+        onChange: v => { sch.colors[k] = v.hex; if(v.paint) sch.slotPaints[k] = v.paint; else delete sch.slotPaints[k]; setupDirty = true; renderPreview(); }});
+    });
     renderIcons(); renderTiers(); renderPreview();
 
     let setupDirty = false;
@@ -346,13 +410,10 @@
     function onInput(e){
       const t = e.target;
       if(t.id !== "s-emq") setupDirty = true;
-      const ck = colorKeys().find(([k]) => t.id === "s-" + k);
-      if(ck){ sch.colors[ck[0]] = t.value; renderPreview(); return; }
       if(t.id === "s-emq"){ emq = t.value.trim(); emLimit = 90; renderIcons(); return; }
       if(t.dataset.tname != null){ sch.tiers[+t.dataset.tname].name = t.value; renderPreview(); }
       if(t.dataset.tnote != null){ sch.tiers[+t.dataset.tnote].note = t.value; renderPreview(); }
-      if(t.dataset.tcolor != null){ sch.tiers[+t.dataset.tcolor].color = t.value; renderPreview(); }
-      if(t.id === "s-reset" && t.checked){ const p = P.presetFor(f.id); Object.assign(sch, p); renderTiers(); renderPreview(); t.checked = false; $("s-msg").textContent = ""; }
+      if(t.id === "s-reset" && t.checked){ const p = P.presetFor(f.id); Object.assign(sch, p, {slotPaints: {}}); renderTiers(); renderPreview(); t.checked = false; $("s-msg").textContent = ""; }
     }
     let armed = false;
     async function onClick(e){
@@ -362,19 +423,20 @@
         // Keep rank names (they may have been edited) but recolour the standard ranks to match.
         const k = known[+t.dataset.scheme];
         sch.colors = {...sch.colors, ...k.colors};
+        Object.keys(k.colors).forEach(c => delete sch.slotPaints[c]);
         if(k.shape) sch.shape = k.shape;
         const std = P.tiersFor(f.id, sch.colors);
-        sch.tiers.forEach((tr, i) => { if(std[i]) tr.color = std[i].color; });
+        sch.tiers.forEach((tr, i) => { if(std[i]){ tr.color = std[i].color; tr.paint = ""; } });
         renderTiers(); renderPreview();
         $("s-msg").classList.remove("err"); $("s-msg").textContent = `Using the ${k.name} scheme. Save to keep it.`;
         return;
       }
-      if(t.dataset.sw){ sch.colors[t.dataset.sw] = t.dataset.hex; renderPreview(); return; }
+      if(t.dataset.sw && !t.closest(".cpop")){ sch.colors[t.dataset.sw] = t.dataset.hex; delete sch.slotPaints[t.dataset.sw]; renderPreview(); return; }
       if(t.dataset.shape){ sch.shape = t.dataset.shape; renderPreview(); return; }
       if(t.id === "s-emmore"){ emLimit += 90; renderIcons(); return; }
       if(t.dataset.style){ sch.style = t.dataset.style; renderPreview(); return; }
       if(t.dataset.tdel != null){ sch.tiers.splice(+t.dataset.tdel, 1); renderTiers(); renderPreview(); return; }
-      if(t.id === "s-addtier"){ sch.tiers.push({name: "New rank", note: "", color: sch.colors.secondary}); renderTiers(); renderPreview(); return; }
+      if(t.id === "s-addtier"){ sch.tiers.push({name: "New rank", note: "", color: sch.colors.secondary, paint: sch.slotPaints.secondary || ""}); renderTiers(); renderPreview(); return; }
       if(t.id === "s-save"){
         const saved = await saveSetup();
         if(saved) location.hash = "#/army/" + saved.id;
@@ -422,7 +484,6 @@
     const sheetFor = n => sheets.find(u => u.n === n && !u.t) || sheets.find(u => u.n === n);
     const sheetIcons = suggestedIcons(FBY[army.faction] || {id: army.faction, name: f.name}).slice(0, 250);
     if(String(scheme.shape).startsWith("icon:") && !sheetIcons.some(i => "icon:" + i.id === scheme.shape) && P.ICON_BY_ID[scheme.shape.slice(5)]) sheetIcons.unshift(P.ICON_BY_ID[scheme.shape.slice(5)]);
-    const schemeColors = [...new Set([...Object.values(scheme.colors), ...scheme.tiers.map(t => t.color)])];
 
     /* Points from the datasheet: base cost, then any model-count bracket that applies (later brackets win). */
     function ptsFor(sh, count){
@@ -434,7 +495,8 @@
     const fmt = n => Number(n || 0).toLocaleString("en");
     const singleRole = r => ["Epic Hero","Character","Vehicle","Monster","Dedicated Transport","Fortification"].includes(r);
 
-    const colorField = (id, label) => `<label>${label}<span class="cpair"><input type="color" id="f-${id}" list="dl-scheme"><span class="cname" data-cn="${id}"></span></span></label>`;
+    // A paint picker per colour area (the hidden input #f-<id> holds the colour).
+    const colorField = (id, label) => `<label>${label}<span data-slot="${id}"></span></label>`;
     const PREF_KEY = "ll-list-prefs";
     let prefs = {group: "role", sort: "rank"};
     try { prefs = {...prefs, ...JSON.parse(localStorage.getItem(PREF_KEY) || "{}")}; } catch(e){}
@@ -549,7 +611,7 @@
             <div class="hd-when" data-when="helmet">${colorField("helmet", esc(LB.helmet))}</div>
             ${skinInHead ? `<div class="hd-when" data-when="bare">${colorField("skin", esc(LB.skin))}</div>` : ""}
             <div class="hd-when" data-when="helmet bare">${colorField("lens", `<span id="lens-lbl">${esc(LB.lens)}</span>`)}</div>
-            <label class="full hd-when" data-when="helmet bare"><span id="hdetail-lbl">${esc(PROF.detail[0])}</span><input id="f-hdetail" list="dl-hdetail" maxlength="60" placeholder="${esc(PROF.detail[1])}"></label>
+            <label class="full hd-when" data-when="helmet bare"><span id="hdetail-lbl">${esc(PROF.detail[0])}</span><input id="f-hdetail" maxlength="60" placeholder="${esc(PROF.detail[1])}"></label>
           </fieldset>
           <fieldset>
             <legend>${esc(PROF.legends.body)}</legend>
@@ -572,8 +634,8 @@
           </fieldset>
           <fieldset>
             <legend>Weapons</legend>
-            <label class="full">Melee weapon<input id="f-melee" list="dl-melee" maxlength="120" placeholder="Choose or type"></label>
-            <label class="full">Ranged weapon<input id="f-ranged" list="dl-ranged" maxlength="120" placeholder="Choose or type"></label>
+            <label class="full">Melee weapon<input id="f-melee" maxlength="120" placeholder="Choose or type"></label>
+            <label class="full">Ranged weapon<input id="f-ranged" maxlength="120" placeholder="Choose or type"></label>
           </fieldset>
           <fieldset>
             <legend>Paint recipes</legend>
@@ -599,10 +661,6 @@
           </footer>
         </form>
       </dialog>
-      <datalist id="dl-scheme">${schemeColors.map(c => `<option value="${c}"></option>`).join("")}</datalist>
-      <datalist id="dl-melee"></datalist><datalist id="dl-ranged"></datalist>
-      <datalist id="dl-face"><option>War paint</option><option>Scars</option><option>Tattoos</option><option>Bionic eye</option><option>Beard</option><option>Service studs</option></datalist>
-      <datalist id="dl-hdetail">${PROF.detailOpts.map(o => `<option>${esc(o)}</option>`).join("")}</datalist>
 
       <dialog id="paintdlg" class="paintdlg" aria-labelledby="pd-h">
         <div class="pd-wrap">
@@ -664,7 +722,6 @@
       form.querySelectorAll(".hd-when").forEach(el => el.hidden = !el.dataset.when.split(" ").includes(h));
       $("lens-lbl").textContent = h === "bare" ? "Eyes" : LB.lens;
       $("hdetail-lbl").textContent = h === "bare" ? "Face paint & detail" : PROF.detail[0];
-      $("f-hdetail").setAttribute("list", h === "bare" ? "dl-face" : "dl-hdetail");
       $("f-hdetail").placeholder = h === "bare" ? "e.g. war paint, scars, tattoos, bionic eye" : PROF.detail[1];
       $("head-hint").textContent = h === "bare" ? `For a painted face: pick a skin tone${skinInHead ? "" : " (under " + PROF.legends.details + ")"} and note any war paint or scars.` : h === "none" ? "No head to paint, e.g. vehicles, monsters and walkers." : "";
       $("head-hint").hidden = h === "helmet";
@@ -692,6 +749,8 @@
       o.status = S.deriveStatus(o.stages, o.painted, o.count);
       o.noHelmet = o.head === "bare";
       COLOR_IDS.forEach(k => o[k] = $("f-" + k).value);
+      o.slotPaints = {};
+      COLOR_IDS.forEach(k => { const p = slotApi[k].get().paint; if(p) o.slotPaints[k] = p; });
       return o;
     }
     function writeForm(u){
@@ -709,13 +768,34 @@
       $("f-hdetail").value = d.hdetail; setHead(headOf(d));
       $("f-shape").value = [...$("f-shape").options].some(o => o.value === d.shape) ? d.shape : "";
       ["extras","melee","ranged","paints","notes"].forEach(k => $("f-" + k).value = d[k] || "");
-      COLOR_IDS.forEach(k => $("f-" + k).value = ART.hexOk(d[k]) ? d[k] : (defaults()[k] || "#1f1f22"));
+      COLOR_IDS.forEach(k => { const hex = ART.hexOk(d[k]) ? d[k] : (defaults()[k] || "#1f1f22"); slotApi[k].set({hex, paint: paintOf(d, k, hex)}); });
       fillWeapons(); preview();
     }
+    // Paint pickers in the editor. A unit colour that matches the army (or rank) colour shows the
+    // army's paint, so units made before paints were picked still read "Abaddon Black".
+    function paintOf(u, k, hex){
+      const own = (u.slotPaints || {})[k]; if(own) return own;
+      const tier = scheme.tiers[u.tier] || scheme.tiers[0] || {};
+      const armyHex = k === "helmet" ? tier.color : scheme.colors[k], armyPaint = k === "helmet" ? tier.paint : (scheme.slotPaints || {})[k];
+      return armyPaint && hex === armyHex ? armyPaint : "";
+    }
+    const slotLabel = k => k === "emblem" ? LB.emblem + " colour" : LB[k];
+    const slotApi = {};
+    form.querySelectorAll("[data-slot]").forEach(h => {
+      const k = h.dataset.slot;
+      slotApi[k] = PU.slot(h, {id: "f-" + k, label: slotLabel(k), value: {hex: scheme.colors[k] || "#1f1f22", paint: ""},
+        owned: () => owned, mine: () => ownedList,
+        swatches: () => Object.keys(scheme.colors).filter(c => COLOR_IDS.includes(c)).map(c => ({hex: scheme.colors[c], paint: (scheme.slotPaints || {})[c] || ""}))
+          .concat(scheme.tiers.map(t => ({hex: t.color, paint: t.paint || ""}))),
+        onChange: () => { setDirty(true); preview(); }});
+    });
+    const sheetNow = () => { const sel = $("f-sheet").value; return sel && sel !== "__custom" ? sheetFor(sel) : null; };
+    const FACE_OPTS = ["War paint","Scars","Tattoos","Bionic eye","Beard","Service studs"];
+    combo($("f-melee"), () => (sheetNow() || {}).wm || []);
+    combo($("f-ranged"), () => (sheetNow() || {}).wr || []);
+    combo($("f-hdetail"), () => getHead() === "bare" ? FACE_OPTS : PROF.detailOpts);
     function fillWeapons(){
-      const sel = $("f-sheet").value, sh = sel && sel !== "__custom" ? sheetFor(sel) : null;
-      $("dl-melee").innerHTML = (sh && sh.wm || []).map(w => `<option value="${esc(w)}"></option>`).join("");
-      $("dl-ranged").innerHTML = (sh && sh.wr || []).map(w => `<option value="${esc(w)}"></option>`).join("");
+      const sh = sheetNow();
       $("f-melee").placeholder = sh && sh.wm ? sh.wm.slice(0, 2).join(", ") + (sh.wm.length > 2 ? "…" : "") : "Choose or type";
       $("f-ranged").placeholder = sh && sh.wr ? sh.wr.slice(0, 2).join(", ") + (sh.wr.length > 2 ? "…" : "") : "Choose or type";
     }
@@ -736,7 +816,6 @@
       $("pv-name").textContent = u.name || u.datasheet || "Unnamed unit";
       const tier = scheme.tiers[u.tier];
       $("pv-meta").textContent = [u.datasheet || "Unit", tier && tier.name, plural(u.count, "model"), u.points ? u.points + " pts" : ""].filter(Boolean).join(" · ");
-      app.querySelectorAll("[data-cn]").forEach(s => s.textContent = cname($("f-" + s.dataset.cn).value));
       $("painted-of").textContent = "of " + u.count;
       $("f-painted").max = u.count;
       updatePointsHint();
@@ -861,8 +940,12 @@
       const o = {...u};
       COLOR_IDS.forEach(k => { if(!ART.hexOk(o[k])) o[k] = k === "helmet" ? (scheme.tiers[o.tier] || scheme.tiers[0]).color : scheme.colors[k]; });
       o.head = headOf(o);
+      o.slotPaints = {};
+      COLOR_IDS.forEach(k => { const p = paintOf(u, k, o[k]); if(p) o.slotPaints[k] = p; });
       return o;
     };
+    // Paint name for a colour area if one was picked, otherwise the colour's name.
+    const nameOf = (u, k) => (u.slotPaints || {})[k] ? PU.shortName(u.slotPaints[k]) : cname(u[k]);
     function cardHtml(u){
       u = withColours(u);
       const img = safeImg(u.image), tier = scheme.tiers[u.tier] || {};
@@ -874,9 +957,9 @@
           <div class="card-top">${unitBadge(u, scheme, 60)}<div><h3>${esc(u.name)}</h3><div class="type">${esc([u.datasheet && u.datasheet !== u.name ? u.datasheet : "", u.role].filter(Boolean).join(" · ") || "Unit")}</div></div>${u.points ? `<span class="pts">${fmt(u.points)}<small>pts</small></span>` : ""}</div>
           <dl>
             <dt>Rank</dt><dd>${esc(tier.name || "—")}</dd>
-            ${u.head === "none" ? "" : `<dt>${u.head === "bare" ? "Face" : esc(LB.helmet)}</dt><dd>${u.head === "bare" ? chip(u.skin) + "Bare head" : chip(u.helmet) + esc(cname(u.helmet))}${u.hdetail ? ", " + esc(u.hdetail) : ""}</dd>`}
-            <dt>${esc(LB.armour)}</dt><dd>${chip(u.armour)}${esc(cname(u.armour))}, ${esc(cname(u.trim))} ${esc(LB.trim.toLowerCase())}</dd>
-            ${PROF.skinAlways ? `<dt>${esc(LB.skin)}</dt><dd>${chip(u.skin)}${esc(cname(u.skin))}</dd>` : ""}
+            ${u.head === "none" ? "" : `<dt>${u.head === "bare" ? "Face" : esc(LB.helmet)}</dt><dd>${u.head === "bare" ? chip(u.skin) + "Bare head" : chip(u.helmet) + esc(nameOf(u, "helmet"))}${u.hdetail ? ", " + esc(u.hdetail) : ""}</dd>`}
+            <dt>${esc(LB.armour)}</dt><dd>${chip(u.armour)}${esc(nameOf(u, "armour"))}, ${esc(nameOf(u, "trim"))} ${esc(LB.trim.toLowerCase())}</dd>
+            ${PROF.skinAlways ? `<dt>${esc(LB.skin)}</dt><dd>${chip(u.skin)}${esc(nameOf(u, "skin"))}</dd>` : ""}
             <dt>Weapons</dt><dd>${esc(weaponsText(u))}</dd>
             ${recipesOf(u).length ? `<dt>Recipes</dt><dd>${esc(recipesOf(u).map(r => r.name).join(", "))}${canWrite && missingFor(u).length ? ` <span class="need">${missingFor(u).length} to buy</span>` : ""}</dd>` : ""}
           </dl>
@@ -912,6 +995,9 @@
       const u = withColours(found);
       const img = safeImg(u.image), tier = scheme.tiers[u.tier] || {};
       const col = hex => ART.hexOk(hex) ? chip(hex) + esc(cname(hex)) : "";
+      // Colour area: the paint (with Owned / To buy) or the plain colour.
+      const colk = k => { if(!ART.hexOk(u[k])) return ""; const p = u.slotPaints[k];
+        return chip(u[k]) + esc(p || cname(u[k])) + (p && canWrite ? (isOwned(p) ? ` <span class="own ok">Owned</span>` : ` <span class="own no">To buy</span>`) : ""); };
       const sec = (title, rows) => { const r = rows.filter(x => x[1]); return r.length ? `<section><h4>${title}</h4><dl>${r.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl></section>` : ""; };
       $("detail-body").innerHTML = `<div class="detail">
         <div class="media">${img ? `<img src="${esc(img)}" alt="Photo of ${esc(u.name)}">` : unitBadge(u, scheme, 180)}</div>
@@ -925,10 +1011,10 @@
           ${recipesOf(u).map(r => `<section><h4>Recipe · ${esc(r.name)}${r.area ? " · " + esc(r.area) : ""}</h4>${stepsHtml(r)}</section>`).join("")}
           ${sec("Rank", [["Rank", esc(tier.name)], ["Who", esc(tier.note)]])}
           ${u.head === "none" ? sec(esc(PROF.legends.head), [["Head", "None (vehicle or monster)"]])
-            : u.head === "bare" ? sec(esc(PROF.legends.head), [["Head", "Bare head"], ["Skin", col(u.skin)], ["Eyes", col(u.lens)], ["Face paint", esc(u.hdetail)]])
-            : sec(esc(PROF.legends.head), [[esc(LB.helmet), col(u.helmet)], [esc(LB.lens), col(u.lens)], ["Detail", esc(u.hdetail)]])}
-          ${sec(esc(PROF.legends.body), [[esc(LB.armour), col(u.armour)], [esc(LB.secondary), col(u.secondary)], [esc(LB.trim), col(u.trim)], [esc(LB.emblem), (u.shape || scheme.shape) === "none" ? "None" : col(u.emblem) + " · " + esc(P.emblemName(u.shape || scheme.shape))]])}
-          ${sec(esc(PROF.legends.details), [[esc(LB.cloth), col(u.cloth)], [esc(LB.metal), col(u.metal)], [esc(LB.skin), PROF.skinAlways ? col(u.skin) : ""], ["Extras", esc(u.extras)]])}
+            : u.head === "bare" ? sec(esc(PROF.legends.head), [["Head", "Bare head"], ["Skin", colk("skin")], ["Eyes", colk("lens")], ["Face paint", esc(u.hdetail)]])
+            : sec(esc(PROF.legends.head), [[esc(LB.helmet), colk("helmet")], [esc(LB.lens), colk("lens")], ["Detail", esc(u.hdetail)]])}
+          ${sec(esc(PROF.legends.body), [[esc(LB.armour), colk("armour")], [esc(LB.secondary), colk("secondary")], [esc(LB.trim), colk("trim")], [esc(LB.emblem), (u.shape || scheme.shape) === "none" ? "None" : colk("emblem") + " · " + esc(P.emblemName(u.shape || scheme.shape))]])}
+          ${sec(esc(PROF.legends.details), [[esc(LB.cloth), colk("cloth")], [esc(LB.metal), colk("metal")], [esc(LB.skin), PROF.skinAlways ? colk("skin") : ""], ["Extras", esc(u.extras)]])}
           ${sec("Weapons", [["Melee", esc(u.melee)], ["Ranged", esc(u.ranged)]])}
           ${u.paints ? `<section><h4>Paint notes</h4><p class="prose">${esc(u.paints)}</p></section>` : ""}
           ${u.notes ? `<section><h4>Notes</h4><p class="prose">${esc(u.notes)}</p></section>` : ""}
@@ -982,14 +1068,14 @@
       if(sh && (!nm.value || sheets.some(s => s.n === nm.value))) nm.value = sh.n;
       if(sh && !tierTouched){
         const t = (sh.r === "Epic Hero" || sh.r === "Character") ? Math.min(2, scheme.tiers.length - 1) : 0;
-        $("f-tier").value = String(t); $("f-helmet").value = scheme.tiers[t].color;
+        $("f-tier").value = String(t); slotApi.helmet.set({hex: scheme.tiers[t].color, paint: scheme.tiers[t].paint || ""});
       }
       if(!headTouched) setHead(sh ? autoHead(sh.r) : PROF.defaultHead);
       if(sh && !selId) $("f-count").value = singleRole(sh.r) ? 1 : (sh.pb && sh.pb[0] ? (sh.pb[0][0] === sh.pb[0][1] ? sh.pb[0][0] : Math.max(1, sh.pb[0][0] - 1)) : 5);
       if(sh && !pointsTouched){ const p = ptsFor(sh, Math.max(1, parseInt($("f-count").value, 10) || 1)); if(p != null) $("f-points").value = p; }
       fillWeapons(); preview();
     });
-    $("f-tier").addEventListener("change", () => { tierTouched = true; const t = scheme.tiers[+$("f-tier").value]; if(t) $("f-helmet").value = t.color; preview(); });
+    $("f-tier").addEventListener("change", () => { tierTouched = true; const t = scheme.tiers[+$("f-tier").value]; if(t) slotApi.helmet.set({hex: t.color, paint: t.paint || ""}); preview(); });
 
     function takePhoto(file){
       if(!file) return;
@@ -1305,7 +1391,6 @@
     /* ============================================================
        Paint recipes and paints you own
        ============================================================ */
-    const PU = window.LEDGER_PAINTUI;
     const TECHNIQUES = ["Prime","Basecoat","Layer","Shade / wash","Contrast","Dry brush","Edge highlight","Highlight","Glaze","Technical","Varnish","Other"];
     const AREAS = PROF.areas;
     let owned = new Set(), ownedList = [];
@@ -1318,11 +1403,66 @@
       return `<ol class="steps">${r.steps.map(st => `<li>${PU.swatch(st.p)}<span class="st-t">${esc(st.t || "Step")}</span><span class="st-p">${esc(st.p || "—")}</span>${canWrite && st.p ? (isOwned(st.p) ? `<span class="own ok">Owned</span>` : `<span class="own no">To buy</span>`) : ""}</li>`).join("")}</ol>${r.notes ? `<p class="prose r-notes">${esc(r.notes)}</p>` : ""}`;
     }
     function renderRecipePicks(checked){
-      const box = $("f-recipes"), list = scheme.recipes || [];
+      const box = $("f-recipes"), list = scheme.recipes || [], inLib = libLive().length;
       const on = new Set(checked || [...box.querySelectorAll("input:checked")].map(i => i.value));
       box.innerHTML = list.length ? list.map(r => `<label class="stage"><input type="checkbox" value="${esc(r.id)}" ${on.has(r.id) ? "checked" : ""}><span>${esc(r.name)}${r.area ? `<small>${esc(r.area)}</small>` : ""}</span></label>`).join("")
-        : `<p class="hint-sm">No recipes yet. Write one once, then tick it on every unit that uses it.</p>`;
-      $("f-manage-recipes").textContent = list.length ? "Manage recipes" : "Create a recipe";
+        : `<p class="hint-sm">${inLib ? `No recipes in this ledger yet. You have ${plural(inLib, "recipe")} in your library.` : "No recipes yet. Write one once, then tick it on every unit that uses it."}</p>`;
+      $("f-manage-recipes").textContent = list.length ? "Manage recipes" : inLib ? "Add from your library" : "Create a recipe";
+    }
+
+    /* Recipe library: every recipe you save is also kept on your account (or in this browser), so
+       any of your ledgers can use it. Each ledger keeps its own copy too, which is what people see
+       on a shared ledger. The newest copy of a recipe wins, so an edit in one ledger reaches the
+       others the next time they're opened. */
+    let library = null, libState = "";   // libState: "", "loading", "setup" (no recipes table) or "error"
+    const libLive = () => (library || []).filter(r => !r.deleted);
+    const recipeOnly = r => ({id: r.id, name: r.name, area: r.area, notes: r.notes, steps: r.steps, at: r.at || ""});
+    const sameRecipe = (a, b) => JSON.stringify([a.name, a.area, a.notes, a.steps]) === JSON.stringify([b.name, b.area, b.notes, b.steps]);
+    const refreshRecipes = () => { renderRecipePicks(); if($("paintdlg").open && !editingRecipe) renderPaints(); };
+    async function loadLibrary(){
+      if(!canWrite || !store.getLibrary) return;
+      libState = "loading";
+      try { library = await store.getLibrary(); libState = ""; }
+      catch(err){ console.warn("Couldn't load the recipe library", err); library = null; libState = err.code === "nolib" ? "setup" : "error"; refreshRecipes(); return; }
+      const byId = new Map(library.map(r => [r.id, r]));
+      const push = [];
+      let changed = false;
+      const list = (scheme.recipes || []).map(r => {
+        const lib = byId.get(r.id);
+        if(!lib){ push.push(r); return r; }           // new to the library
+        if(lib.deleted) return r;                     // deleted from the library: this ledger keeps its copy
+        if((lib.at || "") > (r.at || "")){ if(!sameRecipe(lib, r)) changed = true; return recipeOnly(lib); }
+        if((r.at || "") > (lib.at || "") && !sameRecipe(lib, r)) push.push(r);
+        return r;
+      });
+      try {
+        if(push.length) await saveToLibrary(push);
+        if(changed) await saveRecipes(list);
+      } catch(err){ console.warn("Couldn't sync recipes with the library", err); }
+      refreshRecipes();
+    }
+    async function saveToLibrary(rows){
+      if(!library) return;   // library not available: the ledger's own copy is still saved
+      await store.putLibrary(rows);
+      const ids = new Set(rows.map(r => r.id));
+      library = library.filter(r => !ids.has(r.id)).concat(rows.map(r => ({...recipeOnly(r), deleted: r.deleted === true})));
+    }
+    function librarySection(){
+      const head = `<h4 class="em-h">Your recipe library</h4>`;
+      if(libState === "setup") return `<section class="lib">${head}<p class="hint">To reuse recipes in your other ledgers, add the recipes table to Supabase: open the SQL editor and run <code>supabase/recipes.sql</code> from this project. Recipes in this ledger work either way.</p></section>`;
+      if(libState === "error") return `<section class="lib">${head}<p class="hint">Couldn't load your recipe library. Check your connection and reopen this ledger.</p></section>`;
+      if(!library) return `<section class="lib">${head}<p class="hint">Loading your recipe library…</p></section>`;
+      const here = new Set((scheme.recipes || []).map(r => r.id));
+      const list = libLive().filter(r => !here.has(r.id)).sort((a, b) => a.name.localeCompare(b.name));
+      if(!list.length) return `<section class="lib">${head}<p class="hint">${libLive().length ? "Every recipe in your library is already in this ledger." : "Recipes you save are kept here, ready to add to your other ledgers."}</p></section>`;
+      return `<section class="lib">
+        <div class="lib-head">${head}<button type="button" class="btn-sm" data-act="lib-add-all">Add all (${list.length})</button></div>
+        <p class="hint">Recipes from your other ledgers. Add one to use it here. Changes to a recipe carry across to every ledger that has it.</p>
+        <div class="recipes">${list.map(r => `<article class="recipe lib-r">
+          <header><div><h3>${esc(r.name)}</h3><small>${esc([r.area, plural(r.steps.length, "step")].filter(Boolean).join(" · "))}</small></div>
+          <div class="row-actions"><button type="button" class="btn-sm primary" data-act="lib-add" data-id="${esc(r.id)}">Add</button><button type="button" class="btn-sm danger${libDelArmed === r.id ? " armed" : ""}" data-act="lib-del" data-id="${esc(r.id)}">${libDelArmed === r.id ? "Click again to delete" : "Delete"}</button></div></header>
+          <p class="lib-steps">${r.steps.filter(st => st.p).map(st => `<span>${PU.swatch(st.p)}${esc(st.p)}</span>`).join(`<i aria-hidden="true">→</i>`) || "No paints yet."}</p>
+        </article>`).join("")}</div></section>`;
     }
     async function saveRecipes(list){
       army = await store.saveArmy({faction: army.faction, name: army.name, scheme: {...army.scheme, recipes: list}, public: army.public}, army.id);
@@ -1337,11 +1477,16 @@
     function shoppingList(onlyUsed){
       const used = new Set(units.flatMap(u => u.recipes || []));
       const need = new Map();
-      (scheme.recipes || []).filter(r => !onlyUsed || used.has(r.id)).forEach(r => paintsOf(r).forEach(p => {
-        if(isOwned(p)) return;
+      const add = (p, why) => {
+        if(!p || isOwned(p)) return;
         const k = PU.norm(p); if(!need.has(k)) need.set(k, {label: p, recipes: []});
-        if(!need.get(k).recipes.includes(r.name)) need.get(k).recipes.push(r.name);
-      }));
+        if(!need.get(k).recipes.includes(why)) need.get(k).recipes.push(why);
+      };
+      (scheme.recipes || []).filter(r => !onlyUsed || used.has(r.id)).forEach(r => paintsOf(r).forEach(p => add(p, r.name)));
+      // Paints picked for colour areas: the army's colours, its ranks and each unit's own choices.
+      COLOR_IDS.forEach(k => add((scheme.slotPaints || {})[k], k === "emblem" ? slotLabel(k) : slotLabel(k) + " colour"));
+      scheme.tiers.forEach(t => add(t.paint, `${t.name} rank`));
+      units.forEach(u => Object.values(u.slotPaints || {}).forEach(p => add(p, u.name)));
       return [...need.values()].sort((a, b) => a.label.localeCompare(b.label));
     }
     function updateBuyBadge(){
@@ -1350,7 +1495,7 @@
       [$("buy-badge"), $("buy-tab")].forEach(b => { if(!b) return; b.hidden = !n; b.textContent = n; });
     }
 
-    let pdTab = "recipes", editingRecipe = null, buyAll = false, ownedQuery = "";
+    let pdTab = "recipes", editingRecipe = null, buyAll = false, ownedQuery = "", libDelArmed = "";
     function openPaints(tab){
       pdTab = tab || pdTab; editingRecipe = null;
       $("pd-tabs").querySelectorAll("[data-tab]").forEach(b => b.setAttribute("aria-pressed", b.dataset.tab === pdTab));
@@ -1367,13 +1512,15 @@
         body.innerHTML = `
           <div class="pd-head"><p class="hint">Write a recipe once, then tick it on every unit that uses it. Paints you don't own show as <span class="own no">To buy</span>.</p>
           ${canWrite ? `<button type="button" class="primary btn-sm" data-act="new-recipe">+ New recipe</button>` : ""}</div>
+          ${canWrite ? `<h4 class="em-h">In this ledger</h4>` : ""}
           ${list.length ? `<div class="recipes">${list.map(r => {
             const n = units.filter(u => (u.recipes || []).includes(r.id)).length;
             return `<article class="recipe">
               <header><div><h3>${esc(r.name)}</h3><small>${esc([r.area, n ? plural(n, "unit") : "Not used yet"].filter(Boolean).join(" · "))}</small></div>
               ${canWrite ? `<div class="row-actions"><button type="button" class="btn-sm" data-act="edit-recipe" data-id="${esc(r.id)}">Edit</button><button type="button" class="btn-sm" data-act="dup-recipe" data-id="${esc(r.id)}">Copy</button></div>` : ""}</header>
               ${stepsHtml(r)}</article>`; }).join("")}</div>`
-            : `<div class="empty">No recipes yet.${canWrite ? " Start with your main armour colour." : ""}</div>`}`;
+            : `<div class="empty">No recipes yet.${canWrite ? (libLive().length ? " Add some from your library below, or write a new one." : " Start with your main armour colour.") : ""}</div>`}
+          ${canWrite ? librarySection() : ""}`;
       } else if(pdTab === "owned"){
         const q = PU.norm(ownedQuery);
         const shown = ownedList.filter(p => !q || PU.norm(p).includes(q)).sort((a, b) => a.localeCompare(b));
@@ -1388,11 +1535,11 @@
       } else {
         const list = shoppingList(!buyAll);
         body.innerHTML = `
-          <div class="pd-head"><p class="hint">Paints in your recipes that aren't in <em>My paints</em>.</p>
+          <div class="pd-head"><p class="hint">Paints in your colours and recipes that aren't in <em>My paints</em>.</p>
           <label class="check"><input type="checkbox" id="buy-all" ${buyAll ? "checked" : ""}> Include recipes not used by any unit</label></div>
-          ${list.length ? `<ul class="buy">${list.map(it => `<li>${PU.swatch(it.label)}<span class="b-n"><strong>${esc(it.label)}</strong><small>For ${esc(it.recipes.join(", "))}</small></span><button type="button" class="btn-sm" data-act="got" data-p="${esc(it.label)}">I have it</button></li>`).join("")}</ul>
+          ${list.length ? `<ul class="buy">${list.map(it => `<li>${PU.swatch(it.label)}<span class="b-n"><strong>${esc(it.label)}</strong><small>For ${esc(it.recipes.length > 3 ? it.recipes.slice(0, 3).join(", ") + ` and ${it.recipes.length - 3} more` : it.recipes.join(", "))}</small></span><button type="button" class="btn-sm" data-act="got" data-p="${esc(it.label)}">I have it</button></li>`).join("")}</ul>
             <div class="row-actions"><button type="button" class="btn-sm" data-act="copy-buy">Copy list</button><span class="hint" id="buy-msg"></span></div>`
-          : `<div class="empty">${(scheme.recipes || []).length ? "You have every paint you need." : "Add some recipes first."}</div>`}`;
+          : `<div class="empty">${(scheme.recipes || []).length || Object.keys(scheme.slotPaints || {}).length || units.some(u => Object.keys(u.slotPaints || {}).length) ? "You have every paint you need." : "Pick paints for your colours, or add some recipes first."}</div>`}`;
         $("buy-all").addEventListener("change", e => { buyAll = e.target.checked; renderPaints(); });
       }
     }
@@ -1414,7 +1561,7 @@
           <button type="button" class="btn-sm" data-act="add-step">+ Add step</button>
           <label>Notes<textarea id="re-notes" rows="2" maxlength="300" placeholder="e.g. thin the highlight, only on top edges">${esc(r.notes)}</textarea></label>
           <div class="r-bar">
-            ${r.isNew ? "" : `<button type="button" class="danger" data-act="del-recipe">Delete recipe</button>`}
+            ${r.isNew ? "" : `<button type="button" class="danger" data-act="del-recipe">${library ? "Remove from this ledger" : "Delete recipe"}</button>`}
             <span class="hint" id="re-msg"></span>
             <div class="ed-bar-actions"><button type="button" data-act="cancel-recipe">Cancel</button><button type="button" class="primary" data-act="save-recipe">Save recipe</button></div>
           </div>
@@ -1444,8 +1591,10 @@
     $("paintdlg").addEventListener("click", async e => {
       if(e.target === $("paintdlg")){ $("paintdlg").close(); return; }
       const tab = e.target.closest("[data-tab]");
-      if(tab){ syncRecipeDraft(); if(editingRecipe && !confirmDropRecipe()) return; editingRecipe = null; pdTab = tab.dataset.tab; renderPaints(); return; }
-      const b = e.target.closest("[data-act]"); if(!b) return;
+      if(tab){ libDelArmed = ""; syncRecipeDraft(); if(editingRecipe && !confirmDropRecipe()) return; editingRecipe = null; pdTab = tab.dataset.tab; renderPaints(); return; }
+      const b = e.target.closest("[data-act]");
+      if(libDelArmed && (!b || b.dataset.act !== "lib-del")){ libDelArmed = ""; if(!b){ renderPaints(); return; } }
+      if(!b) return;
       const act = b.dataset.act;
       if(editingRecipe) syncRecipeDraft();
       if(act === "new-recipe"){ editingRecipe = {id: S.newId(), name: "", area: "", notes: "", steps: [{t: "Prime", p: ""}, {t: "Basecoat", p: ""}, {t: "Shade / wash", p: ""}, {t: "Edge highlight", p: ""}], isNew: true}; renderPaints(); }
@@ -1464,19 +1613,39 @@
         if(!r.name){ $("re-msg").textContent = "Give the recipe a name."; $("re-name").focus(); return; }
         const list = (scheme.recipes || []).filter(x => x.id !== r.id);
         const idx = (scheme.recipes || []).findIndex(x => x.id === r.id);
-        const clean = {id: r.id, name: r.name, area: r.area, notes: r.notes, steps: r.steps};
+        const clean = {id: r.id, name: r.name, area: r.area, notes: r.notes, steps: r.steps, at: new Date().toISOString()};
         if(idx >= 0) list.splice(idx, 0, clean); else list.push(clean);
         b.disabled = true;
-        try { await saveRecipes(list); editingRecipe = null; renderPaints(); toast(`Saved recipe ${clean.name}`); }
-        catch(err){ $("re-msg").textContent = "Couldn't save: " + errText(err); b.disabled = false; }
+        try { await saveRecipes(list); editingRecipe = null; renderPaints(); }
+        catch(err){ $("re-msg").textContent = "Couldn't save: " + errText(err); b.disabled = false; return; }
+        try { await saveToLibrary([clean]); toast(`Saved recipe ${clean.name}`); }
+        catch(err){ toast(`Saved ${clean.name} in this ledger, but not to your recipe library: ${errText(err)}`); }
+        refreshRecipes();
       }
       else if(act === "del-recipe"){
-        if(!delArmed){ delArmed = true; b.classList.add("armed"); b.textContent = "Click again to delete"; return; }
-        const gone = editingRecipe;
+        if(!delArmed){ delArmed = true; b.classList.add("armed"); b.textContent = library ? "Click again to remove" : "Click again to delete"; return; }
+        const gone = editingRecipe, kept = libLive().some(x => x.id === gone.id);
         try {
           await saveRecipes((scheme.recipes || []).filter(x => x.id !== gone.id)); editingRecipe = null; delArmed = false; renderPaints();
-          toast(`Deleted recipe ${gone.name}`, async () => { await saveRecipes((scheme.recipes || []).concat({id: gone.id, name: gone.name, area: gone.area, notes: gone.notes, steps: gone.steps})); renderPaints(); });
+          toast(kept ? `Removed ${gone.name} from this ledger. It's still in your library.` : `Deleted recipe ${gone.name}`, async () => { await saveRecipes((scheme.recipes || []).concat(recipeOnly(gone))); renderPaints(); });
         } catch(err){ $("re-msg").textContent = "Couldn't delete: " + errText(err); }
+      }
+      else if(act === "lib-add" || act === "lib-add-all"){
+        const here = new Set((scheme.recipes || []).map(r => r.id));
+        const add = libLive().filter(r => !here.has(r.id) && (act === "lib-add-all" || r.id === b.dataset.id)).sort((x, y) => x.name.localeCompare(y.name));
+        if(!add.length) return;
+        b.disabled = true;
+        try { await saveRecipes((scheme.recipes || []).concat(add.map(recipeOnly))); renderPaints(); toast(add.length === 1 ? `Added ${add[0].name} to this ledger` : `Added ${plural(add.length, "recipe")} to this ledger`); }
+        catch(err){ b.disabled = false; toast("Couldn't add: " + errText(err)); }
+      }
+      else if(act === "lib-del"){
+        const r = libLive().find(x => x.id === b.dataset.id); if(!r) return;
+        if(libDelArmed !== r.id){ libDelArmed = r.id; renderPaints(); return; }
+        libDelArmed = "";
+        try {
+          await saveToLibrary([{...r, deleted: true, at: new Date().toISOString()}]); renderPaints(); renderRecipePicks();
+          toast(`Deleted ${r.name} from your library`, async () => { await saveToLibrary([{...r, deleted: false, at: new Date().toISOString()}]); refreshRecipes(); });
+        } catch(err){ toast("Couldn't delete: " + errText(err)); renderPaints(); }
       }
       else if(act === "add-owned") addOwned();
       else if(act === "rm-owned"){ try { await saveOwned(ownedList.filter(p => p !== b.dataset.p)); renderPaints(); } catch(err){ toast("Couldn't save: " + errText(err)); } }
@@ -1500,6 +1669,7 @@
     try { units = await store.listUnits(army.id); }
     catch(err){ console.error(err); $("cards").innerHTML = `<div class="empty">Couldn't load units: ${esc(errText(err))}</div>`; return; }
     newUnit(false);
+    loadLibrary();
   }
 
   /* ============================================================
