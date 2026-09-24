@@ -2,7 +2,7 @@
 (function(){
   "use strict";
   const DATA = window.LEDGER_FACTIONS || {factions: []};
-  const P = window.LEDGER_PRESETS, ART = window.LEDGER_ART, S = window.LEDGER_STORE;
+  const P = window.LEDGER_PRESETS, ART = window.LEDGER_ART, S = window.LEDGER_STORE, PU = window.LEDGER_PAINTUI;
   const STATUS = S.STATUS;
   const FACTIONS = DATA.factions;
   const FBY = Object.fromEntries(FACTIONS.map(f => [f.id, f]));
@@ -258,7 +258,10 @@
     PROF = P.profileFor(f.id);
     const draft = army ? {name: army.name, scheme: JSON.parse(JSON.stringify(army.scheme))} : {name: "", scheme: P.presetFor(f.id)};
     fillSkin(draft.scheme, f.id);
+    draft.scheme.slotPaints = draft.scheme.slotPaints || {};
     const known = P.schemesFor(f.id);
+    let ownedList = [];
+    if(store.canWrite) store.getPaints().then(l => { ownedList = l; }).catch(() => {});
     const editing = !!army;
     document.title = (editing ? "Colours · " + army.name : "New " + f.name + " ledger") + " · Livery Ledger";
     const locked = !store.canWrite;
@@ -283,12 +286,11 @@
           </div>` : ""}
           <div class="panel">
             <h3>Colours</h3>
-            <p class="hint">Pick a colour, or tap a swatch.</p>
+            <p class="hint">Pick the paint you use for each area, or tap a swatch for a plain colour.</p>
             <div class="cgrid">${colorKeys().map(([k, label]) => `
               <div class="cfield">
-                <label for="s-${k}">${label}</label>
-                <input type="color" id="s-${k}" value="${esc(draft.scheme.colors[k])}">
-                <span class="cname" id="s-${k}-n">${esc(cname(draft.scheme.colors[k]))}</span>
+                <span class="cf-l">${label}</span>
+                <span id="s-${k}"></span>
                 <div class="swatches">${QUICK.map(n => `<button type="button" class="sw" style="background:${quickHex(n)}" title="${n}" aria-label="${label}: ${n}" data-sw="${k}" data-hex="${quickHex(n)}"></button>`).join("")}</div>
               </div>`).join("")}</div>
           </div>
@@ -353,19 +355,34 @@
       $("s-tiers").innerHTML = sch.tiers.map((t, i) => `
         <div class="tier">
           <label>Rank ${i + 1}<input data-tname="${i}" maxlength="40" value="${esc(t.name)}" placeholder="e.g. Veteran"></label>
-          <label>Colour<input type="color" data-tcolor="${i}" value="${esc(t.color)}"></label>
+          <label>Colour<span data-tslot="${i}"></span></label>
           <button type="button" class="btn-sm" data-tdel="${i}" ${sch.tiers.length < 2 ? "disabled" : ""} aria-label="Remove rank ${i + 1}">Remove</button>
           <label class="full" style="grid-column:1/-1">Who uses it<input data-tnote="${i}" maxlength="80" value="${esc(t.note)}" placeholder="e.g. Sword Brethren"></label>
         </div>`).join("");
       $("s-addtier").disabled = sch.tiers.length >= 8;
+      $("s-tiers").querySelectorAll("[data-tslot]").forEach(h => {
+        const i = +h.dataset.tslot;
+        PU.slot(h, {...slotOpts, label: `Rank ${i + 1} colour`, value: {hex: sch.tiers[i].color, paint: sch.tiers[i].paint},
+          onChange: v => { sch.tiers[i].color = v.hex; sch.tiers[i].paint = v.paint; setupDirty = true; renderPreview(); }});
+      });
     }
     function renderPreview(){
       $("s-preview").innerHTML = sch.tiers.map(t => `<div class="pv-tier">${tierBadge(sch, t, 60)}<span><strong>${esc(t.name || "Rank")}</strong><small>${esc(t.note || cname(t.color) + " " + PROF.head)}</small></span></div>`).join("");
       $("s-shapes").querySelectorAll("[data-shape]").forEach(b => { b.setAttribute("aria-pressed", b.dataset.shape === sch.shape); b.innerHTML = ART.shapeIcon(b.dataset.shape, sch.colors.emblem, 34) + esc(P.SHAPES.find(s => s[0] === b.dataset.shape)[1]); });
       renderCurrent();
-      colorKeys().forEach(([k]) => { $("s-" + k).value = sch.colors[k]; $("s-" + k + "-n").textContent = cname(sch.colors[k]); });
+      colorKeys().forEach(([k]) => slots[k].set({hex: sch.colors[k], paint: sch.slotPaints[k] || ""}));
       app.querySelectorAll("[data-style]").forEach(b => b.setAttribute("aria-pressed", b.dataset.style === sch.style));
     }
+    // Paint pickers for the army colours and rank colours.
+    const slotOpts = {
+      owned: () => new Set(ownedList.map(PU.norm)), mine: () => ownedList,
+      swatches: () => colorKeys().map(([k]) => ({hex: sch.colors[k], paint: sch.slotPaints[k] || ""})).concat(sch.tiers.map(t => ({hex: t.color, paint: t.paint || ""})))
+    };
+    const slots = {};
+    colorKeys().forEach(([k, label]) => {
+      slots[k] = PU.slot($("s-" + k), {...slotOpts, label, value: {hex: sch.colors[k], paint: sch.slotPaints[k]},
+        onChange: v => { sch.colors[k] = v.hex; if(v.paint) sch.slotPaints[k] = v.paint; else delete sch.slotPaints[k]; setupDirty = true; renderPreview(); }});
+    });
     renderIcons(); renderTiers(); renderPreview();
 
     let setupDirty = false;
@@ -393,13 +410,10 @@
     function onInput(e){
       const t = e.target;
       if(t.id !== "s-emq") setupDirty = true;
-      const ck = colorKeys().find(([k]) => t.id === "s-" + k);
-      if(ck){ sch.colors[ck[0]] = t.value; renderPreview(); return; }
       if(t.id === "s-emq"){ emq = t.value.trim(); emLimit = 90; renderIcons(); return; }
       if(t.dataset.tname != null){ sch.tiers[+t.dataset.tname].name = t.value; renderPreview(); }
       if(t.dataset.tnote != null){ sch.tiers[+t.dataset.tnote].note = t.value; renderPreview(); }
-      if(t.dataset.tcolor != null){ sch.tiers[+t.dataset.tcolor].color = t.value; renderPreview(); }
-      if(t.id === "s-reset" && t.checked){ const p = P.presetFor(f.id); Object.assign(sch, p); renderTiers(); renderPreview(); t.checked = false; $("s-msg").textContent = ""; }
+      if(t.id === "s-reset" && t.checked){ const p = P.presetFor(f.id); Object.assign(sch, p, {slotPaints: {}}); renderTiers(); renderPreview(); t.checked = false; $("s-msg").textContent = ""; }
     }
     let armed = false;
     async function onClick(e){
@@ -409,19 +423,20 @@
         // Keep rank names (they may have been edited) but recolour the standard ranks to match.
         const k = known[+t.dataset.scheme];
         sch.colors = {...sch.colors, ...k.colors};
+        Object.keys(k.colors).forEach(c => delete sch.slotPaints[c]);
         if(k.shape) sch.shape = k.shape;
         const std = P.tiersFor(f.id, sch.colors);
-        sch.tiers.forEach((tr, i) => { if(std[i]) tr.color = std[i].color; });
+        sch.tiers.forEach((tr, i) => { if(std[i]){ tr.color = std[i].color; tr.paint = ""; } });
         renderTiers(); renderPreview();
         $("s-msg").classList.remove("err"); $("s-msg").textContent = `Using the ${k.name} scheme. Save to keep it.`;
         return;
       }
-      if(t.dataset.sw){ sch.colors[t.dataset.sw] = t.dataset.hex; renderPreview(); return; }
+      if(t.dataset.sw && !t.closest(".cpop")){ sch.colors[t.dataset.sw] = t.dataset.hex; delete sch.slotPaints[t.dataset.sw]; renderPreview(); return; }
       if(t.dataset.shape){ sch.shape = t.dataset.shape; renderPreview(); return; }
       if(t.id === "s-emmore"){ emLimit += 90; renderIcons(); return; }
       if(t.dataset.style){ sch.style = t.dataset.style; renderPreview(); return; }
       if(t.dataset.tdel != null){ sch.tiers.splice(+t.dataset.tdel, 1); renderTiers(); renderPreview(); return; }
-      if(t.id === "s-addtier"){ sch.tiers.push({name: "New rank", note: "", color: sch.colors.secondary}); renderTiers(); renderPreview(); return; }
+      if(t.id === "s-addtier"){ sch.tiers.push({name: "New rank", note: "", color: sch.colors.secondary, paint: sch.slotPaints.secondary || ""}); renderTiers(); renderPreview(); return; }
       if(t.id === "s-save"){
         const saved = await saveSetup();
         if(saved) location.hash = "#/army/" + saved.id;
@@ -469,7 +484,6 @@
     const sheetFor = n => sheets.find(u => u.n === n && !u.t) || sheets.find(u => u.n === n);
     const sheetIcons = suggestedIcons(FBY[army.faction] || {id: army.faction, name: f.name}).slice(0, 250);
     if(String(scheme.shape).startsWith("icon:") && !sheetIcons.some(i => "icon:" + i.id === scheme.shape) && P.ICON_BY_ID[scheme.shape.slice(5)]) sheetIcons.unshift(P.ICON_BY_ID[scheme.shape.slice(5)]);
-    const schemeColors = [...new Set([...Object.values(scheme.colors), ...scheme.tiers.map(t => t.color)])];
 
     /* Points from the datasheet: base cost, then any model-count bracket that applies (later brackets win). */
     function ptsFor(sh, count){
@@ -481,7 +495,8 @@
     const fmt = n => Number(n || 0).toLocaleString("en");
     const singleRole = r => ["Epic Hero","Character","Vehicle","Monster","Dedicated Transport","Fortification"].includes(r);
 
-    const colorField = (id, label) => `<label>${label}<span class="cpair"><input type="color" id="f-${id}" list="dl-scheme"><span class="cname" data-cn="${id}"></span></span></label>`;
+    // A paint picker per colour area (the hidden input #f-<id> holds the colour).
+    const colorField = (id, label) => `<label>${label}<span data-slot="${id}"></span></label>`;
     const PREF_KEY = "ll-list-prefs";
     let prefs = {group: "role", sort: "rank"};
     try { prefs = {...prefs, ...JSON.parse(localStorage.getItem(PREF_KEY) || "{}")}; } catch(e){}
@@ -646,7 +661,6 @@
           </footer>
         </form>
       </dialog>
-      <datalist id="dl-scheme">${schemeColors.map(c => `<option value="${c}"></option>`).join("")}</datalist>
 
       <dialog id="paintdlg" class="paintdlg" aria-labelledby="pd-h">
         <div class="pd-wrap">
@@ -735,6 +749,8 @@
       o.status = S.deriveStatus(o.stages, o.painted, o.count);
       o.noHelmet = o.head === "bare";
       COLOR_IDS.forEach(k => o[k] = $("f-" + k).value);
+      o.slotPaints = {};
+      COLOR_IDS.forEach(k => { const p = slotApi[k].get().paint; if(p) o.slotPaints[k] = p; });
       return o;
     }
     function writeForm(u){
@@ -752,9 +768,27 @@
       $("f-hdetail").value = d.hdetail; setHead(headOf(d));
       $("f-shape").value = [...$("f-shape").options].some(o => o.value === d.shape) ? d.shape : "";
       ["extras","melee","ranged","paints","notes"].forEach(k => $("f-" + k).value = d[k] || "");
-      COLOR_IDS.forEach(k => $("f-" + k).value = ART.hexOk(d[k]) ? d[k] : (defaults()[k] || "#1f1f22"));
+      COLOR_IDS.forEach(k => { const hex = ART.hexOk(d[k]) ? d[k] : (defaults()[k] || "#1f1f22"); slotApi[k].set({hex, paint: paintOf(d, k, hex)}); });
       fillWeapons(); preview();
     }
+    // Paint pickers in the editor. A unit colour that matches the army (or rank) colour shows the
+    // army's paint, so units made before paints were picked still read "Abaddon Black".
+    function paintOf(u, k, hex){
+      const own = (u.slotPaints || {})[k]; if(own) return own;
+      const tier = scheme.tiers[u.tier] || scheme.tiers[0] || {};
+      const armyHex = k === "helmet" ? tier.color : scheme.colors[k], armyPaint = k === "helmet" ? tier.paint : (scheme.slotPaints || {})[k];
+      return armyPaint && hex === armyHex ? armyPaint : "";
+    }
+    const slotLabel = k => k === "emblem" ? LB.emblem + " colour" : LB[k];
+    const slotApi = {};
+    form.querySelectorAll("[data-slot]").forEach(h => {
+      const k = h.dataset.slot;
+      slotApi[k] = PU.slot(h, {id: "f-" + k, label: slotLabel(k), value: {hex: scheme.colors[k] || "#1f1f22", paint: ""},
+        owned: () => owned, mine: () => ownedList,
+        swatches: () => Object.keys(scheme.colors).filter(c => COLOR_IDS.includes(c)).map(c => ({hex: scheme.colors[c], paint: (scheme.slotPaints || {})[c] || ""}))
+          .concat(scheme.tiers.map(t => ({hex: t.color, paint: t.paint || ""}))),
+        onChange: () => { setDirty(true); preview(); }});
+    });
     const sheetNow = () => { const sel = $("f-sheet").value; return sel && sel !== "__custom" ? sheetFor(sel) : null; };
     const FACE_OPTS = ["War paint","Scars","Tattoos","Bionic eye","Beard","Service studs"];
     combo($("f-melee"), () => (sheetNow() || {}).wm || []);
@@ -782,7 +816,6 @@
       $("pv-name").textContent = u.name || u.datasheet || "Unnamed unit";
       const tier = scheme.tiers[u.tier];
       $("pv-meta").textContent = [u.datasheet || "Unit", tier && tier.name, plural(u.count, "model"), u.points ? u.points + " pts" : ""].filter(Boolean).join(" · ");
-      app.querySelectorAll("[data-cn]").forEach(s => s.textContent = cname($("f-" + s.dataset.cn).value));
       $("painted-of").textContent = "of " + u.count;
       $("f-painted").max = u.count;
       updatePointsHint();
@@ -907,8 +940,12 @@
       const o = {...u};
       COLOR_IDS.forEach(k => { if(!ART.hexOk(o[k])) o[k] = k === "helmet" ? (scheme.tiers[o.tier] || scheme.tiers[0]).color : scheme.colors[k]; });
       o.head = headOf(o);
+      o.slotPaints = {};
+      COLOR_IDS.forEach(k => { const p = paintOf(u, k, o[k]); if(p) o.slotPaints[k] = p; });
       return o;
     };
+    // Paint name for a colour area if one was picked, otherwise the colour's name.
+    const nameOf = (u, k) => (u.slotPaints || {})[k] ? PU.shortName(u.slotPaints[k]) : cname(u[k]);
     function cardHtml(u){
       u = withColours(u);
       const img = safeImg(u.image), tier = scheme.tiers[u.tier] || {};
@@ -920,9 +957,9 @@
           <div class="card-top">${unitBadge(u, scheme, 60)}<div><h3>${esc(u.name)}</h3><div class="type">${esc([u.datasheet && u.datasheet !== u.name ? u.datasheet : "", u.role].filter(Boolean).join(" · ") || "Unit")}</div></div>${u.points ? `<span class="pts">${fmt(u.points)}<small>pts</small></span>` : ""}</div>
           <dl>
             <dt>Rank</dt><dd>${esc(tier.name || "—")}</dd>
-            ${u.head === "none" ? "" : `<dt>${u.head === "bare" ? "Face" : esc(LB.helmet)}</dt><dd>${u.head === "bare" ? chip(u.skin) + "Bare head" : chip(u.helmet) + esc(cname(u.helmet))}${u.hdetail ? ", " + esc(u.hdetail) : ""}</dd>`}
-            <dt>${esc(LB.armour)}</dt><dd>${chip(u.armour)}${esc(cname(u.armour))}, ${esc(cname(u.trim))} ${esc(LB.trim.toLowerCase())}</dd>
-            ${PROF.skinAlways ? `<dt>${esc(LB.skin)}</dt><dd>${chip(u.skin)}${esc(cname(u.skin))}</dd>` : ""}
+            ${u.head === "none" ? "" : `<dt>${u.head === "bare" ? "Face" : esc(LB.helmet)}</dt><dd>${u.head === "bare" ? chip(u.skin) + "Bare head" : chip(u.helmet) + esc(nameOf(u, "helmet"))}${u.hdetail ? ", " + esc(u.hdetail) : ""}</dd>`}
+            <dt>${esc(LB.armour)}</dt><dd>${chip(u.armour)}${esc(nameOf(u, "armour"))}, ${esc(nameOf(u, "trim"))} ${esc(LB.trim.toLowerCase())}</dd>
+            ${PROF.skinAlways ? `<dt>${esc(LB.skin)}</dt><dd>${chip(u.skin)}${esc(nameOf(u, "skin"))}</dd>` : ""}
             <dt>Weapons</dt><dd>${esc(weaponsText(u))}</dd>
             ${recipesOf(u).length ? `<dt>Recipes</dt><dd>${esc(recipesOf(u).map(r => r.name).join(", "))}${canWrite && missingFor(u).length ? ` <span class="need">${missingFor(u).length} to buy</span>` : ""}</dd>` : ""}
           </dl>
@@ -958,6 +995,9 @@
       const u = withColours(found);
       const img = safeImg(u.image), tier = scheme.tiers[u.tier] || {};
       const col = hex => ART.hexOk(hex) ? chip(hex) + esc(cname(hex)) : "";
+      // Colour area: the paint (with Owned / To buy) or the plain colour.
+      const colk = k => { if(!ART.hexOk(u[k])) return ""; const p = u.slotPaints[k];
+        return chip(u[k]) + esc(p || cname(u[k])) + (p && canWrite ? (isOwned(p) ? ` <span class="own ok">Owned</span>` : ` <span class="own no">To buy</span>`) : ""); };
       const sec = (title, rows) => { const r = rows.filter(x => x[1]); return r.length ? `<section><h4>${title}</h4><dl>${r.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl></section>` : ""; };
       $("detail-body").innerHTML = `<div class="detail">
         <div class="media">${img ? `<img src="${esc(img)}" alt="Photo of ${esc(u.name)}">` : unitBadge(u, scheme, 180)}</div>
@@ -971,10 +1011,10 @@
           ${recipesOf(u).map(r => `<section><h4>Recipe · ${esc(r.name)}${r.area ? " · " + esc(r.area) : ""}</h4>${stepsHtml(r)}</section>`).join("")}
           ${sec("Rank", [["Rank", esc(tier.name)], ["Who", esc(tier.note)]])}
           ${u.head === "none" ? sec(esc(PROF.legends.head), [["Head", "None (vehicle or monster)"]])
-            : u.head === "bare" ? sec(esc(PROF.legends.head), [["Head", "Bare head"], ["Skin", col(u.skin)], ["Eyes", col(u.lens)], ["Face paint", esc(u.hdetail)]])
-            : sec(esc(PROF.legends.head), [[esc(LB.helmet), col(u.helmet)], [esc(LB.lens), col(u.lens)], ["Detail", esc(u.hdetail)]])}
-          ${sec(esc(PROF.legends.body), [[esc(LB.armour), col(u.armour)], [esc(LB.secondary), col(u.secondary)], [esc(LB.trim), col(u.trim)], [esc(LB.emblem), (u.shape || scheme.shape) === "none" ? "None" : col(u.emblem) + " · " + esc(P.emblemName(u.shape || scheme.shape))]])}
-          ${sec(esc(PROF.legends.details), [[esc(LB.cloth), col(u.cloth)], [esc(LB.metal), col(u.metal)], [esc(LB.skin), PROF.skinAlways ? col(u.skin) : ""], ["Extras", esc(u.extras)]])}
+            : u.head === "bare" ? sec(esc(PROF.legends.head), [["Head", "Bare head"], ["Skin", colk("skin")], ["Eyes", colk("lens")], ["Face paint", esc(u.hdetail)]])
+            : sec(esc(PROF.legends.head), [[esc(LB.helmet), colk("helmet")], [esc(LB.lens), colk("lens")], ["Detail", esc(u.hdetail)]])}
+          ${sec(esc(PROF.legends.body), [[esc(LB.armour), colk("armour")], [esc(LB.secondary), colk("secondary")], [esc(LB.trim), colk("trim")], [esc(LB.emblem), (u.shape || scheme.shape) === "none" ? "None" : colk("emblem") + " · " + esc(P.emblemName(u.shape || scheme.shape))]])}
+          ${sec(esc(PROF.legends.details), [[esc(LB.cloth), colk("cloth")], [esc(LB.metal), colk("metal")], [esc(LB.skin), PROF.skinAlways ? colk("skin") : ""], ["Extras", esc(u.extras)]])}
           ${sec("Weapons", [["Melee", esc(u.melee)], ["Ranged", esc(u.ranged)]])}
           ${u.paints ? `<section><h4>Paint notes</h4><p class="prose">${esc(u.paints)}</p></section>` : ""}
           ${u.notes ? `<section><h4>Notes</h4><p class="prose">${esc(u.notes)}</p></section>` : ""}
@@ -1028,14 +1068,14 @@
       if(sh && (!nm.value || sheets.some(s => s.n === nm.value))) nm.value = sh.n;
       if(sh && !tierTouched){
         const t = (sh.r === "Epic Hero" || sh.r === "Character") ? Math.min(2, scheme.tiers.length - 1) : 0;
-        $("f-tier").value = String(t); $("f-helmet").value = scheme.tiers[t].color;
+        $("f-tier").value = String(t); slotApi.helmet.set({hex: scheme.tiers[t].color, paint: scheme.tiers[t].paint || ""});
       }
       if(!headTouched) setHead(sh ? autoHead(sh.r) : PROF.defaultHead);
       if(sh && !selId) $("f-count").value = singleRole(sh.r) ? 1 : (sh.pb && sh.pb[0] ? (sh.pb[0][0] === sh.pb[0][1] ? sh.pb[0][0] : Math.max(1, sh.pb[0][0] - 1)) : 5);
       if(sh && !pointsTouched){ const p = ptsFor(sh, Math.max(1, parseInt($("f-count").value, 10) || 1)); if(p != null) $("f-points").value = p; }
       fillWeapons(); preview();
     });
-    $("f-tier").addEventListener("change", () => { tierTouched = true; const t = scheme.tiers[+$("f-tier").value]; if(t) $("f-helmet").value = t.color; preview(); });
+    $("f-tier").addEventListener("change", () => { tierTouched = true; const t = scheme.tiers[+$("f-tier").value]; if(t) slotApi.helmet.set({hex: t.color, paint: t.paint || ""}); preview(); });
 
     function takePhoto(file){
       if(!file) return;
@@ -1351,7 +1391,6 @@
     /* ============================================================
        Paint recipes and paints you own
        ============================================================ */
-    const PU = window.LEDGER_PAINTUI;
     const TECHNIQUES = ["Prime","Basecoat","Layer","Shade / wash","Contrast","Dry brush","Edge highlight","Highlight","Glaze","Technical","Varnish","Other"];
     const AREAS = PROF.areas;
     let owned = new Set(), ownedList = [];
@@ -1438,11 +1477,16 @@
     function shoppingList(onlyUsed){
       const used = new Set(units.flatMap(u => u.recipes || []));
       const need = new Map();
-      (scheme.recipes || []).filter(r => !onlyUsed || used.has(r.id)).forEach(r => paintsOf(r).forEach(p => {
-        if(isOwned(p)) return;
+      const add = (p, why) => {
+        if(!p || isOwned(p)) return;
         const k = PU.norm(p); if(!need.has(k)) need.set(k, {label: p, recipes: []});
-        if(!need.get(k).recipes.includes(r.name)) need.get(k).recipes.push(r.name);
-      }));
+        if(!need.get(k).recipes.includes(why)) need.get(k).recipes.push(why);
+      };
+      (scheme.recipes || []).filter(r => !onlyUsed || used.has(r.id)).forEach(r => paintsOf(r).forEach(p => add(p, r.name)));
+      // Paints picked for colour areas: the army's colours, its ranks and each unit's own choices.
+      COLOR_IDS.forEach(k => add((scheme.slotPaints || {})[k], k === "emblem" ? slotLabel(k) : slotLabel(k) + " colour"));
+      scheme.tiers.forEach(t => add(t.paint, `${t.name} rank`));
+      units.forEach(u => Object.values(u.slotPaints || {}).forEach(p => add(p, u.name)));
       return [...need.values()].sort((a, b) => a.label.localeCompare(b.label));
     }
     function updateBuyBadge(){
@@ -1491,11 +1535,11 @@
       } else {
         const list = shoppingList(!buyAll);
         body.innerHTML = `
-          <div class="pd-head"><p class="hint">Paints in your recipes that aren't in <em>My paints</em>.</p>
+          <div class="pd-head"><p class="hint">Paints in your colours and recipes that aren't in <em>My paints</em>.</p>
           <label class="check"><input type="checkbox" id="buy-all" ${buyAll ? "checked" : ""}> Include recipes not used by any unit</label></div>
-          ${list.length ? `<ul class="buy">${list.map(it => `<li>${PU.swatch(it.label)}<span class="b-n"><strong>${esc(it.label)}</strong><small>For ${esc(it.recipes.join(", "))}</small></span><button type="button" class="btn-sm" data-act="got" data-p="${esc(it.label)}">I have it</button></li>`).join("")}</ul>
+          ${list.length ? `<ul class="buy">${list.map(it => `<li>${PU.swatch(it.label)}<span class="b-n"><strong>${esc(it.label)}</strong><small>For ${esc(it.recipes.length > 3 ? it.recipes.slice(0, 3).join(", ") + ` and ${it.recipes.length - 3} more` : it.recipes.join(", "))}</small></span><button type="button" class="btn-sm" data-act="got" data-p="${esc(it.label)}">I have it</button></li>`).join("")}</ul>
             <div class="row-actions"><button type="button" class="btn-sm" data-act="copy-buy">Copy list</button><span class="hint" id="buy-msg"></span></div>`
-          : `<div class="empty">${(scheme.recipes || []).length ? "You have every paint you need." : "Add some recipes first."}</div>`}`;
+          : `<div class="empty">${(scheme.recipes || []).length || Object.keys(scheme.slotPaints || {}).length || units.some(u => Object.keys(u.slotPaints || {}).length) ? "You have every paint you need." : "Pick paints for your colours, or add some recipes first."}</div>`}`;
         $("buy-all").addEventListener("change", e => { buyAll = e.target.checked; renderPaints(); });
       }
     }

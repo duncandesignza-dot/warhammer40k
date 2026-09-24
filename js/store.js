@@ -19,6 +19,14 @@
   const HEX = /^#[0-9a-f]{6}$/i;
   const COLOR_FIELDS = ["helmet","skin","lens","armour","secondary","trim","emblem","cloth","metal"];
 
+  // Paint chosen for each colour area, e.g. {armour: "Citadel Abaddon Black"}. The colour itself stays in the hex fields.
+  const SLOT_KEYS = ["helmet","skin","lens","armour","secondary","trim","emblem","cloth","metal"];
+  function cleanSlotPaints(m){
+    const o = {};
+    if(m && typeof m === "object") SLOT_KEYS.forEach(k => { const v = String(m[k] || "").trim().slice(0, 90); if(v) o[k] = v; });
+    return o;
+  }
+
   const newId = () => (crypto.randomUUID ? crypto.randomUUID() : "id" + Date.now().toString(36) + Math.random().toString(36).slice(2, 10));
 
   function cleanUnit(r){
@@ -39,6 +47,7 @@
     o.status = deriveStatus(o.stages, o.painted, o.count);
     o.recipes = Array.isArray(r.recipes) ? [...new Set(r.recipes.map(x => String(x).slice(0, 40)))].slice(0, 20) : [];
     COLOR_FIELDS.forEach(f => { if(!HEX.test(o[f])) o[f] = ""; });
+    o.slotPaints = cleanSlotPaints(r.slotPaints);
     if(!o.name) o.name = o.datasheet || "Unnamed unit";
     return o;
   }
@@ -64,11 +73,12 @@
     const tiers = (Array.isArray(s.tiers) ? s.tiers : []).slice(0, 8).map(t => ({
       name: String((t && t.name) || "Tier").slice(0, 40),
       note: String((t && t.note) || "").slice(0, 80),
-      color: HEX.test(t && t.color) ? t.color : "#1f1f22"
+      color: HEX.test(t && t.color) ? t.color : "#1f1f22",
+      paint: String((t && t.paint) || "").trim().slice(0, 90)
     }));
     const limit = Math.min(20000, Math.max(0, parseInt(s.limit, 10) || 0));
     const recipes = (Array.isArray(s.recipes) ? s.recipes : []).slice(0, 60).filter(r => r && r.id).map(cleanRecipe);
-    return {style: s.style === "roundel" ? "roundel" : "astartes", limit, recipes, colors, shape: String(s.shape || "cross").slice(0, 160), tiers: tiers.length ? tiers : [{name:"Line", note:"", color:colors.armour}]};
+    return {style: s.style === "roundel" ? "roundel" : "astartes", limit, recipes, colors, slotPaints: cleanSlotPaints(s.slotPaints), shape: String(s.shape || "cross").slice(0, 160), tiers: tiers.length ? tiers : [{name:"Line", note:"", color:colors.armour}]};
   }
   const cleanPaints = list => [...new Set((Array.isArray(list) ? list : []).map(p => String(p).trim().slice(0, 90)).filter(Boolean))].slice(0, 600);
   function cleanArmy(a){
