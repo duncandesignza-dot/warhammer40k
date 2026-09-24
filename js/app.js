@@ -157,9 +157,13 @@
     const email = u.email || "", meta = u.user_metadata || {};
     const name = String(meta.display_name || meta.name || email.split("@")[0] || "Painter").trim();
     const bits = name.split(/[\s._-]+/).filter(Boolean);
-    const initials = ((bits[0] || "?")[0] + (bits[1] ? bits[1][0] : (bits[0] || "").slice(1, 2))).toUpperCase();
-    return {name, email, initials, since: u.created_at || ""};
+    const initials = ((bits[0] || "?")[0] + (bits.length > 1 ? bits[bits.length - 1][0] : (bits[0] || "").slice(1, 2))).toUpperCase();
+    const avatar = /^https:\/\//.test(meta.avatar_url || "") ? meta.avatar_url : "";
+    return {name, email, initials, since: u.created_at || "", avatar, avatarPath: meta.avatar_path || "", custom: !!meta.display_name};
   }
+  // Profile picture if there is one, otherwise initials.
+  const avatarInner = a => a.avatar ? `<img src="${esc(a.avatar)}" alt="" decoding="async">` : esc(a.initials);
+  const avatarHtml = (a, cls) => `<span class="avatar${cls ? " " + cls : ""}${a.avatar ? " has-img" : ""}" aria-hidden="true">${avatarInner(a)}</span>`;
   const monthYear = d => { const t = new Date(d); return isNaN(t) ? "" : t.toLocaleDateString("en-GB", {month: "long", year: "numeric"}); };
   const CARET = `<svg class="caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>`;
   function setTop(){
@@ -170,9 +174,9 @@
       return;
     }
     nav.innerHTML = `<div class="acct">
-      <button type="button" class="acct-btn" id="b-acct" aria-haspopup="menu" aria-expanded="false" aria-controls="acct-menu" aria-label="Account menu for ${esc(a.name)}"><span class="avatar" aria-hidden="true">${esc(a.initials)}</span><span class="acct-name">${esc(a.name)}</span>${CARET}</button>
+      <button type="button" class="acct-btn" id="b-acct" aria-haspopup="menu" aria-expanded="false" aria-controls="acct-menu" aria-label="Account menu for ${esc(a.name)}">${avatarHtml(a)}<span class="acct-name">${esc(a.name)}</span>${CARET}</button>
       <div class="acct-menu" id="acct-menu" role="menu" hidden>
-        <div class="acct-head"><span class="avatar lg" aria-hidden="true">${esc(a.initials)}</span><span><strong>${esc(a.name)}</strong><small>${esc(a.email)}</small></span></div>
+        <div class="acct-head">${avatarHtml(a, "lg")}<span><strong>${esc(a.name)}</strong><small>${esc(a.email)}</small></span></div>
         <a role="menuitem" href="#/">My profile and ledgers</a>
         <button type="button" role="menuitem" data-roster>Your roster</button>
         <button type="button" role="menuitem" disabled aria-disabled="true">Settings <span class="soon">Soon</span></button>
@@ -367,12 +371,25 @@
     const since = me ? monthYear(me.since) : "";
     app.innerHTML = `
       <section class="profile-head">
-        ${me ? `<span class="avatar xl" aria-hidden="true">${esc(me.initials)}</span>` : ""}
+        ${me ? `<div class="ph-avatar">
+          <button type="button" class="avatar xl avatar-btn${me.avatar ? " has-img" : ""}" id="b-avatar" aria-label="${me.avatar ? "Change or remove your profile picture" : "Add a profile picture"}" title="${me.avatar ? "Change your picture" : "Add a picture"}">${avatarInner(me)}</button>
+          <span class="avatar-cam" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z"/><circle cx="12" cy="13.5" r="3.5"/></svg></span>
+          <div class="more-menu av-menu" id="av-menu" hidden>
+            <button type="button" data-av="upload">Upload a new picture</button>
+            <button type="button" class="menu-danger" data-av="remove">Remove picture</button>
+          </div>
+          <input type="file" id="f-avatar" accept="image/*" hidden>
+        </div>` : ""}
         <div class="ph-text">
           <p class="eyebrow">${me ? "Your profile" : "Livery Ledger"}</p>
-          <h1>${me ? esc(me.name) : "Your ledgers"}</h1>
+          ${me ? `<div class="ph-name" id="ph-name"><h1 id="ph-h">${esc(me.name)}</h1><button type="button" class="icon-btn edit-name" id="b-name" aria-label="Change your display name" title="Change your display name"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16Z"/><path d="m13.5 6.5 4 4"/></svg></button></div>
+          <form class="name-edit" id="name-form" hidden>
+            <input id="name-in" maxlength="40" autocomplete="nickname" aria-label="Display name" placeholder="${esc(me.email.split("@")[0])}">
+            <button type="submit" class="primary btn-sm">Save</button>
+            <button type="button" class="btn-sm" id="name-cancel">Cancel</button>
+          </form>` : `<h1>Your ledgers</h1>`}
           ${me ? `<p class="sub">${esc(me.email)}${since ? ` · Painting with us since ${esc(since)}` : ""}</p>` : `<p class="sub">Plan how you'll paint your army. Pick your faction, choose your colours, then track every unit with photos, weapons and paint recipes.</p>`}
-          ${me ? "" : `<div class="ph-note">${noteHtml()}</div>`}
+          ${me ? `<p class="msg" id="ph-msg" role="status" aria-live="polite"></p>` : `<div class="ph-note">${noteHtml()}</div>`}
           ${armies.length ? `<div class="ph-actions"><button type="button" class="btn-sm" data-roster><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11"/><path d="M9 12h11"/><path d="M9 18h11"/><path d="M4 6h.01"/><path d="M4 12h.01"/><path d="M4 18h.01"/></svg>Your roster<span class="count">${num(tot.units)}</span></button></div>` : ""}
         </div>
         <div class="stats" aria-label="Your painting so far">
@@ -414,6 +431,7 @@
       app.querySelectorAll("[data-group]").forEach(g => g.hidden = !g.querySelector(".fcard:not([hidden])"));
     });
     app.querySelectorAll("[data-signin]").forEach(b => b.addEventListener("click", openAuth));
+    if(me && store.updateProfile) profileEdits();
     if(store.canWrite){
       $("b-import-army").addEventListener("click", () => $("f-import-army").click());
       $("f-import-army").addEventListener("change", async e => {
@@ -471,7 +489,7 @@
         </div>
         <div class="lp-side">
           ${me ? `<div class="panel lp-card lp-welcome">
-              <span class="avatar xl" aria-hidden="true">${esc(me.initials)}</span>
+              ${avatarHtml(me, "xl")}
               <h2>Welcome back, ${esc(me.name)}</h2>
               <p class="sub">Your ledgers are waiting.</p>
               <a class="btn primary" href="#/">Go to your ledgers</a>
@@ -606,6 +624,67 @@ Redemptor Dreadnought (210 points)</pre>
       $("lp-auth").scrollIntoView({behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center"});
       setTimeout(() => heroAuth.focus(), 350);
     }));
+  }
+  /* Profile page: change your display name (pencil) and picture (click the circle). */
+  function profileEdits(){
+    const say = (t, bad) => { $("ph-msg").textContent = t || ""; $("ph-msg").classList.toggle("err", !!bad); };
+    const btn = $("b-avatar"), menu = $("av-menu"), file = $("f-avatar");
+    const menuOpen = on => { menu.hidden = !on; btn.setAttribute("aria-expanded", on); if(on) menu.querySelector("button").focus(); };
+    // Redraw the circle here and in the top bar after a change.
+    const paint = () => {
+      const a = acct();
+      btn.innerHTML = avatarInner(a); btn.classList.toggle("has-img", !!a.avatar);
+      btn.setAttribute("aria-label", a.avatar ? "Change or remove your profile picture" : "Add a profile picture");
+      setTop();
+    };
+    // Name
+    const editing = on => {
+      $("ph-name").hidden = on; $("name-form").hidden = !on;
+      if(on){ const a = acct(); $("name-in").value = a.custom ? a.name : ""; $("name-in").focus(); $("name-in").select(); say(""); }
+      else $("b-name").focus();
+    };
+    $("b-name").addEventListener("click", () => editing(true));
+    $("name-cancel").addEventListener("click", () => editing(false));
+    $("name-in").addEventListener("keydown", e => { if(e.key === "Escape"){ e.preventDefault(); editing(false); } });
+    $("name-form").addEventListener("submit", async e => {
+      e.preventDefault();
+      const v = $("name-in").value.replace(/\s+/g, " ").trim().slice(0, 40), btn = $("name-form").querySelector("[type=submit]");
+      btn.disabled = true; say("Saving…");
+      try {
+        await store.updateProfile({display_name: v || null});
+        $("ph-h").textContent = acct().name; paint(); editing(false);
+        say(v ? "Name saved." : "Name cleared. We'll use the start of your email.");
+      } catch(err){ say("Couldn't save your name: " + errText(err), true); }
+      finally { btn.disabled = false; }
+    });
+    // Picture
+    btn.addEventListener("click", e => { e.stopPropagation(); if(acct().avatar) menuOpen(menu.hidden); else file.click(); });
+    menu.addEventListener("click", async e => {
+      const o = e.target.closest("[data-av]"); if(!o) return;
+      menuOpen(false);
+      if(o.dataset.av === "upload"){ file.click(); return; }
+      const old = acct().avatarPath;
+      btn.classList.add("busy"); say("Removing your picture…");
+      try { await store.updateProfile({avatar_url: null, avatar_path: null}); store.removeAvatar(old); paint(); say("Picture removed."); }
+      catch(err){ say("Couldn't remove your picture: " + errText(err), true); }
+      finally { btn.classList.remove("busy"); }
+    });
+    file.addEventListener("change", async () => {
+      const f = file.files && file.files[0]; file.value = "";
+      if(!f) return;
+      const old = acct().avatarPath;
+      btn.classList.add("busy"); say("Uploading your picture…");
+      try {
+        const up = await store.uploadAvatar(f);
+        await store.updateProfile({avatar_url: up.url, avatar_path: up.path});
+        if(old && old !== up.path) store.removeAvatar(old);
+        paint(); say("Picture updated.");
+      } catch(err){ say("Couldn't update your picture: " + errText(err), true); }
+      finally { btn.classList.remove("busy"); }
+    });
+    const onDoc = e => { if(!menu.isConnected){ document.removeEventListener("click", onDoc); return; } if(!e.target.closest(".ph-avatar")) menuOpen(false); };
+    document.addEventListener("click", onDoc);
+    menu.addEventListener("keydown", e => { if(e.key === "Escape"){ menuOpen(false); btn.focus(); } });
   }
   function alertBanner(text){
     const b = document.createElement("div"); b.className = "banner"; b.innerHTML = `<span class="dot warn"></span>${esc(text)}`;
