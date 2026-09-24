@@ -177,10 +177,10 @@
       <button type="button" class="acct-btn" id="b-acct" aria-haspopup="menu" aria-expanded="false" aria-controls="acct-menu" aria-label="Account menu for ${esc(a.name)}">${avatarHtml(a)}<span class="acct-name">${esc(a.name)}</span>${CARET}</button>
       <div class="acct-menu" id="acct-menu" role="menu" hidden>
         <div class="acct-head">${avatarHtml(a, "lg")}<span><strong>${esc(a.name)}</strong><small>${esc(a.email)}</small></span></div>
-        <a role="menuitem" href="#/">My profile and ledgers</a>
+        <a role="menuitem" href="#/profile">My profile and ledgers</a>
         <button type="button" role="menuitem" data-roster>Your roster</button>
         <button type="button" role="menuitem" disabled aria-disabled="true">Settings <span class="soon">Soon</span></button>
-        <a role="menuitem" href="#/welcome">About Livery Ledger</a>
+        <a role="menuitem" href="#/">Home</a>
         <hr>
         <button type="button" role="menuitem" data-logout>Log out</button>
       </div>
@@ -248,7 +248,7 @@
     }
     function focus(){ const f = [...form.querySelectorAll("input")].find(i => !i.closest("[hidden]") && !i.value) || [...form.querySelectorAll("input")].find(i => !i.closest("[hidden]")); if(f) f.focus(); }
     host.addEventListener("click", e => {
-      const m = e.target.closest("[data-mode]");
+      const m = e.target.closest("button[data-mode]");   // not the host, which carries data-mode too
       if(m){ set(m.dataset.mode); focus(); return; }
       const sh = e.target.closest(".pw-show");
       if(sh){
@@ -286,7 +286,7 @@
   function openAuth(mode, note){
     if(store.kind !== "supabase") return;
     const d = $("authdlg");
-    if(!dlgAuth) dlgAuth = authForm($("auth-host"), "in", {onDone: () => setTimeout(() => { if(d.open) d.close(); }, 700)});
+    if(!dlgAuth) dlgAuth = authForm($("auth-host"), "in", {onDone: () => { if(view.name === "landing") location.hash = "#/profile"; setTimeout(() => { if(d.open) d.close(); }, 700); }});
     dlgAuth.set(typeof mode === "string" ? mode : "in", note);
     if(!d.open) d.showModal();
     dlgAuth.focus();
@@ -337,13 +337,16 @@
       else if(parts[0] === "army" && parts[1] && parts[2] === "colours") await viewSetup({armyId: parts[1]});
       else if(parts[0] === "army" && parts[1] && parts[2] === "unit" && parts[3]) await viewLedger(parts[1], parts[3]);
       else if(parts[0] === "army" && parts[1]) await viewLedger(parts[1]);
-      else if(parts[0] === "welcome") await viewLanding();
-      // Signed out on the online version: the homepage. Signed in (or saving in this browser): your profile and ledgers.
-      else if(store.kind === "supabase" && !store.session) await viewLanding();
-      else await viewHome();
+      else if(parts[0] === "profile"){
+        // Your profile and ledgers; logged out, the homepage with the log in form open.
+        if(store.kind === "supabase" && !store.session){ await viewLanding(); setTimeout(() => openAuth("in", "Log in to see your profile and ledgers."), 0); }
+        else await viewHome();
+      }
+      // "#/" (and the old "#/welcome"): the homepage.
+      else await viewLanding();
     } catch(err){
       console.error(err);
-      app.innerHTML = `<div class="banner"><span class="dot warn"></span>Couldn't load this page: ${esc(errText(err))}</div><p><a class="btn" href="#/">Back to start</a></p>`;
+      app.innerHTML = `<div class="banner"><span class="dot warn"></span>Couldn't load this page: ${esc(errText(err))}</div><p><a class="btn" href="#/profile">Back to your ledgers</a></p>`;
     }
     window.scrollTo(0, 0);
   }
@@ -474,7 +477,7 @@
     };
     const icon = k => `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[k]}</svg>`;
     const tick = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg>';
-    const cta = me ? `<a class="btn primary lg" href="#/">Go to your ledgers</a>` : online ? `<button type="button" class="primary lg" data-cta="up">Create your free account</button>` : `<a class="btn primary lg" href="#/">Start a ledger</a>`;
+    const cta = me ? `<a class="btn primary lg" href="#/profile">Go to your ledgers</a>` : online ? `<button type="button" class="primary lg" data-cta="up">Create your free account</button>` : `<a class="btn primary lg" href="#/profile">Start a ledger</a>`;
 
     app.innerHTML = `
       <section class="lp-hero">
@@ -492,13 +495,13 @@
               ${avatarHtml(me, "xl")}
               <h2>Welcome back, ${esc(me.name)}</h2>
               <p class="sub">Your ledgers are waiting.</p>
-              <a class="btn primary" href="#/">Go to your ledgers</a>
+              <a class="btn primary" href="#/profile">Go to your ledgers</a>
             </div>`
           : online ? `<div class="panel lp-card auth" id="lp-auth"></div>`
           : `<div class="panel lp-card lp-welcome">
               <h2>Start painting smarter</h2>
               <p class="sub">This copy saves everything in your browser, with no account needed.</p>
-              <a class="btn primary" href="#/">Open your ledgers</a>
+              <a class="btn primary" href="#/profile">Open your ledgers</a>
             </div>`}
         </div>
       </section>
@@ -617,7 +620,7 @@ Redemptor Dreadnought (210 points)</pre>
       img.addEventListener("error", () => img.remove());
     });
     let heroAuth = null;
-    if($("lp-auth")) heroAuth = authForm($("lp-auth"), "up", {onDone: () => { if(location.hash !== "#/") location.hash = "#/"; }});
+    if($("lp-auth")) heroAuth = authForm($("lp-auth"), "up", {onDone: () => { location.hash = "#/profile"; }});
     app.querySelectorAll("[data-cta]").forEach(btn => btn.addEventListener("click", () => {
       if(!heroAuth){ openAuth(btn.dataset.cta); return; }
       heroAuth.set(btn.dataset.cta);
@@ -697,7 +700,7 @@ Redemptor Dreadnought (210 points)</pre>
   async function viewSetup({factionId, armyId}){
     view.name = "setup";
     let army = null;
-    if(armyId){ army = await store.getArmy(armyId); if(!army){ location.hash = "#/"; return; } factionId = army.faction; }
+    if(armyId){ army = await store.getArmy(armyId); if(!army){ location.hash = "#/profile"; return; } factionId = army.faction; }
     const f = FBY[factionId] || FBY["space-marines"];
     PROF = P.profileFor(f.id);
     const draft = army ? {name: army.name, scheme: JSON.parse(JSON.stringify(army.scheme))} : {name: "", scheme: P.presetFor(f.id)};
@@ -711,7 +714,7 @@ Redemptor Dreadnought (210 points)</pre>
     const locked = !store.canWrite;
 
     app.innerHTML = `
-      <div class="crumbs"><a href="#/">Livery Ledger</a> / ${editing ? `<a href="#/army/${esc(army.id)}">${esc(army.name)}</a> / Colours` : esc(f.name)}</div>
+      <div class="crumbs"><a href="#/profile">My ledgers</a> / ${editing ? `<a href="#/army/${esc(army.id)}">${esc(army.name)}</a> / Colours` : esc(f.name)}</div>
       <div class="hero">
         <div><h1>${editing ? "Your colours" : esc(f.name)}</h1>
         <p class="sub">${editing ? "Change your army's colours. Units that use the scheme colours update to match." : "Name your army and choose its colours. These become the starting colours for every unit you add."}</p></div>
@@ -775,7 +778,7 @@ Redemptor Dreadnought (210 points)</pre>
           <div class="panel">
             <div class="row-actions">
               <button type="button" class="primary" id="s-save" ${locked ? "disabled" : ""}>${editing ? "Save colours" : "Create ledger"}</button>
-              <a class="btn" href="${editing ? "#/army/" + esc(army.id) : "#/"}">Cancel</a>
+              <a class="btn" href="${editing ? "#/army/" + esc(army.id) : "#/profile"}">Cancel</a>
               ${editing ? `<button type="button" class="danger" id="s-del" style="margin-left:auto">Delete ledger</button>` : ""}
             </div>
             ${!editing ? `<label style="margin-top:12px;flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="s-reset" style="width:auto"> Reset to ${esc(f.name)} starting colours</label>` : ""}
@@ -933,7 +936,7 @@ Redemptor Dreadnought (210 points)</pre>
       if(t.id === "s-del"){
         if(!armed){ armed = true; t.classList.add("armed"); t.textContent = "Click again to delete ledger and all its units"; return; }
         t.disabled = true;
-        try { await store.removeArmy(army); setupDirty = false; location.hash = "#/"; }
+        try { await store.removeArmy(army); setupDirty = false; location.hash = "#/profile"; }
         catch(err){ $("s-msg").textContent = "Couldn't delete: " + errText(err); t.disabled = false; }
       }
     }
@@ -946,7 +949,7 @@ Redemptor Dreadnought (210 points)</pre>
     view.name = "ledger";
     let army = await store.getArmy(armyId);
     if(!army){
-      app.innerHTML = `<div class="banner"><span class="dot warn"></span>${store.kind === "supabase" && !store.session ? "Sign in to open this ledger." : "This ledger doesn't exist any more."}</div><p class="row-actions"><a class="btn" href="#/">Back to start</a>${store.kind === "supabase" && !store.session ? `<button type="button" class="primary" data-signin>Sign in</button>` : ""}</p>`;
+      app.innerHTML = `<div class="banner"><span class="dot warn"></span>${store.kind === "supabase" && !store.session ? "Sign in to open this ledger." : "This ledger doesn't exist any more."}</div><p class="row-actions"><a class="btn" href="#/profile">Back to your ledgers</a>${store.kind === "supabase" && !store.session ? `<button type="button" class="primary" data-signin>Sign in</button>` : ""}</p>`;
       app.querySelectorAll("[data-signin]").forEach(b => b.addEventListener("click", openAuth));
       return;
     }
@@ -997,7 +1000,7 @@ Redemptor Dreadnought (210 points)</pre>
     try { prefs = {...prefs, ...JSON.parse(localStorage.getItem(PREF_KEY) || "{}")}; } catch(e){}
 
     app.innerHTML = `
-      <div class="crumbs"><a href="#/">Livery Ledger</a> / ${esc(f.name)}</div>
+      <div class="crumbs"><a href="#/profile">My ledgers</a> / ${esc(f.name)}</div>
       <header class="top">
         <div>
           <h1>${esc(army.name)}</h1>
@@ -2086,7 +2089,7 @@ Redemptor Dreadnought (210 points)</pre>
         const b = $("dl-go"); b.disabled = true; b.textContent = "Deleting…";
         try {
           await store.removeArmy(army);
-          setDirty(false); view.guard = null; dd.close(); location.hash = "#/";
+          setDirty(false); view.guard = null; dd.close(); location.hash = "#/profile";
         } catch(err){
           $("dl-msg").textContent = "Couldn't delete: " + errText(err); $("dl-msg").classList.add("err");
           b.disabled = false; b.textContent = "Delete ledger";
