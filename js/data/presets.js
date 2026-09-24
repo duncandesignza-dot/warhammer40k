@@ -380,15 +380,21 @@
     "necrons": ["armour","secondary","trim","@Auric Armour Gold"]
   };
   const DEFAULT_SRC = ["armour","secondary","@Mephiston Red","trim"];
+  // When a rank would repeat an earlier rank's paint, it takes the first of these that's still free,
+  // so every rank colour tells the ranks apart.
+  const TIER_FALLBACK = ["trim","@Retributor Armour","emblem","@Corax White","@Abaddon Black","@Mephiston Red","@Averland Sunset","@Macragge Blue","cloth","@Leadbelcher"];
 
   // Rank colours (and their paints) from a set of army colours.
   function tiersFor(factionId, c, paints){
     const pr = profileFor(factionId), base = P[factionId] || {};
     const src = TIER_SRC[factionId] || DEFAULT_SRC, names = base.tiers ? base.tiers.map(t => [t.name, t.note]) : pr.tiers;
+    const pick = s => s[0] === "@" ? {color: citHex(s.slice(1)) || c.armour, paint: citLabel(s.slice(1))} : {color: c[s] || c.armour, paint: (paints || {})[s] || ""};
+    const used = new Set(), key = x => (x.paint || x.color).toLowerCase();
     return names.map(([name, note], i) => {
-      const s = src[i] || "armour";
-      if(s[0] === "@"){ const n = s.slice(1); return {...T(name, citHex(n) || c.armour, note), paint: citLabel(n)}; }
-      return {...T(name, c[s] || c.armour, note), paint: (paints || {})[s] || ""};
+      let x = pick(src[i] || "armour");
+      if(used.has(key(x))) x = TIER_FALLBACK.map(pick).find(y => !used.has(key(y))) || x;
+      used.add(key(x));
+      return {...T(name, x.color, note), paint: x.paint};
     });
   }
   // Colours plus their paint labels from an F(...) set, over plain fallback colours.
