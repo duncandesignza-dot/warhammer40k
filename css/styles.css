@@ -231,7 +231,7 @@ dialog::backdrop{background:var(--scrim);backdrop-filter:blur(6px);-webkit-backd
 dialog[open]{animation:pop .18s ease-out}
 @keyframes pop{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}
 dialog.small{max-width:min(460px,calc(100vw - 32px))}
-.dlg-close{position:sticky;top:0;height:0;display:flex;justify-content:flex-end;z-index:2;pointer-events:none}
+.dlg-close{position:sticky;top:0;height:0;display:flex;justify-content:flex-end;align-items:flex-start;z-index:2;pointer-events:none}
 .dlg-close button{pointer-events:auto;background:rgba(13,17,20,.85);backdrop-filter:blur(8px);font-size:.8rem;padding:6px 12px;margin:12px;border-radius:99px}
 .detail{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr)}
 @media (max-width:720px){.detail{grid-template-columns:1fr}}
