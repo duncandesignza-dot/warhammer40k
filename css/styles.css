@@ -958,3 +958,15 @@ button.star.big:hover:not(:disabled){border:1px solid rgba(251,191,36,.5)}
 .profile-head .msg{margin-top:8px}
 .profile-head .msg:empty{display:none}
 @media (max-width:640px){.avatar-btn,.avatar-btn:hover:not(:disabled){font-size:1.3rem}.avatar-cam{width:26px;height:26px}}
+
+/* Shared armies */
+.page-head{padding-bottom:22px;margin-bottom:22px;border-bottom:1px solid var(--line)}
+.page-head .eyebrow{margin-bottom:6px}
+.sh-tools{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:18px}
+.sh-tools input[type=search]{flex:1 1 260px;width:auto;max-width:440px}
+.sh-tools select{width:auto;min-width:180px}
+.sh-count{margin-left:auto;font-family:var(--mono);font-size:.74rem;color:var(--muted)}
+.lcard .card-top .tag{grid-row:1;grid-column:3;justify-self:end;align-self:start;margin:0}
+.lp-cta-btns{display:flex;gap:10px;flex-wrap:wrap}
+@media (max-width:640px){.lp-cta-btns{width:100%}.sh-tools select{flex:1 1 100%}.sh-count{margin-left:0}}
+@media (max-width:560px){.nav-shared{display:none}}

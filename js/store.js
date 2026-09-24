@@ -96,7 +96,9 @@
     }));
     const limit = Math.min(20000, Math.max(0, parseInt(s.limit, 10) || 0));
     const recipes = (Array.isArray(s.recipes) ? s.recipes : []).slice(0, 60).filter(r => r && r.id).map(cleanRecipe);
-    return {style: s.style === "roundel" ? "roundel" : "astartes", limit, recipes, colors, slotPaints: cleanSlotPaints(s.slotPaints), splitPauldrons: s.splitPauldrons === true, xareas: cleanXareas(s.xareas), shape: String(s.shape || "cross").slice(0, 160), tiers: tiers.length ? tiers : [{name:"Line", note:"", color:colors.armour}]};
+    // by: the owner's display name, shown on the Shared armies page (never their email).
+    const by = String(s.by || "").replace(/\s+/g, " ").trim().slice(0, 40);
+    return {style: s.style === "roundel" ? "roundel" : "astartes", by, limit, recipes, colors, slotPaints: cleanSlotPaints(s.slotPaints), splitPauldrons: s.splitPauldrons === true, xareas: cleanXareas(s.xareas), shape: String(s.shape || "cross").slice(0, 160), tiers: tiers.length ? tiers : [{name:"Line", note:"", color:colors.armour}]};
   }
   const cleanPaints = list => [...new Set((Array.isArray(list) ? list : []).map(p => String(p).trim().slice(0, 90)).filter(Boolean))].slice(0, 600);
   function cleanArmy(a){
@@ -195,6 +197,7 @@
       async removeArmy(a){ db.armies = db.armies.filter(x => x.id !== a.id); db.units = db.units.filter(u => u.armyId !== a.id); save(); },
       async listUnits(armyId){ return db.units.filter(u => u.armyId === armyId).map(u => ({...u, ...cleanUnit(u)})); },
       async listAllUnits(){ return db.units.map(u => ({...u, ...cleanUnit(u)})); },
+      async listShared(){ return {armies: [], sum: {}}; },
       async saveUnit(armyId, u, id, photo, remove){
         const prev = id ? db.units.find(x => x.id === id) : null;
         let image = prev ? prev.image || "" : "";
@@ -237,6 +240,13 @@
       return path;
     }
     const mustOk = ({data, error}) => { if(error) throw error; return data; };
+    const SUM_COLS = "army_id,data->>status,data->>count,data->>painted,data->>points";
+    function totals(rows){
+      const m = {};
+      rows.forEach(r => { const s = m[r.army_id] || (m[r.army_id] = {units:0, models:0, done:0, points:0}); const c = parseInt(r.count, 10) || 1; const p = parseInt(r.painted, 10); s.units++; s.models += c; s.done += Math.min(c, Number.isFinite(p) ? p : (r.status === "done" ? c : 0)); s.points += parseInt(r.points, 10) || 0; });
+      return m;
+    }
+    const myName = () => String(((session && session.user.user_metadata) || {}).display_name || "").trim();
 
     return {
       kind: "supabase", client: sb, canShare: true,
@@ -274,14 +284,18 @@
       async getArmy(id){ const d = mustOk(await sb.from(A).select("*").eq("id", id).maybeSingle()); return d ? toArmy(d) : null; },
       async summary(){
         if(!session) return {};
-        const rows = mustOk(await sb.from(U).select("army_id,data->>status,data->>count,data->>painted,data->>points").eq("owner", session.user.id)) || [];
-        const m = {};
-        rows.forEach(r => { const s = m[r.army_id] || (m[r.army_id] = {units:0, models:0, done:0, points:0}); const c = parseInt(r.count, 10) || 1; const p = parseInt(r.painted, 10); s.units++; s.models += c; s.done += Math.min(c, Number.isFinite(p) ? p : (r.status === "done" ? c : 0)); s.points += parseInt(r.points, 10) || 0; });
-        return m;
+        return totals(mustOk(await sb.from(U).select(SUM_COLS).eq("owner", session.user.id)) || []);
+      },
+      // Every ledger with sharing on, newest first, with painting totals. Readable without logging in.
+      async listShared(){
+        const armies = (mustOk(await sb.from(A).select("*").eq("public", true).order("updated_at", {ascending: false}).limit(150)) || []).map(toArmy);
+        const ids = armies.map(a => a.id);
+        const sum = ids.length ? totals(mustOk(await sb.from(U).select(SUM_COLS).in("army_id", ids)) || []) : {};
+        return {armies, sum};
       },
       async saveArmy(a, id){
         need();
-        const row = {...cleanArmy(a), updated_at: new Date().toISOString()};
+        const row = {...cleanArmy({...a, scheme: {...(a.scheme || {}), by: myName()}}), updated_at: new Date().toISOString()};
         const res = id ? await sb.from(A).update(row).eq("id", id).select().single() : await sb.from(A).insert(row).select().single();
         return toArmy(mustOk(res));
       },
@@ -329,7 +343,18 @@
       // Emails a link back to this page; opening it signs the person in and fires PASSWORD_RECOVERY.
       async resetPassword(email){ const {error} = await sb.auth.resetPasswordForEmail(email, {redirectTo: location.href.split("#")[0]}); if(error) throw error; },
       // Display name and profile picture live on the account (user metadata), so they follow you to any device.
-      async updateProfile(data){ const {data: d, error} = await sb.auth.updateUser({data}); if(error) throw error; if(d && d.user && session) session = {...session, user: d.user}; return d && d.user; },
+      async updateProfile(data){
+        const {data: d, error} = await sb.auth.updateUser({data}); if(error) throw error;
+        if(d && d.user && session) session = {...session, user: d.user};
+        // A new display name also goes on your shared ledgers (without moving them up the Shared armies list).
+        if("display_name" in data){
+          try {
+            const mine = mustOk(await sb.from(A).select("id,scheme").eq("owner", session.user.id).eq("public", true)) || [];
+            for(const r of mine) await sb.from(A).update({scheme: {...(r.scheme || {}), by: myName()}}).eq("id", r.id);
+          } catch(e){ console.warn("Couldn't update the name on shared ledgers", e); }
+        }
+        return d && d.user;
+      },
       async uploadAvatar(file){
         need();
         const path = await upload("profile", await resizeImage(file, 360, .88, true));
