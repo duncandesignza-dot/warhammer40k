@@ -487,6 +487,8 @@
     });
     app.querySelectorAll("[data-signin]").forEach(b => b.addEventListener("click", openAuth));
     if(me && store.updateProfile) profileEdits();
+    // The pile of shame count comes from the kits table online.
+    if(me) getShame().then(l => { const a = app.querySelector('.ph-actions a[href="#/shame"]'); if(a) a.innerHTML = "Pile of shame" + (l.length ? `<span class="count">${l.length}</span>` : ""); }).catch(() => {});
     if(armies.length) store.listAllUnits().then(us => { if($("activity")) drawActivity(us); }).catch(err => { console.error(err); if($("activity")) $("activity").querySelector(".loading").textContent = "Couldn't load your painting history."; });
     if(store.canWrite){
       $("b-import-army").addEventListener("click", () => $("f-import-army").click());
@@ -897,12 +899,26 @@ Redemptor Dreadnought (210 points)</pre>
     if(store.kind === "supabase") return ((store.session && store.session.user.user_metadata) || {}).shame;
     try { return JSON.parse(localStorage.getItem(SHAME_KEY) || "[]"); } catch(e){ return []; }
   }
-  const shameCount = () => cleanShame(shameRaw()).length;
-  async function getShame(){ return cleanShame(shameRaw()); }
+  let shameCache = null;   // kits from the kits table, once loaded
+  const shameCount = () => (shameCache || cleanShame(shameRaw())).length;
+  // Online the pile lives in the kits table; older piles saved on the account are moved there the first time.
+  // Without the table (setup not run yet) it stays on the account.
+  async function getShame(){
+    if(store.kind !== "supabase") return cleanShame(shameRaw());
+    const rows = await store.listKits();
+    if(rows === null) return cleanShame(shameRaw());
+    const old = cleanShame(shameRaw());
+    if(old.length){
+      const merged = cleanShame(rows.concat(old.filter(k => !rows.some(r => r.id === k.id))));
+      try { await store.putKits(merged); await store.updateProfile({shame: null}); return (shameCache = merged); } catch(e){ console.warn("Couldn't move the pile of shame", e); }
+    }
+    return (shameCache = cleanShame(rows));
+  }
   async function putShame(list){
     list = cleanShame(list);
-    if(store.kind === "supabase") await store.updateProfile({shame: list});
-    else localStorage.setItem(SHAME_KEY, JSON.stringify(list));
+    if(store.kind !== "supabase"){ localStorage.setItem(SHAME_KEY, JSON.stringify(list)); return list; }
+    if(shameCache !== null || (await store.listKits()) !== null){ await store.putKits(list); shameCache = list; }
+    else await store.updateProfile({shame: list});
     return list;
   }
   const money = n => settings.currency + "\u00a0" + Number(n || 0).toLocaleString("en", {minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2});
@@ -3259,7 +3275,8 @@ Redemptor Dreadnought (210 points)</pre>
      Dialogs, auth, start
      ============================================================ */
   // Dialogs that scroll inside (editor, paints) must never scroll as a whole; if a browser does it anyway, put it back.
-  document.addEventListener("scroll", e => { const d = e.target; if(d && d.tagName === "DIALOG" && (d.scrollTop || d.scrollLeft)){ d.scrollTop = 0; d.scrollLeft = 0; } }, true);
+  // Only the editor and paints dialogs: others (unit details, sign in, import) scroll normally.
+  document.addEventListener("scroll", e => { const d = e.target; if(d && d.tagName === "DIALOG" && d.matches(".editdlg, .paintdlg") && (d.scrollTop || d.scrollLeft)){ d.scrollTop = 0; d.scrollLeft = 0; } }, true);
   document.querySelectorAll("dialog").forEach(d => d.addEventListener("click", e => {
     if(e.target.closest("[data-close]") || e.target === d) d.close();
   }));
@@ -3323,6 +3340,7 @@ Redemptor Dreadnought (210 points)</pre>
       const was = store.session;
       const changed = first || (!!session) !== (!!was) || (session && was && session.user.id !== was.user.id);
       const wasFirst = first;
+      if(changed) shameCache = null;   // another person's pile
       store.setSession(session); first = false;
       loadSettings(); setTop();
       if(changed) setTimeout(route, 0);

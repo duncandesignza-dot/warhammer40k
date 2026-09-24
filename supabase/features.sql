@@ -56,3 +56,27 @@ drop policy if exists "Follow as yourself" on public.follows;
 create policy "Follow as yourself" on public.follows for insert to authenticated with check (follower = auth.uid());
 drop policy if exists "Unfollow as yourself" on public.follows;
 create policy "Unfollow as yourself" on public.follows for delete to authenticated using (follower = auth.uid());
+
+-- 4. Pile of shame (kits you've bought but not started)
+--    Kept in its own table so a big pile doesn't bloat your login.
+create table if not exists public.kits (
+  owner uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  id text not null,
+  data jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now(),
+  primary key (owner, id)
+);
+alter table public.kits enable row level security;
+drop policy if exists "Your own kits" on public.kits;
+create policy "Your own kits" on public.kits for all to authenticated using (owner = auth.uid()) with check (owner = auth.uid());
+
+-- 5. Paints you own (Paints & recipes -> My paints)
+--    One row per painter, kept out of the login for the same reason as the pile of shame.
+create table if not exists public.owned_paints (
+  owner uuid primary key default auth.uid() references auth.users(id) on delete cascade,
+  paints jsonb not null default '[]'::jsonb,
+  updated_at timestamptz not null default now()
+);
+alter table public.owned_paints enable row level security;
+drop policy if exists "Your own paints" on public.owned_paints;
+create policy "Your own paints" on public.owned_paints for all to authenticated using (owner = auth.uid()) with check (owner = auth.uid());
