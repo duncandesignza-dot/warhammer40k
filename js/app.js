@@ -22,6 +22,7 @@
   const chip = hex => ART.hexOk(hex) ? `<span class="chip" style="background:${hex}"></span>` : "";
   const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
   const quickHex = n => (P.NAMED.find(x => x[0] === n) || [,"#1f1f22"])[1];
+  const PLAIN = QUICK.map(n => ({name: n, hex: quickHex(n)}));
 
   const EMB = window.LEDGER_EMBLEMS || {icons: [], cats: {}};
   function suggestedIcons(f){
@@ -218,7 +219,7 @@
           <div class="fgrid">${list.map(f => `<a class="fcard" href="#/new/${esc(f.id)}" data-fname="${esc(f.name.toLowerCase())}">
             ${factionBadge(f.id, 34)}<span><strong>${esc(f.name)}</strong><small>${f.units.filter(u => !u.t).length} datasheets</small></span></a>`).join("")}</div>
         </div>`).join("")}</div>
-      <p class="source">Unit and weapon names come from the community BattleScribe data for Warhammer 40,000 11th edition (${esc(DATA.source || "BSData")}${DATA.commit ? ", " + esc(DATA.commit) : ""}). Emblem icons from <a href="https://github.com/Certseeds/wh40k-icon" target="_blank" rel="noopener">wh40k-icon</a> by shitake, farvig, 夜行漫记 and Certseeds (<a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a>), recoloured for this site. Paint names and colours from <a href="https://github.com/Arcturus5404/miniature-paints" target="_blank" rel="noopener">miniature-paints</a> by Rick Fleuren (MIT). Starting colours are suggestions you can change. Warhammer 40,000 and its symbols are trademarks of Games Workshop; this is an unofficial, non-commercial fan tool.</p>
+      <p class="source">Unit and weapon names come from the community BattleScribe data for Warhammer 40,000 11th edition (${esc(DATA.source || "BSData")}${DATA.commit ? ", " + esc(DATA.commit) : ""}). Emblem icons from <a href="https://github.com/Certseeds/wh40k-icon" target="_blank" rel="noopener">wh40k-icon</a> by shitake, farvig, 夜行漫记 and Certseeds (<a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a>), recoloured for this site. Paint names and colours from <a href="https://github.com/Arcturus5404/miniature-paints" target="_blank" rel="noopener">miniature-paints</a> by Rick Fleuren (MIT). Starting colours are suggestions you can change.</p>
     `;
     const fq = $("fq");
     fq.addEventListener("input", () => {
@@ -286,12 +287,11 @@
           </div>` : ""}
           <div class="panel">
             <h3>Colours</h3>
-            <p class="hint">Pick the paint you use for each area, or tap a swatch for a plain colour.</p>
+            <p class="hint">Pick the paint you use for each area. The picker also has plain colours and a custom colour.</p>
             <div class="cgrid">${colorKeys().map(([k, label]) => `
               <div class="cfield">
                 <span class="cf-l">${label}</span>
                 <span id="s-${k}"></span>
-                <div class="swatches">${QUICK.map(n => `<button type="button" class="sw" style="background:${quickHex(n)}" title="${n}" aria-label="${label}: ${n}" data-sw="${k}" data-hex="${quickHex(n)}"></button>`).join("")}</div>
               </div>`).join("")}</div>
           </div>
           <div class="panel">
@@ -375,7 +375,7 @@
     }
     // Paint pickers for the army colours and rank colours.
     const slotOpts = {
-      owned: () => new Set(ownedList.map(PU.norm)), mine: () => ownedList,
+      owned: () => new Set(ownedList.map(PU.norm)), mine: () => ownedList, plain: PLAIN,
       swatches: () => colorKeys().map(([k]) => ({hex: sch.colors[k], paint: sch.slotPaints[k] || ""})).concat(sch.tiers.map(t => ({hex: t.color, paint: t.paint || ""})))
     };
     const slots = {};
@@ -401,10 +401,39 @@
       const b = $("s-save"); b.disabled = true; $("s-msg").textContent = "Saving…"; $("s-msg").classList.remove("err");
       try {
         const saved = await store.saveArmy({faction: f.id, name, scheme: sch, public: editing ? army.public : false}, editing ? army.id : null);
-        setupDirty = false; $("s-msg").textContent = "Saved.";
+        const moved = editing ? await followColours(army.scheme, sch) : 0;
+        setupDirty = false; $("s-msg").textContent = moved ? `Saved. ${plural(moved, "unit")} updated to the new colours.` : "Saved.";
         return saved;
       } catch(err){ console.error(err); $("s-msg").textContent = "Couldn't save: " + errText(err); $("s-msg").classList.add("err"); return null; }
       finally { b.disabled = false; }
+    }
+
+    /* Units still on the old army colour for an area follow it to the new colour (and paint).
+       Units given their own colour or paint for that area keep it. Returns how many units changed. */
+    async function followColours(before, after){
+      const old = JSON.parse(JSON.stringify(before)); fillSkin(old, f.id);
+      const op = old.slotPaints || {}, np = after.slotPaints || {};
+      const keys = ["lens","armour","secondary","trim","emblem","cloth","metal","skin"]
+        .filter(k => old.colors[k] !== after.colors[k] || (op[k] || "") !== (np[k] || ""));
+      const tierMoved = after.tiers.map((t, i) => { const o = old.tiers[i]; return !!o && (o.color !== t.color || (o.paint || "") !== (t.paint || "")); });
+      if(!keys.length && !tierMoved.some(Boolean)) return 0;
+      let n = 0;
+      for(const u of await store.listUnits(army.id)){
+        const sp = {...(u.slotPaints || {})};
+        let touched = false;
+        const follow = (k, oldHex, oldPaint, newHex, newPaint) => {
+          if(!ART.hexOk(u[k]) || u[k].toLowerCase() !== String(oldHex).toLowerCase()) return;
+          if(sp[k] && sp[k] !== oldPaint) return;   // its own paint that happens to share the colour
+          u[k] = newHex;
+          if(sp[k]){ if(newPaint) sp[k] = newPaint; else delete sp[k]; }
+          touched = true;
+        };
+        keys.forEach(k => follow(k, old.colors[k], op[k] || "", after.colors[k], np[k] || ""));
+        const i = u.tier || 0;
+        if(tierMoved[i]) follow("helmet", old.tiers[i].color, old.tiers[i].paint || "", after.tiers[i].color, after.tiers[i].paint || "");
+        if(touched){ u.slotPaints = sp; await store.saveUnit(army.id, u, u.id, null, false, u); n++; }
+      }
+      return n;
     }
 
     function onInput(e){
@@ -418,7 +447,7 @@
     let armed = false;
     async function onClick(e){
       const t = e.target.closest("button"); if(!t) return;
-      if(t.dataset.sw || t.dataset.shape || t.dataset.style || t.dataset.scheme || t.dataset.tdel != null || t.id === "s-addtier") setupDirty = true;
+      if(t.dataset.shape || t.dataset.style || t.dataset.scheme || t.dataset.tdel != null || t.id === "s-addtier") setupDirty = true;
       if(t.dataset.scheme){
         // Keep rank names (they may have been edited) but recolour the standard ranks to match.
         const k = known[+t.dataset.scheme];
@@ -431,7 +460,6 @@
         $("s-msg").classList.remove("err"); $("s-msg").textContent = `Using the ${k.name} scheme. Save to keep it.`;
         return;
       }
-      if(t.dataset.sw && !t.closest(".cpop")){ sch.colors[t.dataset.sw] = t.dataset.hex; delete sch.slotPaints[t.dataset.sw]; renderPreview(); return; }
       if(t.dataset.shape){ sch.shape = t.dataset.shape; renderPreview(); return; }
       if(t.id === "s-emmore"){ emLimit += 90; renderIcons(); return; }
       if(t.dataset.style){ sch.style = t.dataset.style; renderPreview(); return; }
@@ -530,13 +558,19 @@
           ${canWrite ? `<button type="button" class="btn-sm primary" id="b-list">Import army list</button>` : ""}
           <button type="button" class="btn-sm" id="b-paints">Paints &amp; recipes<span class="buy-badge" id="buy-badge" hidden></span></button>
           ${canWrite ? `<a class="btn btn-sm" href="#/army/${esc(army.id)}/colours">Edit colours</a>` : ""}
-          <button type="button" class="btn-sm" id="b-export">Export backup</button>
-          ${canWrite ? `<button type="button" class="btn-sm" id="b-import">Import backup</button><input type="file" id="f-import" accept="application/json,.json" hidden>` : ""}
+          <div class="more">
+            <button type="button" class="btn-sm" id="b-more" aria-expanded="false" aria-controls="more-menu">More</button>
+            <div class="more-menu" id="more-menu" hidden>
+              <button type="button" id="b-export">Export backup</button>
+              ${canWrite ? `<button type="button" id="b-import">Import backup</button>` : ""}
+            </div>
+          </div>
+          ${canWrite ? `<input type="file" id="f-import" accept="application/json,.json" hidden>` : ""}
         </div>
       </div>
 
       ${!canWrite ? `<div class="banner viewonly"><span class="dot on"></span><span>You're viewing a shared ledger. You can look but not change anything.</span>${store.kind === "supabase" && !store.session ? `<button type="button" class="btn-sm" data-signin>Sign in</button>` : ""}</div>` : ""}
-      <section class="key" aria-label="Rank colours">${scheme.tiers.map(t => `<div>${tierBadge(scheme, t, 44)}<span><strong>${esc(t.name)}</strong><small>${esc(t.note || cname(t.color) + " " + PROF.head)}</small></span></div>`).join("")}</section>
+      <section class="key" id="key" aria-label="Rank colours">${scheme.tiers.map(t => `<div>${tierBadge(scheme, t, 44)}<span><strong>${esc(t.name)}</strong><small>${esc(t.note || cname(t.color) + " " + PROF.head)}</small></span></div>`).join("")}</section>
 
         <section class="list" aria-labelledby="army-h">
           <div class="list-head">
@@ -655,7 +689,7 @@
             <div class="msg" id="msg" role="status" aria-live="polite"></div>
             <div class="ed-bar-actions">
               <button type="button" id="b-cancel">Cancel</button>
-              <button type="button" id="b-save-new">Save &amp; add another</button>
+              <button type="button" id="b-save-new"><span class="lbl-long">Save &amp; add another</span><span class="lbl-short">Save &amp; new</span></button>
               <button type="submit" class="primary" id="b-save">Add unit</button>
             </div>
           </footer>
@@ -784,7 +818,7 @@
     form.querySelectorAll("[data-slot]").forEach(h => {
       const k = h.dataset.slot;
       slotApi[k] = PU.slot(h, {id: "f-" + k, label: slotLabel(k), value: {hex: scheme.colors[k] || "#1f1f22", paint: ""},
-        owned: () => owned, mine: () => ownedList,
+        owned: () => owned, mine: () => ownedList, plain: PLAIN,
         swatches: () => Object.keys(scheme.colors).filter(c => COLOR_IDS.includes(c)).map(c => ({hex: scheme.colors[c], paint: (scheme.slotPaints || {})[c] || ""}))
           .concat(scheme.tiers.map(t => ({hex: t.color, paint: t.paint || ""}))),
         onChange: () => { setDirty(true); preview(); }});
@@ -960,7 +994,7 @@
             ${u.head === "none" ? "" : `<dt>${u.head === "bare" ? "Face" : esc(LB.helmet)}</dt><dd>${u.head === "bare" ? chip(u.skin) + "Bare head" : chip(u.helmet) + esc(nameOf(u, "helmet"))}${u.hdetail ? ", " + esc(u.hdetail) : ""}</dd>`}
             <dt>${esc(LB.armour)}</dt><dd>${chip(u.armour)}${esc(nameOf(u, "armour"))}, ${esc(nameOf(u, "trim"))} ${esc(LB.trim.toLowerCase())}</dd>
             ${PROF.skinAlways ? `<dt>${esc(LB.skin)}</dt><dd>${chip(u.skin)}${esc(nameOf(u, "skin"))}</dd>` : ""}
-            <dt>Weapons</dt><dd>${esc(weaponsText(u))}</dd>
+            ${u.melee || u.ranged ? `<dt>Weapons</dt><dd>${esc(weaponsText(u))}</dd>` : ""}
             ${recipesOf(u).length ? `<dt>Recipes</dt><dd>${esc(recipesOf(u).map(r => r.name).join(", "))}${canWrite && missingFor(u).length ? ` <span class="need">${missingFor(u).length} to buy</span>` : ""}</dd>` : ""}
           </dl>
           <div class="progress" title="${esc(stageLabel(u))}"><div class="segs" aria-hidden="true">${segs}</div><span>${u.painted}/${u.count} painted</span></div>
@@ -976,7 +1010,15 @@
       units.forEach(u => { if(!u.points && u.datasheet){ const p = ptsFor(sheetFor(u.datasheet), u.count); if(p) u.points = p; } });
       const list = visible(), c = $("cards");
       if(!list.length){ c.innerHTML = `<div class="empty">${units.length ? "No units match." : canWrite ? "No units yet. Pick a datasheet in the form, or import your army list." : "No units in this ledger yet."}</div>`; }
-      else c.innerHTML = groupsOf(list).map(([name, us]) => (name ? `<h3 class="group-h"><span>${esc(name)}</span><small>${plural(us.length, "unit")} · ${fmt(us.reduce((a, u) => a + (u.points || 0), 0))} pts · ${us.reduce((a, u) => a + u.painted, 0)}/${us.reduce((a, u) => a + u.count, 0)} painted</small></h3>` : "") + us.map(cardHtml).join("")).join("");
+      else {
+        // Each group sizes to its cards, so small groups sit side by side instead of one card per row.
+        const groups = groupsOf(list), grouped = !!groups[0][0];
+        c.classList.toggle("grouped", grouped);
+        c.innerHTML = grouped ? groups.map(([name, us]) => `<section class="grp" style="--n:${Math.min(us.length, 4)}">
+            <h3 class="group-h"><span>${esc(name)}</span><small>${plural(us.length, "unit")} · ${fmt(us.reduce((a, u) => a + (u.points || 0), 0))} pts · ${us.reduce((a, u) => a + u.painted, 0)}/${us.reduce((a, u) => a + u.count, 0)} painted</small></h3>
+            <div class="grp-cards">${us.map(cardHtml).join("")}</div></section>`).join("")
+          : list.map(cardHtml).join("");
+      }
       const models = units.reduce((a, u) => a + (+u.count || 0), 0);
       const done = units.reduce((a, u) => a + (+u.painted || 0), 0);
       const pts = units.reduce((a, u) => a + (+u.points || 0), 0);
@@ -997,7 +1039,8 @@
       const col = hex => ART.hexOk(hex) ? chip(hex) + esc(cname(hex)) : "";
       // Colour area: the paint (with Owned / To buy) or the plain colour.
       const colk = k => { if(!ART.hexOk(u[k])) return ""; const p = u.slotPaints[k];
-        return chip(u[k]) + esc(p || cname(u[k])) + (p && canWrite ? (isOwned(p) ? ` <span class="own ok">Owned</span>` : ` <span class="own no">To buy</span>`) : ""); };
+        const d = PU.describe(p);
+        return chip(u[k]) + (p ? esc(d.name) + (d.meta ? ` <small class="pmeta">${esc(d.meta)}</small>` : "") : esc(cname(u[k]))) + (p && canWrite ? (isOwned(p) ? ` <span class="own ok">Owned</span>` : ` <span class="own no">To buy</span>`) : ""); };
       const sec = (title, rows) => { const r = rows.filter(x => x[1]); return r.length ? `<section><h4>${title}</h4><dl>${r.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl></section>` : ""; };
       $("detail-body").innerHTML = `<div class="detail">
         <div class="media">${img ? `<img src="${esc(img)}" alt="Photo of ${esc(u.name)}">` : unitBadge(u, scheme, 180)}</div>
@@ -1381,8 +1424,19 @@
     }
     const onBeforeUnload = e => { if(dirty && canWrite){ e.preventDefault(); e.returnValue = ""; } };
     window.addEventListener("beforeunload", onBeforeUnload);
+    // Rank strip scrolls sideways on phones: fade the right edge while there's more to see.
+    const keyFade = () => { const k = $("key"); if(k) k.classList.toggle("more-right", k.scrollLeft + k.clientWidth < k.scrollWidth - 4); };
+    $("key").addEventListener("scroll", keyFade, {passive: true}); window.addEventListener("resize", keyFade); keyFade();
+    // "More" menu (backups): closes on a pick, a click elsewhere or Escape.
+    const moreOpen = on => { $("more-menu").hidden = !on; $("b-more").setAttribute("aria-expanded", on); };
+    $("b-more").addEventListener("click", e => { e.stopPropagation(); moreOpen($("more-menu").hidden); });
+    $("more-menu").addEventListener("click", () => moreOpen(false));
+    const onDocMore = e => { if(!e.target.closest(".more")) moreOpen(false); };
+    const onKeyMore = e => { if(e.key === "Escape" && !$("more-menu").hidden){ moreOpen(false); $("b-more").focus(); } };
+    document.addEventListener("click", onDocMore); document.addEventListener("keydown", onKeyMore);
     view.guard = () => okToLeave();
     view.cleanup = () => {
+      document.removeEventListener("click", onDocMore); document.removeEventListener("keydown", onKeyMore); window.removeEventListener("resize", keyFade);
       window.removeEventListener("beforeunload", onBeforeUnload); $("detail").removeEventListener("click", onDetailClick); clearPending();
       clearTimeout(toastTimer); $("toast").hidden = true; if(toastDone){ const fn = toastDone; toastDone = null; fn(); }
       view.guard = null;
@@ -1400,7 +1454,8 @@
     const missingFor = u => [...new Set(recipesOf(u).flatMap(paintsOf).filter(p => !isOwned(p)).map(PU.norm))];
     function stepsHtml(r){
       if(!r.steps.length) return `<p class="prose">No steps yet.</p>`;
-      return `<ol class="steps">${r.steps.map(st => `<li>${PU.swatch(st.p)}<span class="st-t">${esc(st.t || "Step")}</span><span class="st-p">${esc(st.p || "—")}</span>${canWrite && st.p ? (isOwned(st.p) ? `<span class="own ok">Owned</span>` : `<span class="own no">To buy</span>`) : ""}</li>`).join("")}</ol>${r.notes ? `<p class="prose r-notes">${esc(r.notes)}</p>` : ""}`;
+      return `<ol class="steps">${r.steps.map(st => { const d = PU.describe(st.p);
+        return `<li>${PU.swatch(st.p)}<span class="st-x"><span class="st-t">${esc(st.t || "Step")}</span><span class="st-p">${esc(d.name || "—")}${d.meta ? `<small>${esc(d.meta)}</small>` : ""}</span></span>${canWrite && st.p ? (isOwned(st.p) ? `<span class="own ok">Owned</span>` : `<span class="own no">To buy</span>`) : ""}</li>`; }).join("")}</ol>${r.notes ? `<p class="prose r-notes">${esc(r.notes)}</p>` : ""}`;
     }
     function renderRecipePicks(checked){
       const box = $("f-recipes"), list = scheme.recipes || [], inLib = libLive().length;
@@ -1524,11 +1579,16 @@
       } else if(pdTab === "owned"){
         const q = PU.norm(ownedQuery);
         const shown = ownedList.filter(p => !q || PU.norm(p).includes(q)).sort((a, b) => a.localeCompare(b));
+        const usedHere = ownedList.length ? [] : shoppingList(false);
         body.innerHTML = `
           <p class="hint">Paints you own are saved to your ${store.kind === "supabase" ? "account" : "browser"} and shared by all your ledgers.</p>
           <div class="add-paint"><span class="pwrap-host"><input id="op-add" placeholder="Add a paint, e.g. Abaddon Black" aria-label="Add a paint"></span><button type="button" class="primary" data-act="add-owned">Add</button></div>
           <div class="owned-head"><strong>${plural(ownedList.length, "paint")}</strong>${ownedList.length > 8 ? `<input type="search" id="op-q" class="search" placeholder="Filter" value="${esc(ownedQuery)}">` : ""}</div>
-          <div class="owned">${shown.map(p => `<span class="ochip">${PU.swatch(p)}<span>${esc(p)}</span><button type="button" data-act="rm-owned" data-p="${esc(p)}" aria-label="Remove ${esc(p)}">×</button></span>`).join("") || `<p class="hint">${ownedList.length ? "No paints match." : "Nothing here yet. Add the paints on your shelf."}</p>`}</div>`;
+          <div class="owned">${shown.map(p => `<span class="ochip">${PU.swatch(p)}<span>${esc(p)}</span><button type="button" data-act="rm-owned" data-p="${esc(p)}" aria-label="Remove ${esc(p)}">×</button></span>`).join("") || `<p class="hint">${ownedList.length ? "No paints match." : "Nothing here yet. Add the paints on your shelf."}</p>`}</div>
+          ${!ownedList.length && usedHere.length ? `<div class="used-here">
+            <div class="lib-head"><h4 class="em-h">Used in this ledger</h4><button type="button" class="btn-sm" data-act="got-all">I have all ${usedHere.length}</button></div>
+            <p class="hint">Paints from this ledger's colours and recipes. Tick off the ones already on your shelf.</p>
+            <ul class="buy">${usedHere.map(it => `<li>${PU.swatch(it.label)}<span class="b-n"><strong>${esc(it.label)}</strong></span><button type="button" class="btn-sm" data-act="got" data-p="${esc(it.label)}">I have it</button></li>`).join("")}</ul></div>` : ""}`;
         PU.picker($("op-add"), {owned: () => owned, extra: () => [], onPick: () => {}});
         $("op-add").addEventListener("keydown", e => { if(e.key === "Enter"){ e.preventDefault(); addOwned(); } });
         const oq = $("op-q"); if(oq) oq.addEventListener("input", e => { ownedQuery = e.target.value; const pos = e.target.selectionStart; renderPaints(); const n = $("op-q"); if(n){ n.focus(); n.setSelectionRange(pos, pos); } });
@@ -1650,6 +1710,7 @@
       else if(act === "add-owned") addOwned();
       else if(act === "rm-owned"){ try { await saveOwned(ownedList.filter(p => p !== b.dataset.p)); renderPaints(); } catch(err){ toast("Couldn't save: " + errText(err)); } }
       else if(act === "got"){ try { await saveOwned(ownedList.concat(b.dataset.p)); renderPaints(); } catch(err){ toast("Couldn't save: " + errText(err)); } }
+      else if(act === "got-all"){ try { await saveOwned(ownedList.concat(shoppingList(false).map(it => it.label))); renderPaints(); } catch(err){ toast("Couldn't save: " + errText(err)); } }
       else if(act === "copy-buy"){
         const text = shoppingList(!buyAll).map(it => "- " + it.label).join("\n");
         try { await navigator.clipboard.writeText(text); $("buy-msg").textContent = "Copied."; } catch(err){ $("buy-msg").textContent = "Couldn't copy. Select the list and copy it instead."; }

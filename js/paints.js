@@ -105,7 +105,8 @@
      every paint, choose one of yours or an army colour, or set a custom colour. The hex always follows
      the paint, so badges keep working from colours alone.
      opts: {id: id for a hidden input holding the hex, label, value: {hex, paint}, owned(): Set of
-     owned keys, mine(): your paint labels, swatches(): [{hex, paint}], onChange({hex, paint})} */
+     owned keys, mine(): your paint labels, swatches(): [{hex, paint}], plain: [{hex, name}] plain colours,
+     onChange({hex, paint})} */
   let openSlot = null;
   const cname = hex => (window.LEDGER_PRESETS && window.LEDGER_PRESETS.colorName(hex)) || hex;
   const okHex = h => /^#[0-9a-f]{6}$/i.test(h || "");
@@ -119,7 +120,9 @@
       const p = v.paint ? find(v.paint) : null;
       host.querySelector(".cp-sw").style.background = v.hex;
       host.querySelector("strong").textContent = p ? p.name : v.paint || cname(v.hex);
-      host.querySelector("small").textContent = p ? p.brand : v.paint ? "Your paint" : "Custom colour";
+      // Only paints get a second line; a plain colour just shows its name.
+      const sm = host.querySelector("small");
+      sm.textContent = p ? p.brand : v.paint ? "Your paint" : ""; sm.hidden = !sm.textContent;
       btn.setAttribute("aria-label", `${opts.label || "Colour"}: ${v.paint || cname(v.hex)}. Change`);
       if(hid) hid.value = v.hex;
     }
@@ -144,6 +147,8 @@
         const seen = new Set();
         sws = (opts.swatches ? opts.swatches() : []).filter(s => okHex(s.hex) && !seen.has(s.hex + s.paint) && seen.add(s.hex + s.paint));
         if(sws.length) html += `<div class="cpop-h">Army colours</div><div class="cpop-sws">${sws.map((s, i) => `<button type="button" class="sw" data-sw="${i}" style="background:${s.hex}" title="${esc(s.paint || cname(s.hex))}" aria-label="${esc(s.paint || cname(s.hex))}"></button>`).join("")}</div>`;
+        const plain = opts.plain || [];
+        if(plain.length) html += `<div class="cpop-h">Plain colours</div><div class="cpop-sws">${plain.map((c, i) => `<button type="button" class="sw" data-plain="${i}" style="background:${c.hex}" title="${esc(c.name)}" aria-label="${esc(c.name)}"></button>`).join("")}</div>`;
         items = (opts.mine ? opts.mine() : []).map(l => find(l) || {label: l, name: l, brand: "", set: "Your paint", hex: "", key: norm(l)}).sort((a, b) => a.name.localeCompare(b.name)).slice(0, 80);
         html += items.length ? `<div class="cpop-h">Your paints</div>${items.map(row).join("")}` : `<p class="cpop-empty">Type to search thousands of paints, or pick a custom colour below.</p>`;
       } else {
@@ -188,6 +193,7 @@
       pop.addEventListener("mousedown", e => { const o = e.target.closest("[data-i]"); if(o){ e.preventDefault(); pick(+o.dataset.i); } });
       pop.addEventListener("click", e => {
         const s = e.target.closest("[data-sw]"); if(s){ const w = sws[+s.dataset.sw]; commit({hex: w.hex, paint: w.paint || ""}); return; }
+        const pl = e.target.closest("[data-plain]"); if(pl){ commit({hex: opts.plain[+pl.dataset.plain].hex, paint: ""}); return; }
         if(e.target.closest("[data-clear]")) commit({hex: v.hex, paint: ""});
       });
       col.addEventListener("input", () => { pop.querySelector(".cpop-custom .cp-sw").style.background = col.value; commit({hex: col.value, paint: ""}, true); });
@@ -212,6 +218,11 @@
   }
   // Short name for a paint label ("Citadel Abaddon Black" -> "Abaddon Black"); other text as it is.
   const shortName = label => { const p = label ? find(label) : null; return p ? p.name : label || ""; };
+  // Name plus a small "Citadel · Base" line, for showing a paint in lists.
+  function describe(label){
+    const p = label ? find(label) : null;
+    return p ? {name: p.name, meta: [p.brand, p.set].filter(Boolean).join(" · ")} : {name: label || "", meta: ""};
+  }
 
-  window.LEDGER_PAINTUI = {load, find, search, swatch, picker, norm, slot, shortName};
+  window.LEDGER_PAINTUI = {load, find, search, swatch, picker, norm, slot, shortName, describe};
 })();
