@@ -57,6 +57,26 @@
     <div class="auth" id="auth-host"></div>
   </dialog>
 
+  <dialog id="rosterdlg" class="paintdlg rosterdlg" aria-labelledby="ro-h">
+    <div class="pd-wrap">
+      <header class="ed-top">
+        <div class="ed-titles"><h2 id="ro-h">Your roster</h2><p class="ro-sum" id="ro-sum"></p></div>
+        <button type="button" class="btn-sm" data-close>Close</button>
+      </header>
+      <div class="ro-tools">
+        <input type="search" id="ro-q" placeholder="Search your units" aria-label="Search your roster">
+        <div class="filters" id="ro-f" role="group" aria-label="Filter by status">
+          <button type="button" data-rf="all" aria-pressed="true">All</button>
+          <button type="button" data-rf="todo" aria-pressed="false">To paint</button>
+          <button type="button" data-rf="progress" aria-pressed="false">In progress</button>
+          <button type="button" data-rf="done" aria-pressed="false">Painted</button>
+        </div>
+        <label class="ro-by">Group by<select id="ro-g"><option value="army">Ledger</option><option value="role">Role</option><option value="status">Status</option></select></label>
+      </div>
+      <div class="pd-body" id="ro-body"></div>
+    </div>
+  </dialog>
+
   <dialog id="leavedlg" class="small" aria-labelledby="lv-h">
     <div class="leavebox">
       <h2 id="lv-h">Unsaved changes</h2>

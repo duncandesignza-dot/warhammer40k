@@ -173,6 +173,7 @@
       <div class="acct-menu" id="acct-menu" role="menu" hidden>
         <div class="acct-head"><span class="avatar lg" aria-hidden="true">${esc(a.initials)}</span><span><strong>${esc(a.name)}</strong><small>${esc(a.email)}</small></span></div>
         <a role="menuitem" href="#/">My profile and ledgers</a>
+        <button type="button" role="menuitem" data-roster>Your roster</button>
         <button type="button" role="menuitem" disabled aria-disabled="true">Settings <span class="soon">Soon</span></button>
         <a role="menuitem" href="#/welcome">About Livery Ledger</a>
         <hr>
@@ -329,6 +330,7 @@
     try {
       if(parts[0] === "new" && FBY[parts[1]]) await viewSetup({factionId: parts[1]});
       else if(parts[0] === "army" && parts[1] && parts[2] === "colours") await viewSetup({armyId: parts[1]});
+      else if(parts[0] === "army" && parts[1] && parts[2] === "unit" && parts[3]) await viewLedger(parts[1], parts[3]);
       else if(parts[0] === "army" && parts[1]) await viewLedger(parts[1]);
       else if(parts[0] === "welcome") await viewLanding();
       // Signed out on the online version: the homepage. Signed in (or saving in this browser): your profile and ledgers.
@@ -370,6 +372,7 @@
           <h1>${me ? esc(me.name) : "Your ledgers"}</h1>
           ${me ? `<p class="sub">${esc(me.email)}${since ? ` · Painting with us since ${esc(since)}` : ""}</p>` : `<p class="sub">Plan how you'll paint your army. Pick your faction, choose your colours, then track every unit with photos, weapons and paint recipes.</p>`}
           ${me ? "" : `<div class="ph-note">${noteHtml()}</div>`}
+          ${armies.length ? `<div class="ph-actions"><button type="button" class="btn-sm" data-roster><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11"/><path d="M9 12h11"/><path d="M9 18h11"/><path d="M4 6h.01"/><path d="M4 12h.01"/><path d="M4 18h.01"/></svg>Your roster<span class="count">${num(tot.units)}</span></button></div>` : ""}
         </div>
         <div class="stats" aria-label="Your painting so far">
           <div class="stat"><b>${armies.length}</b><span>${armies.length === 1 ? "Ledger" : "Ledgers"}</span></div>
@@ -859,7 +862,7 @@ Redemptor Dreadnought (210 points)</pre>
   /* ============================================================
      Ledger
      ============================================================ */
-  async function viewLedger(armyId){
+  async function viewLedger(armyId, openUnit){
     view.name = "ledger";
     let army = await store.getArmy(armyId);
     if(!army){
@@ -2300,7 +2303,89 @@ Redemptor Dreadnought (210 points)</pre>
     catch(err){ console.error(err); $("cards").innerHTML = `<div class="empty">Couldn't load units: ${esc(errText(err))}</div>`; return; }
     newUnit(false);
     loadLibrary();
+    // Came from the roster: show that unit, and tidy the address back to the ledger's.
+    if(openUnit){
+      history.replaceState(null, "", "#/army/" + army.id); lastHash = location.hash;
+      if(units.some(u => u.id === openUnit)) openDetail(openUnit);
+    }
   }
+
+  /* ============================================================
+     Roster: every unit across all your ledgers
+     ============================================================ */
+  let roster = null, rosterFilter = "all";
+  const unitDone = u => { const c = +u.count || 0; return Math.min(c, +u.painted || (u.status === "done" ? c : 0)); };
+  async function openRoster(){
+    const d = $("rosterdlg");
+    try { $("ro-g").value = localStorage.getItem("ll-roster-group") || "army"; } catch(e){}
+    if(!$("ro-g").value) $("ro-g").value = "army";
+    $("ro-body").innerHTML = `<p class="hint">Loading your units…</p>`; $("ro-sum").textContent = "";
+    if(!d.open) d.showModal();
+    try {
+      const [armies, units] = await Promise.all([store.listArmies(), store.listAllUnits()]);
+      const byId = Object.fromEntries(armies.map(a => [a.id, a]));
+      roster = {armies, byId, units: units.filter(u => byId[u.armyId])};
+      drawRoster();
+    } catch(err){ console.error(err); $("ro-body").innerHTML = `<p class="hint">Couldn't load your roster: ${esc(errText(err))}</p>`; }
+  }
+  function drawRoster(){
+    if(!roster) return;
+    const {armies, byId, units} = roster;
+    const q = $("ro-q").value.trim().toLowerCase(), by = $("ro-g").value;
+    const models = units.reduce((n, u) => n + (+u.count || 0), 0), done = units.reduce((n, u) => n + unitDone(u), 0), pts = units.reduce((n, u) => n + (+u.points || 0), 0);
+    const list = units.filter(u => {
+      if(rosterFilter === "done" && u.status !== "done") return false;
+      if(rosterFilter === "progress" && !["progress", "primed", "built"].includes(u.status)) return false;
+      if(rosterFilter === "todo" && u.status === "done") return false;
+      const a = byId[u.armyId], f = FBY[a.faction];
+      return !q || [u.name, u.datasheet, u.role, u.melee, u.ranged, u.notes, a.name, f && f.name].join(" ").toLowerCase().includes(q);
+    });
+    $("ro-sum").textContent = units.length ? [plural(units.length, "unit"), plural(models, "model"), num(pts) + " pts", (models ? Math.round(done / models * 100) : 0) + "% painted"].join(" · ") + (list.length !== units.length ? ` · showing ${list.length}` : "") : "";
+    if(!units.length){
+      $("ro-body").innerHTML = `<div class="ro-empty"><strong>No units yet</strong><p>Open a ledger and add your units, or import your army list, and they'll all show up here.</p></div>`;
+      return;
+    }
+    if(!list.length){ $("ro-body").innerHTML = `<p class="hint">No units match. Try a different search or filter.</p>`; return; }
+    let groups;
+    if(by === "role") groups = ROLE_ORDER.concat([...new Set(list.map(u => u.role || "Other"))].filter(r => !ROLE_ORDER.includes(r))).map(r => ({key: r, title: r, units: list.filter(u => (u.role || "Other") === r)}));
+    else if(by === "status") groups = ["progress", "primed", "built", "unbuilt", "done"].map(k => ({key: k, title: STATUS[k], units: list.filter(u => (u.status || "unbuilt") === k)}));
+    else groups = armies.map(a => ({key: a.id, army: a, title: a.name, units: list.filter(u => u.armyId === a.id)}));
+    const keep = PROF;
+    const row = u => {
+      const a = byId[u.armyId], c = +u.count || 0, dn = unitDone(u), pct = c ? Math.round(dn / c * 100) : 0, st = u.status || "unbuilt";
+      PROF = P.profileFor(a.faction);
+      const sub = [u.datasheet && u.datasheet !== u.name ? u.datasheet : "", by === "role" ? "" : u.role, by === "army" ? "" : a.name].filter(Boolean).join(" · ");
+      return `<a class="ro-row" href="#/army/${esc(a.id)}/unit/${esc(u.id)}">
+        <span class="ro-badge">${unitBadge(u, a.scheme, 44)}</span>
+        <span class="ro-name"><strong>${esc(u.name || u.datasheet || "Unit")}</strong><small>${esc(sub || "Unit")}</small></span>
+        <span class="ro-prog"><span class="ro-bar"><i style="width:${pct}%"></i></span><small>${dn}/${c} painted</small></span>
+        <span class="ro-pts">${u.points ? num(u.points) + " pts" : "—"}</span>
+        <span class="ro-st st-${esc(st)}">${esc(STATUS[st] || st)}</span>
+      </a>`;
+    };
+    $("ro-body").innerHTML = groups.filter(g => g.units.length).map(g => {
+      const m = g.units.reduce((n, u) => n + (+u.count || 0), 0), dn = g.units.reduce((n, u) => n + unitDone(u), 0);
+      let head = "";
+      if(g.army){ PROF = P.profileFor(g.army.faction); head = tierBadge(g.army.scheme, g.army.scheme.tiers[0], 34); }
+      const f = g.army && FBY[g.army.faction];
+      return `<section class="ro-group" aria-label="${esc(g.title)}">
+        <div class="ro-gh">${head}<div><h3>${esc(g.title)}</h3><small>${f ? esc(f.name) + " · " : ""}${plural(g.units.length, "unit")} · ${m ? Math.round(dn / m * 100) : 0}% painted</small></div>${g.army ? `<a class="btn btn-sm" href="#/army/${esc(g.army.id)}" aria-label="Open ${esc(g.army.name)}"><span class="lbl-long">Open ledger</span><span class="lbl-short">Open</span></a>` : ""}</div>
+        ${g.units.map(row).join("")}
+      </section>`;
+    }).join("");
+    PROF = keep;
+  }
+  $("ro-q").addEventListener("input", drawRoster);
+  $("ro-g").addEventListener("change", () => { try { localStorage.setItem("ll-roster-group", $("ro-g").value); } catch(e){} drawRoster(); });
+  $("ro-f").addEventListener("click", e => {
+    const b = e.target.closest("[data-rf]"); if(!b) return;
+    rosterFilter = b.dataset.rf;
+    $("ro-f").querySelectorAll("[data-rf]").forEach(x => x.setAttribute("aria-pressed", x === b));
+    drawRoster();
+  });
+  // Opening a unit or ledger from the roster closes it on the way.
+  $("ro-body").addEventListener("click", e => { if(e.target.closest("a[href]")) $("rosterdlg").close(); });
+  document.addEventListener("click", e => { if(e.target.closest("[data-roster]")){ acctOpen(false); openRoster(); } });
 
   /* ============================================================
      Dialogs, auth, start

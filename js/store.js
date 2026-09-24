@@ -188,6 +188,7 @@
       },
       async removeArmy(a){ db.armies = db.armies.filter(x => x.id !== a.id); db.units = db.units.filter(u => u.armyId !== a.id); save(); },
       async listUnits(armyId){ return db.units.filter(u => u.armyId === armyId).map(u => ({...u, ...cleanUnit(u)})); },
+      async listAllUnits(){ return db.units.map(u => ({...u, ...cleanUnit(u)})); },
       async saveUnit(armyId, u, id, photo, remove){
         const prev = id ? db.units.find(x => x.id === id) : null;
         let image = prev ? prev.image || "" : "";
@@ -285,6 +286,8 @@
         if(paths.length) sb.storage.from(B).remove(paths).catch(() => {});
       },
       async listUnits(armyId){ return (mustOk(await sb.from(U).select("*").eq("army_id", armyId).order("created_at", {ascending: true})) || []).map(toUnit); },
+      // Every unit across all your ledgers, for the roster.
+      async listAllUnits(){ if(!session) return []; return (mustOk(await sb.from(U).select("*").eq("owner", session.user.id).order("created_at", {ascending: true})) || []).map(toUnit); },
       async saveUnit(armyId, u, id, photo, remove, prev){
         need();
         let image_path = prev ? prev.imagePath || null : null, oldPath = null;
