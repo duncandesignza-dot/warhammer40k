@@ -46,6 +46,8 @@
     s = s || {};
     const colors = {};
     ["armour","secondary","trim","emblem","lens","cloth","metal"].forEach(k => { colors[k] = HEX.test((s.colors||{})[k]) ? s.colors[k] : "#1f1f22"; });
+    // Skin came later: leave it out when missing so the app can use the faction's starting skin.
+    if(HEX.test((s.colors||{}).skin)) colors.skin = s.colors.skin;
     const tiers = (Array.isArray(s.tiers) ? s.tiers : []).slice(0, 8).map(t => ({
       name: String((t && t.name) || "Tier").slice(0, 40),
       note: String((t && t.note) || "").slice(0, 80),

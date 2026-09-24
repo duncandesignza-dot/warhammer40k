@@ -55,7 +55,7 @@
     "genestealer-cults":{style:"roundel",  armour:"#5a2a6b", secondary:"#c9b27c", trim:"#b08d3c", emblem:"#b08d3c", shape:"star",    lens:"#e8c33a", cloth:"#c9b27c", metal:"#5d6166"},
     "leagues-of-votann":{style:"roundel",  armour:"#8a8d91", secondary:"#d9702a", trim:"#c9a13b", emblem:"#efeee9", shape:"diamond", lens:"#3b8fe0", cloth:"#6b4a2e", metal:"#9a6b3a"},
     "necrons":          {style:"roundel",  armour:"#a9adb3", secondary:"#1f1f22", trim:"#c9a13b", emblem:"#3fbf5a", shape:"ring",    lens:"#3fbf5a", cloth:"#1f1f22", metal:"#a9adb3"},
-    "orks":             {style:"roundel",  armour:"#4f7a2a", secondary:"#b3141c", trim:"#e8c33a", emblem:"#1f1f22", shape:"bolt",    lens:"#b3141c", cloth:"#6b4a2e", metal:"#5d6166"},
+    "orks":             {style:"roundel",  armour:"#5d6166", secondary:"#b3141c", trim:"#e8c33a", emblem:"#1f1f22", shape:"bolt",    lens:"#b3141c", cloth:"#6b4a2e", metal:"#8a8d91"},
     "tau-empire":       {style:"roundel",  armour:"#c98a3b", secondary:"#efeee9", trim:"#1f1f22", emblem:"#efeee9", shape:"ring",    lens:"#3fbf5a", cloth:"#6b4a2e", metal:"#5d6166"},
     "tyranids":         {style:"roundel",  armour:"#5a2a6b", secondary:"#d8cba8", trim:"#b3141c", emblem:"#d8cba8", shape:"drop",    lens:"#e8c33a", cloth:"#d8cba8", metal:"#d8cba8"}
   };
@@ -102,22 +102,301 @@
     const s = SHAPES.find(x => x[0] === shape); return s ? s[1] : "Emblem";
   }
 
-  const DEFAULT_TIERS = (p) => [
-    T("Line", p.armour, "Standard troops"),
-    T("Veteran", p.secondary, "Veterans and elites"),
-    T("Leader", "#b3141c", "Sergeants and characters"),
-    T("Hero", p.trim, "Your warlord and heroes")
-  ];
+  /* Paint areas per faction. Every army stores the same colour slots (helmet, lens, armour, secondary,
+     trim, emblem, cloth, metal, skin); a profile says what each slot means for that faction's models,
+     e.g. "armour" is Carapace for Tyranids and Necrodermis for Necrons. "helmet" is the slot that
+     follows the unit's rank. Units pick a head type: helmet, bare (a face in the skin colour) or none;
+     bare is only offered when the profile allows it. */
+  const SKIN = "#c79a7e";
+  const BASE = {
+    head: "helmet",
+    labels: {helmet:"Helmet", lens:"Lenses / eyes", armour:"Armour", secondary:"Secondary", trim:"Trim", emblem:"Emblem",
+             cloth:"Robes / cloth", metal:"Weapons / metal", skin:"Skin"},
+    legends: {head:"Helmet", body:"Armour & pauldrons", details:"Cloth & details"},
+    detail: ["Helmet detail", "e.g. laurel wreath, centre stripe"],
+    detailOpts: ["Laurel wreath","Centre stripe","Crest","Battle damage","Squad markings"],
+    bare: true,
+    defaultHead: "helmet",
+    // Roles that start with no head to paint.
+    noHeadRoles: ["Vehicle","Monster","Dedicated Transport","Fortification"],
+    extras: ["Purity seals, freehand & extras", "e.g. red wax seals, freehand on kneepad"],
+    hide: [],
+    more: ["Weapons","Leather"],
+    tiers: [["Line","Standard troops"],["Veteran","Veterans and elites"],["Leader","Sergeants and characters"],["Hero","Your warlord and heroes"]]
+  };
+  const KINDS = {
+    astartes: {},
+    chaos: {
+      labels: {emblem:"Icon / mark"},
+      detailOpts: ["Horns","Crest","Face stripes","Battle damage","Warband markings"],
+      extras: ["Trophies, spikes & extras", "e.g. brass spikes, skulls, freehand runes"],
+      more: ["Weapons","Leather","Spikes & trophies"],
+      tiers: [["Legionaries","Standard troops"],["Chosen","Veterans and elites"],["Champion","Aspiring Champions and characters"],["Lord","Your warlord and heroes"]]
+    },
+    custodes: {
+      labels: {cloth:"Cloaks / plumes"},
+      detailOpts: ["Plume","Laurel wreath","Battle damage"],
+      extras: ["Scrolls, freehand & extras", "e.g. red oath scrolls, laurel freehand"],
+      tiers: [["Custodian Guard","Line troops"],["Allarus","Terminators and elites"],["Shield-Captain","Characters"],["Hero","Your warlord and heroes"]]
+    },
+    sororitas: {
+      labels: {armour:"Armour", secondary:"Armour detail", emblem:"Fleur / emblem", cloth:"Robes"},
+      legends: {head:"Head", body:"Armour", details:"Robes & details"},
+      detail: ["Helmet detail", "e.g. fleur on the brow, red stripe"],
+      detailOpts: ["Fleur","Stripe","Veil","Halo"],
+      defaultHead: "bare",
+      extras: ["Purity seals, scrolls & extras", "e.g. red wax seals, scripture scrolls"],
+      tiers: [["Battle Sisters","Line troops"],["Celestians","Veterans and elites"],["Sister Superior","Squad leaders and characters"],["Canoness","Your warlord and heroes"]]
+    },
+    mechanicus: {
+      head: "hood",
+      labels: {helmet:"Hood / mask", lens:"Optics", armour:"Robes", secondary:"Armour plates", trim:"Trim / edging", emblem:"Cog / emblem",
+               cloth:"Undersuit / cabling", metal:"Bionics / metal"},
+      legends: {head:"Head", body:"Robes & plates", details:"Bionics & details"},
+      detail: ["Head detail", "e.g. glowing optics, rebreather"],
+      detailOpts: ["Rebreather","Mechadendrites","Hazard stripes","Hood lining"],
+      extras: ["Hazard stripes, markings & extras", "e.g. yellow-black hazard stripes, binary script"],
+      more: ["Weapons","Cables","Hazard stripes"],
+      tiers: [["Skitarii","Line troops"],["Elites","Ruststalkers, Infiltrators and Kataphrons"],["Alpha","Squad leaders"],["Tech-Priest","Characters"]]
+    },
+    guard: {
+      labels: {lens:"Lenses / goggles", armour:"Armour / hulls", secondary:"Fatigues", trim:"Webbing / straps", emblem:"Insignia", cloth:"Greatcoat / cloth"},
+      legends: {head:"Helmet", body:"Armour & uniform", details:"Kit & details"},
+      detail: ["Helmet detail", "e.g. rank stripes, camo net"],
+      detailOpts: ["Rank stripes","Camo net","Squad number","Goggles","Beret"],
+      extras: ["Kit, markings & extras", "e.g. regiment number, bedroll, pouches"],
+      more: ["Weapons","Leather","Camo","Tank tracks"],
+      tiers: [["Troopers","Infantry squads"],["Veterans","Kasrkin, Tempestus and elites"],["Sergeant","Sergeants and officers"],["Commander","Your warlord and heroes"]]
+    },
+    knights: {
+      head: "helm",
+      labels: {helmet:"Helm", lens:"Eye lenses", armour:"Carapace", secondary:"Heraldry colour", emblem:"House emblem",
+               cloth:"Banners / tabards", metal:"Chassis / weapons", skin:"Skin (pilots)"},
+      legends: {head:"Helm", body:"Carapace & heraldry", details:"Chassis & details"},
+      detail: ["Helm detail", "e.g. crest, face-plate stripe"],
+      detailOpts: ["Crest","Face-plate stripe","Laurels","Battle damage"],
+      bare: false,
+      noHeadRoles: ["Fortification"],
+      extras: ["Heraldry, kill markings & extras", "e.g. checks, kill banners, freehand"],
+      more: ["Weapons","Pistons & cables","Heraldry"],
+      tiers: [["Armigers","Armiger-class Knights"],["Questoris","Questoris-class Knights"],["Dominus","Dominus-class Knights"],["Hero","Your warlord and characters"]]
+    },
+    agents: {
+      labels: {secondary:"Coat / uniform"},
+      tiers: [["Troops","Retinues and troops"],["Specialists","Assassins and elites"],["Leader","Characters"],["Inquisitor","Your warlord"]]
+    },
+    aeldari: {
+      labels: {lens:"Lenses & gems", emblem:"Rune", cloth:"Cloth / cloaks", metal:"Weapons"},
+      legends: {head:"Helmet", body:"Armour & markings", details:"Cloth & details"},
+      detail: ["Helmet detail", "e.g. crest, rune on the brow"],
+      detailOpts: ["Crest","Plume","Rune","Hair"],
+      extras: ["Gems, runes & freehand", "e.g. red spirit stones, craftworld rune"],
+      more: ["Weapons","Gems","Wraithbone"],
+      tiers: [["Guardians","Guardians and line troops"],["Aspect Warriors","Aspect Warriors and elites"],["Exarch","Exarchs and leaders"],["Seer","Farseers, Autarchs and heroes"]]
+    },
+    drukhari: {
+      labels: {helmet:"Helmet / hair", trim:"Trim / blades", cloth:"Cloth / cloaks"},
+      detailOpts: ["Crest","Hair plume","Glyph","Spikes"],
+      extras: ["Trophies, glyphs & extras", "e.g. severed hands, kabal glyphs"],
+      more: ["Weapons","Leather","Blades & spikes"],
+      tiers: [["Kabalites","Kabalite Warriors and Wyches"],["Elites","Incubi, Mandrakes and Trueborn"],["Sybarite","Squad leaders"],["Archon","Archons, Succubi and Haemonculi"]]
+    },
+    gsc: {
+      skinAlways: true,
+      labels: {helmet:"Helmet / cap", lens:"Eyes / lamps", armour:"Overalls / uniform", trim:"Webbing / straps", emblem:"Cult icon", cloth:"Rags / cloth", metal:"Weapons / tools"},
+      legends: {head:"Head", body:"Overalls & uniform", details:"Skin & details"},
+      detail: ["Helmet detail", "e.g. mining lamp, hazard stripe"],
+      detailOpts: ["Mining lamp","Goggles","Hazard stripe","Cult icon"],
+      extras: ["Cult markings & extras", "e.g. cult icon freehand, hazard stripes"],
+      more: ["Weapons","Leather","Hazard stripes"],
+      tiers: [["Neophytes","Neophyte Hybrids"],["Acolytes","Acolytes and Aberrants"],["Leader","Leaders and characters"],["Patriarch","The Patriarch and Magus"]]
+    },
+    votann: {
+      labels: {lens:"Visor", emblem:"League emblem", cloth:"Undersuit / cloth"},
+      detail: ["Beard & helmet detail", "e.g. ginger beard, helmet stripe"],
+      detailOpts: ["Beard","Helmet stripe","Crest","Rank markings"],
+      extras: ["Markings & extras", "e.g. hazard stripes, rank markings, Ironkin glow"],
+      more: ["Weapons","Beards","Leather"],
+      tiers: [["Hearthkyn","Hearthkyn Warriors"],["Hearthguard","Hearthguard and Einhyr"],["Theyn","Theyns and squad leaders"],["Kâhl","Kâhls and heroes"]]
+    },
+    necrons: {
+      head: "head",
+      labels: {helmet:"Head", lens:"Gauss glow / eyes", armour:"Necrodermis", secondary:"Carapace / panels", emblem:"Dynasty glyph",
+               cloth:"Cloth / cables", metal:"Weapons"},
+      legends: {head:"Head", body:"Necrodermis & carapace", details:"Cloth & details"},
+      detail: ["Head detail", "e.g. gold crest, headdress stripes"],
+      detailOpts: ["Headdress","Crest","Stripes","Crown"],
+      bare: false,
+      extras: ["Glyphs, glow & extras", "e.g. green gauss glow on guns, verdigris"],
+      hide: ["skin"],
+      more: ["Weapons","Gauss glow","Verdigris"],
+      tiers: [["Warriors","Necron Warriors and line troops"],["Immortals","Immortals, Lychguard and elites"],["Lord","Lords and Crypteks"],["Overlord","Overlords and heroes"]],
+      // Nobles wear the dynasty's trim metal on their heads.
+      tierColors: c => [c.armour, c.secondary, c.trim, shade(c.trim, .2)]
+    },
+    orks: {
+      skinAlways: true,
+      defaultHead: "bare",
+      labels: {lens:"Eyes", armour:"Armour plates", secondary:"Clan colour", emblem:"Glyph", cloth:"Clothes / trousers"},
+      legends: {head:"Head", body:"Armour & clan colours", details:"Skin & details"},
+      detail: ["Helmet detail", "e.g. horns, glyph on helmet"],
+      detailOpts: ["Horns","Glyph","Checks","Flames","Scars"],
+      extras: ["Glyphs, checks & extras", "e.g. black-white checks, teef, rust"],
+      more: ["Weapons","Leather","Teef & claws","Rust"],
+      tiers: [["Boyz","Boyz and gretchin"],["Nobz","Nobz and Meganobz"],["Boss","Bosses and characters"],["Warboss","Your Warboss and heroes"]]
+    },
+    tau: {
+      labels: {lens:"Lenses", secondary:"Sept markings", emblem:"Sept symbol", cloth:"Undersuit / cloth", metal:"Weapons"},
+      legends: {head:"Helmet", body:"Armour & sept markings", details:"Undersuit & details"},
+      detail: ["Helmet detail", "e.g. rank stripes, sensor spines"],
+      detailOpts: ["Rank stripes","Sensor spines","Markings"],
+      extras: ["Markings, stripes & extras", "e.g. hunter cadre stripes, kill markings"],
+      more: ["Weapons","Undersuit","Kroot skin"],
+      tiers: [["Shas'la","Fire Warriors and line troops"],["Shas'ui","Team leaders, Stealth and Crisis teams"],["Shas'vre","Veterans, Bodyguards and Broadsides"],["Shas'o","Commanders and heroes"]]
+    },
+    tyranids: {
+      skinAlways: true,
+      head: "head",
+      labels: {helmet:"Head / crest", lens:"Eyes", armour:"Carapace", secondary:"Carapace pattern", trim:"Carapace edges", emblem:"Markings",
+               cloth:"Tongues / membranes", metal:"Claws & talons"},
+      legends: {head:"Head", body:"Carapace", details:"Skin & details"},
+      detail: ["Head detail", "e.g. striped crest, dark eye sockets"],
+      detailOpts: ["Stripes","Spots","Crest"],
+      bare: false,
+      noHeadRoles: ["Fortification"],
+      extras: ["Details & extras", "e.g. purple tongues, glowing bio-weapons"],
+      more: ["Bio-weapons","Sinew","Toxin sacs"],
+      tiers: [["Swarm","Gaunts, Gargoyles and swarms"],["Warrior","Warriors and mid-sized bugs"],["Synapse","Synapse creatures and characters"],["Monster","Hive Tyrants and monsters"]]
+    },
+    daemons: {
+      head: "head",
+      labels: {helmet:"Head / horns", lens:"Eyes", armour:"Skin / hide", secondary:"Second tone", trim:"Horns & claws", emblem:"Mark of Chaos",
+               cloth:"Tongues / cloth", metal:"Weapons / brass"},
+      legends: {head:"Head", body:"Hide & horns", details:"Weapons & details"},
+      detail: ["Head detail", "e.g. horn tips, eye glow"],
+      detailOpts: ["Horn tips","Flames","Crest"],
+      bare: false,
+      noHeadRoles: ["Fortification"],
+      extras: ["Details & extras", "e.g. brass armour, pustules, warpfire"],
+      hide: ["skin"],
+      more: ["Weapons","Warpfire","Brass"],
+      tiers: [["Lesser daemons","Bloodletters, Plaguebearers and troops"],["Elites","Beasts, cavalry and elites"],["Herald","Heralds and characters"],["Greater daemon","Greater daemons and heroes"]]
+    }
+  };
+  const KIND_OF = {
+    "chaos-space-marines":"chaos", "death-guard":"chaos", "emperors-children":"chaos", "thousand-sons":"chaos", "world-eaters":"chaos",
+    "adeptus-custodes":"custodes", "adepta-sororitas":"sororitas", "adeptus-mechanicus":"mechanicus", "astra-militarum":"guard",
+    "imperial-knights":"knights", "chaos-knights":"knights", "agents-of-the-imperium":"agents",
+    "aeldari":"aeldari", "drukhari":"drukhari", "genestealer-cults":"gsc", "leagues-of-votann":"votann", "necrons":"necrons",
+    "orks":"orks", "tau-empire":"tau", "tyranids":"tyranids", "chaos-daemons":"daemons"
+  };
+  // Small per-faction tweaks on top of the kind.
+  const FACTION_OVER = {
+    "death-guard": {labels: {skin:"Skin / rot", metal:"Weapons / rust"}, extras: ["Rust, pus & extras", "e.g. rust streaks, pustules, flies"],
+                    tiers: [["Plague Marines","Standard troops"],["Deathshroud","Terminators and elites"],["Champion","Plague Champions and characters"],["Lord","Your warlord and heroes"]]},
+    "world-eaters": {tiers: [["Berzerkers","Standard troops"],["Eightbound","Eightbound and elites"],["Champion","Berzerker Champions and characters"],["Lord","Your warlord and heroes"]]},
+    "thousand-sons": {tiers: [["Rubricae","Rubric Marines"],["Scarab Occult","Terminators and elites"],["Aspiring Sorcerer","Squad leaders"],["Sorcerer","Sorcerers and heroes"]]},
+    "chaos-knights": {labels: {emblem:"Icon / mark", cloth:"Banners / trophies"}, extras: ["Spikes, trophies & extras", "e.g. brass spikes, skull trophies"],
+                      tiers: [["War Dogs","War Dog Knights"],["Knights","Despoilers, Rampagers and others"],["Tyrants","Abominants and Tyrants"],["Hero","Your warlord"]]},
+    "grey-knights": {tiers: [["Strike","Strike Squads"],["Terminator","Terminators and Paladins"],["Justicar","Justicars and characters"],["Grand Master","Your warlord and heroes"]]}
+  };
+
+  function shade(h, k){ const c = [1,3,5].map(i => Math.round(parseInt(h.slice(i, i + 2), 16) * (1 - k))); return "#" + c.map(v => v.toString(16).padStart(2, "0")).join(""); }
+  const merge = (a, b) => ({...a, ...b, labels: {...a.labels, ...(b.labels || {})}, legends: {...a.legends, ...(b.legends || {})}});
+
+  const profiles = {};
+  function profileFor(factionId){
+    if(profiles[factionId]) return profiles[factionId];
+    const pr = merge(merge(BASE, KINDS[KIND_OF[factionId]] || {}), FACTION_OVER[factionId] || {});
+    const L = pr.labels;
+    pr.kind = KIND_OF[factionId] || "astartes";
+    pr.keys = ["armour","secondary","trim","emblem","lens","cloth","metal","skin"].filter(k => !pr.hide.includes(k));
+    pr.areas = [...new Set([L.armour, L.secondary, L.trim, L.helmet, L.lens, L.cloth, L.metal, pr.hide.includes("skin") ? "" : L.skin, L.emblem, ...pr.more, "Base", "Other"].filter(Boolean))];
+    return (profiles[factionId] = pr);
+  }
+
+  function tiersFor(factionId, c){
+    const pr = profileFor(factionId);
+    const cols = pr.tierColors ? pr.tierColors(c) : [c.armour, c.secondary, "#b3141c", c.trim];
+    return pr.tiers.map(([name, note], i) => T(name, cols[i] || c.armour, note));
+  }
 
   function presetFor(factionId){
     const base = P[factionId] || P["space-marines"];
+    const colors = {armour:base.armour, secondary:base.secondary, trim:base.trim, emblem:base.emblem, lens:base.lens, cloth:base.cloth, metal:base.metal, skin:base.skin || SKIN_OF[factionId] || SKIN};
     return {
       style: base.style,
-      colors: {armour:base.armour, secondary:base.secondary, trim:base.trim, emblem:base.emblem, lens:base.lens, cloth:base.cloth, metal:base.metal},
+      colors,
       shape: defaultIcon(factionId) || base.shape,
-      tiers: (base.tiers || DEFAULT_TIERS(base)).map(t => ({...t}))
+      tiers: (base.tiers || tiersFor(factionId, colors)).map(t => ({...t}))
     };
   }
+  const SKIN_OF = {"orks":"#4f7a2a", "tau-empire":"#6b7f93", "genestealer-cults":"#a58ab0", "drukhari":"#e6dccf", "death-guard":"#a9a57a", "tyranids":"#d8cba8", "necrons":"#a9adb3", "chaos-daemons":"#9e1b1b"};
+
+  /* Known schemes to start from (chapters have their own factions; these cover everyone else).
+     Colours are a starting point. The icon, when there is one, becomes the army emblem. */
+  const K = (name, icon, armour, secondary, trim, emblem, lens, cloth, metal, skin) => ({name, icon, colors: {armour, secondary, trim, emblem, lens, cloth, metal, ...(skin ? {skin} : {})}});
+  const SCHEMES = {
+    "necrons": [
+      K("Sautekh", "xenos-necrons-sautekh", "#a9adb3","#1f1f22","#c9a13b","#3fbf5a","#3fbf5a","#1f1f22","#a9adb3"),
+      K("Szarekhan", "xenos-necrons-szarekhan", "#c9ccd1","#3a3a3e","#a9adb3","#3b8fe0","#3b8fe0","#1f1f22","#a9adb3"),
+      K("Nihilakh", "xenos-necrons-nihilakh", "#c9a13b","#1f7a78","#c9a13b","#2fb3b0","#2fb3b0","#1f1f22","#a9adb3"),
+      K("Novokh", "xenos-necrons-novokh", "#a9adb3","#7a0d12","#b08d3c","#3fbf5a","#3fbf5a","#1f1f22","#a9adb3"),
+      K("Mephrit", "xenos-necrons-mephrit", "#9a9da2","#3a3a3e","#c9a13b","#d9702a","#d9702a","#1f1f22","#a9adb3"),
+      K("Nephrekh", "xenos-necrons-nephrekh", "#c9a13b","#1f1f22","#b08d3c","#e8c33a","#e8c33a","#1f1f22","#c9a13b")
+    ],
+    "tyranids": [
+      K("Leviathan", "", "#5a2a6b","#7b5ab8","#a58ab0","#d8cba8","#e8c33a","#b3141c","#d8cba8","#d8cba8"),
+      K("Behemoth", "", "#1c2c55","#1f4aa8","#3b8fe0","#b3141c","#e8c33a","#b3141c","#d8cba8","#b3141c"),
+      K("Kraken", "", "#c24a1f","#7a0d12","#d9702a","#1f1f22","#e8c33a","#5a2a6b","#1f1f22","#d8cba8")
+    ],
+    "orks": [
+      K("Goffs", "xenos-orks-goffs-clan", "#1f1f22","#1f1f22","#efeee9","#b3141c","#b3141c","#1f1f22","#5d6166","#3f6b2a"),
+      K("Evil Sunz", "xenos-orks-evil-sunz-clan", "#b3141c","#b3141c","#e8c33a","#1f1f22","#b3141c","#6b4a2e","#5d6166","#4f7a2a"),
+      K("Bad Moons", "xenos-orks-bad-moons-clan", "#e8c33a","#1f1f22","#c9a13b","#1f1f22","#b3141c","#6b4a2e","#c9a13b","#4f7a2a"),
+      K("Blood Axes", "xenos-orks-blood-axes-clan", "#5a6b3a","#8f8a5a","#6b4a2e","#b3141c","#b3141c","#8f8a5a","#5d6166","#4f7a2a"),
+      K("Deathskulls", "xenos-orks-deathskulls-clan", "#1f4aa8","#efeee9","#d8cba8","#efeee9","#b3141c","#6b4a2e","#a9adb3","#4f7a2a"),
+      K("Snakebites", "xenos-orks-snakebites-clan", "#6b4a2e","#b3141c","#d8cba8","#1f1f22","#b3141c","#8a5a34","#9a6b3a","#5a6b3a")
+    ],
+    "tau-empire": [
+      K("T'au Sept", "xenos-tau-empire-tau-sept", "#c98a3b","#efeee9","#1f1f22","#efeee9","#3fbf5a","#3a3a3e","#3a3a3e"),
+      K("Vior'la Sept", "xenos-tau-empire-viorla-sept", "#efeee9","#b3141c","#1f1f22","#b3141c","#3fbf5a","#3a3a3e","#3a3a3e"),
+      K("Farsight Enclaves", "xenos-tau-empire-farsight-enclave", "#b3141c","#efeee9","#1f1f22","#efeee9","#3fbf5a","#3a3a3e","#3a3a3e")
+    ],
+    "aeldari": [
+      K("Ulthwé", "xenos-eldar-craftworld-ulthwe", "#1f1f22","#d8cba8","#d8cba8","#d8cba8","#b3141c","#d8cba8","#a9adb3"),
+      K("Biel-Tan", "xenos-eldar-craftworld-biel-tan", "#1f6b3a","#efeee9","#efeee9","#efeee9","#b3141c","#efeee9","#a9adb3"),
+      K("Iyanden", "xenos-eldar-craftworld-iyanden", "#e8c33a","#1f4aa8","#1f4aa8","#1f4aa8","#b3141c","#1f4aa8","#a9adb3"),
+      K("Saim-Hann", "xenos-eldar-craftworld-saim-hann", "#b3141c","#efeee9","#1f1f22","#efeee9","#3fbf5a","#efeee9","#a9adb3"),
+      K("Alaitoc", "xenos-eldar-craftworld-alaitoc", "#1f4aa8","#e8c33a","#e8c33a","#e8c33a","#b3141c","#e8c33a","#a9adb3")
+    ],
+    "astra-militarum": [
+      K("Cadian", "human-imperium-astra-militarum-cadian-shock-troops-2", "#3f5a2e","#c9b27c","#6b4a2e","#efeee9","#1f1f22","#c9b27c","#5d6166"),
+      K("Catachan", "human-imperium-astra-militarum-catachan-jungle-fighters", "#4a5a32","#3f5a2e","#6b4a2e","#b3141c","#1f1f22","#b3141c","#5d6166","#b07a58"),
+      K("Mordian Iron Guard", "human-imperium-astra-militarum-mordian-iron-guard", "#1c2c55","#1c2c55","#c9a13b","#b3141c","#1f1f22","#b3141c","#a9adb3"),
+      K("Death Korps of Krieg", "human-imperium-astra-militarum-death-korps-of-krieg", "#5d6166","#5a5a48","#6b4a2e","#efeee9","#3fbf5a","#5a5a48","#5d6166"),
+      K("Tallarn", "human-imperium-astra-militarum-tallarn-desert-raiders", "#c9b27c","#d8cba8","#6b4a2e","#b3141c","#1f1f22","#d8cba8","#5d6166","#9a6b4a"),
+      K("Vostroyan", "human-imperium-astra-militarum-vostroyan-firstborn", "#7a0d12","#1f1f22","#c9a13b","#c9a13b","#1f1f22","#6b4a2e","#c9a13b")
+    ],
+    "adepta-sororitas": [
+      K("Our Martyred Lady", "human-imperium-battle-sisters-order-of-our-martyred-lady", "#1f1f22","#1f1f22","#a9adb3","#efeee9","#3fbf5a","#b3141c","#a9adb3"),
+      K("Bloody Rose", "human-imperium-battle-sisters-order-of-the-bloody-rose", "#9e1b1b","#9e1b1b","#a9adb3","#efeee9","#3fbf5a","#1f1f22","#a9adb3")
+    ],
+    "chaos-space-marines": [
+      K("Black Legion", "chaos-legions-black-legion", "#1f1f22","#b08d3c","#b08d3c","#b3141c","#b3141c","#7a0d12","#5d6166"),
+      K("Night Lords", "chaos-legions-night-lords", "#1c2c55","#efeee9","#b08d3c","#efeee9","#b3141c","#1f1f22","#5d6166"),
+      K("Iron Warriors", "chaos-legions-iron-warriors", "#6f7378","#e8c33a","#b08d3c","#1f1f22","#b3141c","#3a3a3e","#5d6166"),
+      K("Word Bearers", "chaos-legions-word-bearers", "#7a0d12","#1f1f22","#c9a13b","#c9a13b","#3fbf5a","#1f1f22","#5d6166"),
+      K("Alpha Legion", "chaos-legions-alpha-legion-1", "#1f7a78","#a9adb3","#a9adb3","#a9adb3","#3fbf5a","#1f1f22","#5d6166")
+    ],
+    "chaos-daemons": [
+      K("Khorne", "chaos-gods-khorne", "#9e1b1b","#7a0d12","#1f1f22","#b08d3c","#e8c33a","#1f1f22","#b08d3c"),
+      K("Nurgle", "chaos-gods-nurgle", "#8a8f5a","#6b4a2e","#d8cba8","#1f1f22","#e8c33a","#d97aa6","#6b4a2e"),
+      K("Tzeentch", "chaos-gods-tzeentch", "#d97aa6","#1f4aa8","#e8c33a","#e8c33a","#efeee9","#1f4aa8","#c9a13b"),
+      K("Slaanesh", "chaos-gods-slaanesh", "#c8b8d8","#b8428e","#1f1f22","#b8428e","#efeee9","#b8428e","#c9a13b")
+    ]
+  };
+  const schemesFor = factionId => (SCHEMES[factionId] || []).map(s => ({...s, shape: s.icon && ICON_BY_ID[s.icon] ? "icon:" + s.icon : ""}));
 
   function colorName(hex){
     const h = String(hex||"").replace("#","");
@@ -132,5 +411,5 @@
     return best;
   }
 
-  window.LEDGER_PRESETS = {NAMED, SHAPES, presetFor, colorName, ICONS, ICON_BY_ID, iconCats, emblemName, defaultIcon};
+  window.LEDGER_PRESETS = {NAMED, SHAPES, presetFor, colorName, ICONS, ICON_BY_ID, iconCats, emblemName, defaultIcon, profileFor, tiersFor, schemesFor, SKIN};
 })();
