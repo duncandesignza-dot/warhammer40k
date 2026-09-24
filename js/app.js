@@ -625,6 +625,7 @@
             <div class="more-menu" id="more-menu" hidden>
               <button type="button" id="b-export">Export backup</button>
               ${canWrite ? `<button type="button" id="b-import">Import backup</button>` : ""}
+              ${canWrite ? `<hr><button type="button" class="menu-danger" id="b-delarmy">Delete ledger</button>` : ""}
             </div>
           </div>
           ${canWrite ? `<input type="file" id="f-import" accept="application/json,.json" hidden>` : ""}
@@ -779,6 +780,20 @@
           <div class="pd-body" id="pd-body"></div>
         </div>
       </dialog>
+
+      ${canWrite ? `<dialog id="deldlg" class="small" aria-labelledby="dl-h">
+        <div class="leavebox">
+          <h2 id="dl-h">Delete this ledger?</h2>
+          <p id="dl-text"></p>
+          <p class="dl-tip">Want a copy first? <button type="button" class="linkish" id="dl-export">Export a backup</button> before you delete.</p>
+          <div class="msg" id="dl-msg" role="status"></div>
+          <div class="row-actions">
+            <button type="button" class="danger armed" id="dl-go">Delete ledger</button>
+            <span class="spacer"></span>
+            <button type="button" id="dl-cancel">Cancel</button>
+          </div>
+        </div>
+      </dialog>` : ""}
 
       <dialog id="sharedlg" class="small" aria-labelledby="sh-h">
         <div class="dlg-close"><button type="button" data-close>Close</button></div>
@@ -1530,6 +1545,31 @@
           const n = await store.importUnits(army.id, rows);
           units = await store.listUnits(army.id); newUnit(false); msg(`Imported ${plural(n, "unit")}.`);
         } catch(err){ console.error(err); msg("That file isn't a Livery Ledger backup.", true); }
+      });
+    }
+    if(canWrite){
+      // Delete the whole ledger, after a confirmation that says exactly what goes with it.
+      const dd = $("deldlg");
+      $("b-delarmy").addEventListener("click", () => {
+        const n = units.length, photos = units.filter(u => u.image).length;
+        $("dl-text").textContent = `This permanently deletes ${army.name}` +
+          (n ? ` and its ${plural(n, "unit")}${photos ? `, including ${plural(photos, "photo")}` : ""}` : "") +
+          ". It can't be undone.";
+        $("dl-msg").textContent = ""; $("dl-go").disabled = false;
+        dd.showModal(); $("dl-cancel").focus();
+      });
+      $("dl-cancel").addEventListener("click", () => dd.close());
+      dd.addEventListener("click", e => { if(e.target === dd) dd.close(); });
+      $("dl-export").addEventListener("click", () => $("b-export").click());
+      $("dl-go").addEventListener("click", async () => {
+        const b = $("dl-go"); b.disabled = true; b.textContent = "Deleting…";
+        try {
+          await store.removeArmy(army);
+          setDirty(false); view.guard = null; dd.close(); location.hash = "#/";
+        } catch(err){
+          $("dl-msg").textContent = "Couldn't delete: " + errText(err); $("dl-msg").classList.add("err");
+          b.disabled = false; b.textContent = "Delete ledger";
+        }
       });
     }
     const onBeforeUnload = e => { if(dirty && canWrite){ e.preventDefault(); e.returnValue = ""; } };
