@@ -282,7 +282,7 @@
           </div>
           ${known.length ? `<div class="panel">
             <h3>Start from a known scheme</h3>
-            <p class="hint">Sets every colour and the emblem to a well-known ${esc(f.name)} scheme. You can change anything afterwards.</p>
+            <p class="hint">Sets every colour to the Citadel paints for a well-known ${esc(f.name)} scheme, and the emblem to match. You can change anything afterwards.</p>
             <div class="schemes" id="s-schemes">${known.map((k, i) => `<button type="button" class="scheme" data-scheme="${i}">${ART.pauldron(k.colors.armour, k.colors.trim, k.colors.emblem, k.shape || draft.scheme.shape, 40)}<span>${esc(k.name)}</span></button>`).join("")}</div>
           </div>` : ""}
           <div class="panel">
@@ -442,7 +442,7 @@
       if(t.id === "s-emq"){ emq = t.value.trim(); emLimit = 90; renderIcons(); return; }
       if(t.dataset.tname != null){ sch.tiers[+t.dataset.tname].name = t.value; renderPreview(); }
       if(t.dataset.tnote != null){ sch.tiers[+t.dataset.tnote].note = t.value; renderPreview(); }
-      if(t.id === "s-reset" && t.checked){ const p = P.presetFor(f.id); Object.assign(sch, p, {slotPaints: {}}); renderTiers(); renderPreview(); t.checked = false; $("s-msg").textContent = ""; }
+      if(t.id === "s-reset" && t.checked){ const p = P.presetFor(f.id); Object.assign(sch, p); renderTiers(); renderPreview(); t.checked = false; $("s-msg").textContent = ""; }
     }
     let armed = false;
     async function onClick(e){
@@ -452,10 +452,10 @@
         // Keep rank names (they may have been edited) but recolour the standard ranks to match.
         const k = known[+t.dataset.scheme];
         sch.colors = {...sch.colors, ...k.colors};
-        Object.keys(k.colors).forEach(c => delete sch.slotPaints[c]);
+        Object.keys(k.colors).forEach(c => { if(k.paints[c]) sch.slotPaints[c] = k.paints[c]; else delete sch.slotPaints[c]; });
         if(k.shape) sch.shape = k.shape;
-        const std = P.tiersFor(f.id, sch.colors);
-        sch.tiers.forEach((tr, i) => { if(std[i]){ tr.color = std[i].color; tr.paint = ""; } });
+        const std = P.tiersFor(f.id, sch.colors, sch.slotPaints);
+        sch.tiers.forEach((tr, i) => { if(std[i]){ tr.color = std[i].color; tr.paint = std[i].paint || ""; } });
         renderTiers(); renderPreview();
         $("s-msg").classList.remove("err"); $("s-msg").textContent = `Using the ${k.name} scheme. Save to keep it.`;
         return;
@@ -1006,6 +1006,7 @@
         </div></div>`;
     }
     function render(){
+      if(!$("cards")) return;   // the ledger was left while something was loading
       // Units saved before points existed pick up their datasheet cost (kept when the unit is next saved).
       units.forEach(u => { if(!u.points && u.datasheet){ const p = ptsFor(sheetFor(u.datasheet), u.count); if(p) u.points = p; } });
       const list = visible(), c = $("cards");
@@ -1452,13 +1453,16 @@
     const recipesOf = u => (u.recipes || []).map(id => (scheme.recipes || []).find(r => r.id === id)).filter(Boolean);
     const paintsOf = r => (r.steps || []).map(s => s.p).filter(Boolean);
     const missingFor = u => [...new Set(recipesOf(u).flatMap(paintsOf).filter(p => !isOwned(p)).map(PU.norm))];
+    // A paint's short name with its brand and range underneath, for lists.
+    const paintLine = label => { const d = PU.describe(label); return `<strong>${esc(d.name)}</strong>${d.meta ? `<small class="pmeta">${esc(d.meta)}</small>` : ""}`; };
     function stepsHtml(r){
       if(!r.steps.length) return `<p class="prose">No steps yet.</p>`;
       return `<ol class="steps">${r.steps.map(st => { const d = PU.describe(st.p);
         return `<li>${PU.swatch(st.p)}<span class="st-x"><span class="st-t">${esc(st.t || "Step")}</span><span class="st-p">${esc(d.name || "—")}${d.meta ? `<small>${esc(d.meta)}</small>` : ""}</span></span>${canWrite && st.p ? (isOwned(st.p) ? `<span class="own ok">Owned</span>` : `<span class="own no">To buy</span>`) : ""}</li>`; }).join("")}</ol>${r.notes ? `<p class="prose r-notes">${esc(r.notes)}</p>` : ""}`;
     }
     function renderRecipePicks(checked){
-      const box = $("f-recipes"), list = scheme.recipes || [], inLib = libLive().length;
+      const box = $("f-recipes"); if(!box) return;   // the ledger was left while something was loading
+      const list = scheme.recipes || [], inLib = libLive().length;
       const on = new Set(checked || [...box.querySelectorAll("input:checked")].map(i => i.value));
       box.innerHTML = list.length ? list.map(r => `<label class="stage"><input type="checkbox" value="${esc(r.id)}" ${on.has(r.id) ? "checked" : ""}><span>${esc(r.name)}${r.area ? `<small>${esc(r.area)}</small>` : ""}</span></label>`).join("")
         : `<p class="hint-sm">${inLib ? `No recipes in this ledger yet. You have ${plural(inLib, "recipe")} in your library.` : "No recipes yet. Write one once, then tick it on every unit that uses it."}</p>`;
@@ -1473,7 +1477,7 @@
     const libLive = () => (library || []).filter(r => !r.deleted);
     const recipeOnly = r => ({id: r.id, name: r.name, area: r.area, notes: r.notes, steps: r.steps, at: r.at || ""});
     const sameRecipe = (a, b) => JSON.stringify([a.name, a.area, a.notes, a.steps]) === JSON.stringify([b.name, b.area, b.notes, b.steps]);
-    const refreshRecipes = () => { renderRecipePicks(); if($("paintdlg").open && !editingRecipe) renderPaints(); };
+    const refreshRecipes = () => { renderRecipePicks(); if($("paintdlg") && $("paintdlg").open && !editingRecipe) renderPaints(); };
     async function loadLibrary(){
       if(!canWrite || !store.getLibrary) return;
       libState = "loading";
@@ -1584,11 +1588,11 @@
           <p class="hint">Paints you own are saved to your ${store.kind === "supabase" ? "account" : "browser"} and shared by all your ledgers.</p>
           <div class="add-paint"><span class="pwrap-host"><input id="op-add" placeholder="Add a paint, e.g. Abaddon Black" aria-label="Add a paint"></span><button type="button" class="primary" data-act="add-owned">Add</button></div>
           <div class="owned-head"><strong>${plural(ownedList.length, "paint")}</strong>${ownedList.length > 8 ? `<input type="search" id="op-q" class="search" placeholder="Filter" value="${esc(ownedQuery)}">` : ""}</div>
-          <div class="owned">${shown.map(p => `<span class="ochip">${PU.swatch(p)}<span>${esc(p)}</span><button type="button" data-act="rm-owned" data-p="${esc(p)}" aria-label="Remove ${esc(p)}">×</button></span>`).join("") || `<p class="hint">${ownedList.length ? "No paints match." : "Nothing here yet. Add the paints on your shelf."}</p>`}</div>
+          <div class="owned">${shown.map(p => `<span class="ochip" title="${esc(p)}">${PU.swatch(p)}<span>${esc(PU.describe(p).name)}</span><button type="button" data-act="rm-owned" data-p="${esc(p)}" aria-label="Remove ${esc(p)}">×</button></span>`).join("") || `<p class="hint">${ownedList.length ? "No paints match." : "Nothing here yet. Add the paints on your shelf."}</p>`}</div>
           ${!ownedList.length && usedHere.length ? `<div class="used-here">
             <div class="lib-head"><h4 class="em-h">Used in this ledger</h4><button type="button" class="btn-sm" data-act="got-all">I have all ${usedHere.length}</button></div>
             <p class="hint">Paints from this ledger's colours and recipes. Tick off the ones already on your shelf.</p>
-            <ul class="buy">${usedHere.map(it => `<li>${PU.swatch(it.label)}<span class="b-n"><strong>${esc(it.label)}</strong></span><button type="button" class="btn-sm" data-act="got" data-p="${esc(it.label)}">I have it</button></li>`).join("")}</ul></div>` : ""}`;
+            <ul class="buy">${usedHere.map(it => `<li>${PU.swatch(it.label)}<span class="b-n">${paintLine(it.label)}</span><button type="button" class="btn-sm" data-act="got" data-p="${esc(it.label)}">I have it</button></li>`).join("")}</ul></div>` : ""}`;
         PU.picker($("op-add"), {owned: () => owned, extra: () => [], onPick: () => {}});
         $("op-add").addEventListener("keydown", e => { if(e.key === "Enter"){ e.preventDefault(); addOwned(); } });
         const oq = $("op-q"); if(oq) oq.addEventListener("input", e => { ownedQuery = e.target.value; const pos = e.target.selectionStart; renderPaints(); const n = $("op-q"); if(n){ n.focus(); n.setSelectionRange(pos, pos); } });
@@ -1597,7 +1601,7 @@
         body.innerHTML = `
           <div class="pd-head"><p class="hint">Paints in your colours and recipes that aren't in <em>My paints</em>.</p>
           <label class="check"><input type="checkbox" id="buy-all" ${buyAll ? "checked" : ""}> Include recipes not used by any unit</label></div>
-          ${list.length ? `<ul class="buy">${list.map(it => `<li>${PU.swatch(it.label)}<span class="b-n"><strong>${esc(it.label)}</strong><small>For ${esc(it.recipes.length > 3 ? it.recipes.slice(0, 3).join(", ") + ` and ${it.recipes.length - 3} more` : it.recipes.join(", "))}</small></span><button type="button" class="btn-sm" data-act="got" data-p="${esc(it.label)}">I have it</button></li>`).join("")}</ul>
+          ${list.length ? `<ul class="buy">${list.map(it => `<li>${PU.swatch(it.label)}<span class="b-n">${paintLine(it.label)}<small>For ${esc(it.recipes.length > 3 ? it.recipes.slice(0, 3).join(", ") + ` and ${it.recipes.length - 3} more` : it.recipes.join(", "))}</small></span><button type="button" class="btn-sm" data-act="got" data-p="${esc(it.label)}">I have it</button></li>`).join("")}</ul>
             <div class="row-actions"><button type="button" class="btn-sm" data-act="copy-buy">Copy list</button><span class="hint" id="buy-msg"></span></div>`
           : `<div class="empty">${(scheme.recipes || []).length || Object.keys(scheme.slotPaints || {}).length || units.some(u => Object.keys(u.slotPaints || {}).length) ? "You have every paint you need." : "Pick paints for your colours, or add some recipes first."}</div>`}`;
         $("buy-all").addEventListener("change", e => { buyAll = e.target.checked; renderPaints(); });
