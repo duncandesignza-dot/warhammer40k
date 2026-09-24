@@ -812,7 +812,7 @@
         <div class="dlg-close"><button type="button" data-close>Close</button></div>
         <div class="listimp">
           <h2 id="ld-h">Import army list</h2>
-          <p class="hint">Paste the text export from the Warhammer 40,000 app, New Recruit or BattleScribe. Units are matched to ${esc(f.name)} datasheets.</p>
+          <p class="hint">Paste the text export from the Warhammer 40,000 app, New Recruit or BattleScribe, or a list code or share link from a list-building site. Units are matched to ${esc(f.name)} datasheets.</p>
           <textarea id="ld-text" rows="10" spellcheck="false" placeholder="Marshal (80 points)&#10;  • Warlord&#10;  • 1x Master-crafted power weapon&#10;&#10;Crusader Squad (150 points)&#10;  • 5x Initiate&#10;  • 5x Neophyte"></textarea>
           <div class="row-actions"><button type="button" class="btn-sm" id="ld-read">Read list</button><span class="hint" id="ld-sum"></span></div>
           <div id="ld-out"></div>
@@ -1415,6 +1415,95 @@
       const hit = sheetKeys.find(s => k === s || k.startsWith(s + " "));
       return hit ? sheetIndex.get(hit) : null;
     }
+    function guessCount(sh, pts){
+      if(singleRole(sh.r)) return 1;
+      const br = sh.pb || [];
+      const hit = br.filter(b => b[2] === pts).pop();
+      if(hit) return hit[1] || Math.max(hit[0], (hit[0] - 1) * 2);
+      return br.length ? (br[0][0] === br[0][1] ? br[0][0] : Math.max(1, br[0][0] - 1)) : 1;
+    }
+    // Allied units (e.g. Imperial Knights in a Space Marine list) live in another faction's datasheets.
+    function allySheet(text, prefer){
+      const k = norm(text);
+      const order = [FBY[prefer], ...FACTIONS].filter(x => x && x.id !== army.faction);
+      for(const fx of order){
+        const sh = (fx.units || []).find(u => !u.t && norm(u.n) === k) || (fx.units || []).find(u => norm(u.n) === k);
+        if(sh) return {sheet: sh, from: fx.name};
+      }
+      return null;
+    }
+
+    /* List codes from list-building sites: base64 JSON like
+       {"f":"black-templars","d":"","l":2000,"u":[["ancient",0,{"w":1,"o":{"wargear-weapon-option":"bolt-rifle-close-combat-weapon"}}]]}
+       u = [datasheet slug, size option (0 = smallest), {w: warlord, o: chosen options}]. */
+    const codeSlug = s => String(s || "").toLowerCase().replace(/[’']/g, "").replace(/armour/g, "armor").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    function decodeListCode(text){
+      const raw = String(text || "").replace(/%3D/gi, "=");
+      const tokens = (raw.match(/[A-Za-z0-9_\-+/]{24,}={0,2}/g) || []).sort((a, b) => b.length - a.length);
+      for(const tk of tokens){
+        try {
+          let b64 = tk.replace(/-/g, "+").replace(/_/g, "/"); b64 += "===".slice((b64.length + 3) % 4);
+          const bin = atob(b64), bytes = Uint8Array.from(bin, c => c.charCodeAt(0));
+          const d = JSON.parse(new TextDecoder().decode(bytes));
+          if(d && typeof d === "object" && Array.isArray(d.u)) return d;
+        } catch(e){ /* not a list code */ }
+      }
+      return null;
+    }
+    // "emperor-s-shield" -> "Emperor's Shield"
+    const titleCase = sl => String(sl || "").replace(/([a-z0-9])-s(?=-|$)/g, "$1's").split("-").filter(Boolean).map(w => w[0].toUpperCase() + w.slice(1)).join(" ");
+    function parseCode(text){
+      const d = decodeListCode(text);
+      if(!d) return null;
+      const out = [], unmatched = [];
+      const own = new Map(), from = FBY[d.f];
+      sheets.slice().sort((a, b) => (a.t ? 1 : 0) - (b.t ? 1 : 0)).forEach(s => { const k = codeSlug(s.n); if(!own.has(k)) own.set(k, s); });
+      d.u.forEach(entry => {
+        if(!Array.isArray(entry) || typeof entry[0] !== "string") return;
+        const [id, size, extra] = entry, ex = extra && typeof extra === "object" ? extra : {};
+        let sh = own.get(codeSlug(id)), ally = null;
+        if(!sh){
+          for(const fx of [from, ...FACTIONS].filter(x => x && x.id !== army.faction)){
+            const hit = (fx.units || []).find(u => !u.t && codeSlug(u.n) === codeSlug(id)) || (fx.units || []).find(u => codeSlug(u.n) === codeSlug(id));
+            if(hit){ sh = hit; ally = fx.name; break; }
+          }
+        }
+        if(!sh){ unmatched.push(titleCase(id)); return; }
+        // Size option 0 is the base unit; 1+ step through the larger squad sizes.
+        const br = sh.pb || [], k = Math.max(0, parseInt(size, 10) || 0);
+        const points = k && br[k - 1] ? br[k - 1][2] : (sh.p || 0);
+        const u = {sheet: sh, name: sh.n, points, count: guessCount(sh, points), melee: [], ranged: [], notes: [], include: true};
+        if(ally) u.notes.push("Allied: " + ally);
+        if(ex.w) u.notes.push("Warlord");
+        if(typeof ex.e === "string" && ex.e) u.notes.push("Enhancement: " + titleCase(ex.e));
+        // Chosen options: pull out any weapons we recognise; keep the rest as a note.
+        const weapons = [...(sh.wm || []).map(n => [n, "melee"]), ...(sh.wr || []).map(n => [n, "ranged"])]
+          .map(([n, kind]) => [n, kind, codeSlug(n)]).filter(w => w[2]).sort((a, b) => b[2].length - a[2].length);
+        const other = [];
+        Object.entries(ex.o && typeof ex.o === "object" ? ex.o : {}).forEach(([group, val]) => {
+          // A choice is a slug, a list of slugs, or {slug: how many}.
+          const picks = typeof val === "string" ? [val] : Array.isArray(val) ? val : val && typeof val === "object" ? Object.keys(val).filter(k => val[k]) : [];
+          picks.forEach(v => pickOption(group, v));
+        });
+        function pickOption(group, v){
+          if(typeof v !== "string") return;
+          const vs = codeSlug(v).split("-").filter(x => x !== "w").join("-"); // "initiate-w-bolt-rifle": w = with
+          let rest = "-" + vs + "-", hit = false;
+          weapons.forEach(([n, kind, ws]) => {
+            if(!rest.includes("-" + ws + "-")) return;
+            rest = rest.replace("-" + ws + "-", "-"); hit = true;
+            const list = kind === "melee" ? u.melee : u.ranged; if(!list.includes(n)) list.push(n);
+          });
+          // Skip picks that only say which model is which ("devastator-centurion", "...-sergeant").
+          const g = codeSlug(group);
+          if(!hit && !/sergeant$/.test(vs) && !g.startsWith(vs) && !codeSlug(sh.n).includes(vs)) other.push(titleCase(vs));
+        }
+        if(other.length) u.notes.push(other.join(", "));
+        out.push(u);
+      });
+      const limit = parseInt(d.l, 10);
+      return {units: out, unmatched, limit: limit >= 500 && limit <= 10000 ? limit : 0, codeFaction: from ? from.name : (d.f || ""), codeFactionId: d.f || "", detachment: typeof d.d === "string" && d.d ? titleCase(d.d) : ""};
+    }
     const HEAD = /^(?:[a-z]+\d*\s*:\s*)?(?:(\d+)\s*x\s+)?(.+?)\s*[\(\[]\s*([\d,]+)\s*(?:pts?|points)\s*[\)\]]\s*:?\s*(.*)$/i;
     function parseList(text){
       const lines = String(text || "").replace(/\r/g, "").split("\n");
@@ -1439,6 +1528,14 @@
           if(sh){
             finish();
             cur = {sheet: sh, name: sh.n, points: parseInt(h[3].replace(/,/g, ""), 10) || 0, models: 0, melee: [], ranged: [], notes: [], include: true};
+            baseIndent = null;
+            if(h[4]) parseItems(h[4], 0);
+            return;
+          }
+          const al = !/(strike force|incursion|onslaught|combat patrol|detachment)/i.test(h[2]) && allySheet(h[2]);
+          if(al){
+            finish();
+            cur = {sheet: al.sheet, name: al.sheet.n, points: parseInt(h[3].replace(/,/g, ""), 10) || 0, models: 0, melee: [], ranged: [], notes: ["Allied: " + al.from], include: true};
             baseIndent = null;
             if(h[4]) parseItems(h[4], 0);
             return;
@@ -1470,13 +1567,6 @@
           if(inner) parseItems(inner, depth + 1);
         });
       }
-      function guessCount(sh, pts){
-        if(singleRole(sh.r)) return 1;
-        const br = sh.pb || [];
-        const hit = br.filter(b => b[2] === pts).pop();
-        if(hit) return hit[1] || Math.max(hit[0], (hit[0] - 1) * 2);
-        return br.length ? (br[0][0] === br[0][1] ? br[0][0] : Math.max(1, br[0][0] - 1)) : 1;
-      }
       return {units: out, unmatched, limit};
     }
     let parsed = null;
@@ -1484,11 +1574,12 @@
       const box = $("ld-out");
       if(!parsed){ box.innerHTML = ""; return; }
       const us = parsed.units;
-      $("ld-sum").textContent = us.length ? `${plural(us.length, "unit")} · ${fmt(us.reduce((a, u) => a + (u.include ? u.points : 0), 0))} pts` : "";
+      $("ld-sum").textContent = us.length ? [parsed.detachment, plural(us.length, "unit"), fmt(us.reduce((a, u) => a + (u.include ? u.points : 0), 0)) + " pts"].filter(Boolean).join(" · ") : "";
       box.innerHTML = (us.length ? `<div class="ld-table" role="table">
           <div class="ld-row ld-head" role="row"><span></span><span>Datasheet</span><span>Models</span><span>Points</span><span>Weapons</span></div>
           ${us.map((u, i) => `<label class="ld-row" role="row"><span><input type="checkbox" data-inc="${i}" ${u.include ? "checked" : ""}></span><span><strong>${esc(u.name)}</strong><small>${esc(u.sheet.r)}${u.notes.length ? " · " + esc(u.notes.join(", ")) : ""}</small></span><span><input type="number" min="1" max="99" data-cnt="${i}" value="${u.count}"></span><span>${u.points}</span><span>${esc([...u.melee, ...u.ranged].slice(0, 3).join(", ") || "—")}</span></label>`).join("")}
         </div>` : `<p class="hint">No ${esc(f.name)} datasheets found in that text. Check the list is for this faction.</p>`)
+        + (parsed.codeFactionId && parsed.codeFactionId !== army.faction ? `<p class="hint warn">This list is for ${esc(parsed.codeFaction)}, but this ledger is ${esc(f.name)}. Units were matched to ${esc(f.name)} datasheets where possible, and the rest were added as allies.</p>` : "")
         + (parsed.unmatched.length ? `<p class="hint">Not matched to a datasheet: ${esc(parsed.unmatched.slice(0, 12).join(", "))}${parsed.unmatched.length > 12 ? "…" : ""}</p>` : "");
       $("ld-actions").hidden = !us.length;
       $("ld-add").textContent = `Add ${plural(us.filter(u => u.include).length, "unit")}`;
@@ -1497,8 +1588,9 @@
     }
     if(canWrite){
       $("b-list").addEventListener("click", () => { $("ld-msg").textContent = ""; $("listdlg").showModal(); $("ld-text").focus(); });
-      $("ld-read").addEventListener("click", () => { parsed = parseList($("ld-text").value); renderParsed(); });
-      $("ld-text").addEventListener("paste", () => setTimeout(() => { parsed = parseList($("ld-text").value); renderParsed(); }, 0));
+      const readList = () => { const v = $("ld-text").value; parsed = parseCode(v) || parseList(v); renderParsed(); };
+      $("ld-read").addEventListener("click", readList);
+      $("ld-text").addEventListener("paste", () => setTimeout(readList, 0));
       $("ld-out").addEventListener("input", e => {
         const t = e.target;
         if(t.dataset.inc != null){ parsed.units[+t.dataset.inc].include = t.checked; renderParsed(); }

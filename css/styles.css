@@ -320,6 +320,7 @@ button.pill:hover:not(:disabled){background:var(--brand-soft);border-color:var(-
 .listimp{padding:26px;display:flex;flex-direction:column;gap:12px}
 .listimp h2{margin:0;font-size:1.4rem;font-weight:800;letter-spacing:-.02em}
 .listimp .hint{color:var(--muted);font-size:.86rem;margin:0}
+.listimp .hint.warn{color:var(--warn)}
 .listimp textarea{font-family:var(--mono);font-size:.8rem;min-height:180px}
 .ld-table{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
 .ld-row{display:grid;grid-template-columns:34px minmax(0,1.6fr) 80px 70px minmax(0,1.4fr);gap:10px;align-items:center;padding:8px 12px;border-top:1px solid var(--line);font-size:.86rem;color:var(--ink);flex-direction:row}
