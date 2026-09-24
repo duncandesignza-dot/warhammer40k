@@ -1,0 +1,10 @@
+// Cloudflare Workers: serve the site as static files (no build step).
+// "name" must match the project name in the Cloudflare dashboard.
+{
+  "$schema": "https://unpkg.com/wrangler/config-schema.json",
+  "name": "warhammer40k",
+  "compatibility_date": "2025-09-01",
+  "assets": {
+    "directory": "."
+  }
+}
