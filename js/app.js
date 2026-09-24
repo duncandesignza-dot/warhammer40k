@@ -1501,9 +1501,10 @@ Redemptor Dreadnought (210 points)</pre>
     // Paint name for a colour area if one was picked, otherwise the colour's name.
     const nameOf = (u, k) => (u.slotPaints || {})[k] ? PU.shortName(u.slotPaints[k]) : cname(u[k]);
     // Star toggle for your own units; on a shared ledger a starred unit just shows the star.
+    // big: the labelled "Star / Starred" pill in the unit details.
     const starBtn = (u, big) => canWrite
-      ? `<button type="button" class="star${u.fav ? " on" : ""}${big ? " big" : ""}" data-star="${esc(u.id)}" aria-pressed="${!!u.fav}" aria-label="${u.fav ? "Unstar" : "Star"} ${esc(u.name)}" title="${u.fav ? "Starred. Click to unstar" : "Star this unit"}">${STAR(u.fav)}</button>`
-      : u.fav ? `<span class="star on${big ? " big" : ""}" title="Starred">${STAR(true)}</span>` : "";
+      ? `<button type="button" class="star${u.fav ? " on" : ""}${big ? " big" : ""}" data-star="${esc(u.id)}" aria-pressed="${!!u.fav}" ${big ? "" : `aria-label="${u.fav ? "Unstar" : "Star"} ${esc(u.name)}" `}title="${u.fav ? "Starred. Click to unstar" : "Star this unit"}">${STAR(u.fav)}${big ? `<span>${u.fav ? "Starred" : "Star"}</span>` : ""}</button>`
+      : u.fav ? `<span class="star on${big ? " big" : ""}" title="Starred">${STAR(true)}${big ? "<span>Starred</span>" : ""}</span>` : "";
     async function toggleStar(id){
       const u = units.find(x => x.id === id); if(!u || busy || !canWrite) return;
       busy = true;
