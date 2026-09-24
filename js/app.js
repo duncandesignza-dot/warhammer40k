@@ -784,6 +784,7 @@
     const stageIndex = u => { let i = -1; STAGE_KEYS.forEach((k, j) => { if((u.stages || []).includes(k)) i = j; }); return i; };
     const progressOf = u => u.count ? ((u.stages || []).length / STAGE_KEYS.length) * .5 + (u.painted / u.count) * .5 : 0;
     function nextStep(u){
+      if(u.status === "done") return null;
       const i = stageIndex(u);
       if(i < STAGE_KEYS.length - 1){
         const k = STAGE_KEYS[i + 1];
@@ -794,7 +795,8 @@
       if(u.painted < u.count) return {stages: u.stages, painted: u.count, label: "All models painted"};
       return null;
     }
-    const stageLabel = u => { const i = stageIndex(u); return i < 0 ? "Not started" : STAGES[i][1]; };
+    // Every model painted counts as Painted, even if the step boxes weren't ticked.
+    const stageLabel = u => { if(u.status === "done") return "Painted"; const i = stageIndex(u); return i < 0 ? "Not started" : STAGES[i][1]; };
 
     /* ---------- list ---------- */
     const rankOf = u => ROLE_ORDER.indexOf(u.role) < 0 ? 99 : ROLE_ORDER.indexOf(u.role);
