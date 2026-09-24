@@ -62,6 +62,8 @@
     o.splitPauldrons = r.splitPauldrons === true || r.splitPauldrons === "true";
     // null = not set on this unit yet, so it shows the army's extra areas.
     o.xareas = r.xareas && typeof r.xareas === "object" ? cleanXareas(r.xareas) : null;
+    // Starred: shown with a star and kept together by the "Starred" filter.
+    o.fav = r.fav === true || r.fav === "true";
     if(!o.name) o.name = o.datasheet || "Unnamed unit";
     return o;
   }

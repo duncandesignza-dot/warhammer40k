@@ -49,6 +49,7 @@
   }
   // Colours for the badge's shoulder pad: the left pauldron's own when they're painted differently.
   const padColours = (o, split) => split && PROF.pauldrons ? {pauldron: o.lpauldron, ptrim: o.lpsecondary, pemblem: o.lpemblem} : {};
+  const STAR = on => `<svg width="18" height="18" viewBox="0 0 24 24" fill="${on ? "currentColor" : "none"}" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 16.8l-5.4 2.9 1.1-6.1-4.5-4.2 6.1-.8Z"/></svg>`;
   const QUICK = ["Black","White","Bone","Silver","Gunmetal","Gold","Brass","Red","Crimson","Blue","Navy","Green","Purple","Yellow"];
 
   const $ = id => document.getElementById(id);
@@ -971,6 +972,7 @@ Redemptor Dreadnought (210 points)</pre>
                 <button type="button" data-f="todo" aria-pressed="false">To paint</button>
                 <button type="button" data-f="progress" aria-pressed="false">In progress</button>
                 <button type="button" data-f="done" aria-pressed="false">Painted</button>
+                <button type="button" data-f="fav" aria-pressed="false" aria-label="Starred">${STAR(true).replace('width="18" height="18"', 'width="14" height="14"')}<span class="lbl-long">Starred</span></button>
               </div>
             </div>
           </div>
@@ -1387,6 +1389,7 @@ Redemptor Dreadnought (210 points)</pre>
         if(filter === "done" && u.status !== "done") return false;
         if(filter === "progress" && !(u.status === "progress" || u.status === "primed" || u.status === "built")) return false;
         if(filter === "todo" && u.status === "done") return false;
+        if(filter === "fav" && !u.fav) return false;
         if(q && ![u.name, u.datasheet, u.role, u.melee, u.ranged, u.notes, (scheme.tiers[u.tier] || {}).name].join(" ").toLowerCase().includes(q)) return false;
         return true;
       }).sort(SORTS[prefs.sort] || SORTS.rank);
@@ -1415,6 +1418,22 @@ Redemptor Dreadnought (210 points)</pre>
     };
     // Paint name for a colour area if one was picked, otherwise the colour's name.
     const nameOf = (u, k) => (u.slotPaints || {})[k] ? PU.shortName(u.slotPaints[k]) : cname(u[k]);
+    // Star toggle for your own units; on a shared ledger a starred unit just shows the star.
+    const starBtn = (u, big) => canWrite
+      ? `<button type="button" class="star${u.fav ? " on" : ""}${big ? " big" : ""}" data-star="${esc(u.id)}" aria-pressed="${!!u.fav}" aria-label="${u.fav ? "Unstar" : "Star"} ${esc(u.name)}" title="${u.fav ? "Starred. Click to unstar" : "Star this unit"}">${STAR(u.fav)}</button>`
+      : u.fav ? `<span class="star on${big ? " big" : ""}" title="Starred">${STAR(true)}</span>` : "";
+    async function toggleStar(id){
+      const u = units.find(x => x.id === id); if(!u || busy || !canWrite) return;
+      busy = true;
+      try {
+        const row = await store.saveUnit(army.id, {...u, fav: !u.fav}, u.id, null, false, u);
+        units = units.map(x => x.id === row.id ? row : x);
+        render();
+        if($("detail").open && $("detail").dataset.unit === row.id) openDetail(row.id);
+        toast(row.fav ? `Starred ${row.name}` : `Unstarred ${row.name}`);
+      } catch(err){ msg("Couldn't update: " + errText(err), true); }
+      finally { busy = false; }
+    }
     function cardHtml(u){
       u = withColours(u);
       const img = safeImg(u.image), tier = scheme.tiers[u.tier] || {};
@@ -1423,7 +1442,7 @@ Redemptor Dreadnought (210 points)</pre>
       return `<div class="card${u.id === selId ? " sel" : ""}" tabindex="0" role="button" data-id="${esc(u.id)}" aria-label="View ${esc(u.name)}">
         ${img ? `<div class="photo"><img src="${esc(img)}" alt="" loading="lazy" decoding="async"></div>` : ""}
         <div class="body">
-          <div class="card-top">${unitBadge(u, scheme, 60)}<div><h3>${esc(u.name)}</h3><div class="type">${esc([u.datasheet && u.datasheet !== u.name ? u.datasheet : "", u.role].filter(Boolean).join(" · ") || "Unit")}</div></div>${u.points ? `<span class="pts">${fmt(u.points)}<small>pts</small></span>` : ""}</div>
+          <div class="card-top">${unitBadge(u, scheme, 60)}<div><h3>${esc(u.name)}</h3><div class="type">${esc([u.datasheet && u.datasheet !== u.name ? u.datasheet : "", u.role].filter(Boolean).join(" · ") || "Unit")}</div></div>${u.points ? `<span class="pts">${fmt(u.points)}<small>pts</small></span>` : ""}${starBtn(u)}</div>
           <dl>
             <dt>Rank</dt><dd>${esc(tier.name || "—")}</dd>
             ${u.head === "none" ? "" : `<dt>${u.head === "bare" ? "Face" : esc(LB.helmet)}</dt><dd>${u.head === "bare" ? chip(u.skin) + "Bare head" : chip(u.helmet) + esc(nameOf(u, "helmet"))}${u.hdetail ? ", " + esc(u.hdetail) : ""}</dd>`}
@@ -1445,7 +1464,7 @@ Redemptor Dreadnought (210 points)</pre>
       // Units saved before points existed pick up their datasheet cost (kept when the unit is next saved).
       units.forEach(u => { if(!u.points && u.datasheet){ const p = ptsFor(sheetFor(u.datasheet), u.count); if(p) u.points = p; } });
       const list = visible(), c = $("cards");
-      if(!list.length){ c.innerHTML = `<div class="empty">${units.length ? "No units match." : canWrite ? "No units yet. Pick a datasheet in the form, or import your army list." : "No units in this ledger yet."}</div>`; }
+      if(!list.length){ c.innerHTML = `<div class="empty">${units.length ? (filter === "fav" && !query ? "No starred units yet. Tap the star on a unit to keep it here." : "No units match.") : canWrite ? "No units yet. Pick a datasheet in the form, or import your army list." : "No units in this ledger yet."}</div>`; }
       else {
         // Each group sizes to its cards, so small groups sit side by side instead of one card per row.
         const groups = groupsOf(list), grouped = !!groups[0][0];
@@ -1479,6 +1498,7 @@ Redemptor Dreadnought (210 points)</pre>
     function openDetail(id){
       const found = units.find(x => x.id === id); if(!found) return;
       const u = withColours(found);
+      $("detail").dataset.unit = id;
       const img = safeImg(u.image), tier = scheme.tiers[u.tier] || {};
       const col = hex => ART.hexOk(hex) ? chip(hex) + esc(cname(hex)) : "";
       // Colour area: the paint (with Owned / To buy) or the plain colour.
@@ -1496,7 +1516,7 @@ Redemptor Dreadnought (210 points)</pre>
         <div class="info">
           <div><h2 id="dt-name">${esc(u.name)}</h2>
             <div class="meta">${esc(u.datasheet || "Unit")}${u.role ? " · " + esc(u.role) : ""} · ${plural(u.count, "model")}${u.points ? " · " + fmt(u.points) + " pts" : ""}</div></div>
-          <div class="row">${img ? unitBadge(u, scheme, 64) : ""}<span class="pill s-${esc(u.status)}">${esc(u.status === "done" ? "Painted" : stageLabel(u))}</span></div>
+          <div class="row">${img ? unitBadge(u, scheme, 64) : ""}<span class="row-end">${starBtn(u, true)}<span class="pill s-${esc(u.status)}">${esc(u.status === "done" ? "Painted" : stageLabel(u))}</span></span></div>
           ${box("painting", "Painting", `<div class="stage-list">${STAGES.map(([k, l]) => `<span class="${(u.stages || []).includes(k) ? "on" : ""}">${l}</span>`).join("")}</div>
             <p class="prose" style="margin-top:10px">${u.painted} of ${plural(u.count, "model")} painted</p>`)}
           ${recipesOf(u).map(r => box("recipes", `Recipe · ${esc(r.name)}${r.area ? " · " + esc(r.area) : ""}`, stepsHtml(r), false)).join("")}
@@ -1612,6 +1632,7 @@ Redemptor Dreadnought (210 points)</pre>
       if(!u.datasheet && !u.name){ msg("Choose a datasheet or give the unit a name.", true); $("f-sheet").focus(); return false; }
       if(!u.name) u.name = u.datasheet;
       const cur = currentUnit();
+      u.fav = !!(cur && cur.fav);
       busy = true; const b = $("b-save"), label = b.textContent; b.disabled = true; b.textContent = "Saving…";
       try {
         const row = await store.saveUnit(army.id, u, cur ? cur.id : null, pendingPhoto, removePhoto, cur);
@@ -1648,6 +1669,8 @@ Redemptor Dreadnought (210 points)</pre>
     $("cards").addEventListener("click", e => {
       const st = e.target.closest("[data-step]");
       if(st){ e.stopPropagation(); stepUnit(st.dataset.step); return; }
+      const sr = e.target.closest("[data-star]");
+      if(sr){ e.stopPropagation(); toggleStar(sr.dataset.star); return; }
       const c = e.target.closest(".card"); if(c) openDetail(c.dataset.id);
     });
     $("cards").addEventListener("keydown", e => { if((e.key === "Enter" || e.key === " ") && e.target.classList.contains("card")){ e.preventDefault(); openDetail(e.target.dataset.id); } });
@@ -1685,6 +1708,8 @@ Redemptor Dreadnought (210 points)</pre>
 
     async function onDetailClick(e){
       const ed = e.target.closest("[data-edit]"), dup = e.target.closest("[data-dup]"), del = e.target.closest("[data-del]");
+      const sr = e.target.closest("[data-star]");
+      if(sr){ toggleStar(sr.dataset.star); return; }
       if(del){
         const u = units.find(x => x.id === del.dataset.del); if(!u || busy) return;
         if(!del.classList.contains("armed")){ del.classList.add("armed"); del.textContent = "Click again to delete"; return; }
@@ -2337,6 +2362,7 @@ Redemptor Dreadnought (210 points)</pre>
       if(rosterFilter === "done" && u.status !== "done") return false;
       if(rosterFilter === "progress" && !["progress", "primed", "built"].includes(u.status)) return false;
       if(rosterFilter === "todo" && u.status === "done") return false;
+      if(rosterFilter === "fav" && !u.fav) return false;
       const a = byId[u.armyId], f = FBY[a.faction];
       return !q || [u.name, u.datasheet, u.role, u.melee, u.ranged, u.notes, a.name, f && f.name].join(" ").toLowerCase().includes(q);
     });
@@ -2357,7 +2383,7 @@ Redemptor Dreadnought (210 points)</pre>
       const sub = [u.datasheet && u.datasheet !== u.name ? u.datasheet : "", by === "role" ? "" : u.role, by === "army" ? "" : a.name].filter(Boolean).join(" · ");
       return `<a class="ro-row" href="#/army/${esc(a.id)}/unit/${esc(u.id)}">
         <span class="ro-badge">${unitBadge(u, a.scheme, 44)}</span>
-        <span class="ro-name"><strong>${esc(u.name || u.datasheet || "Unit")}</strong><small>${esc(sub || "Unit")}</small></span>
+        <span class="ro-name"><strong>${u.fav ? `<span class="star on" title="Starred">${STAR(true)}</span>` : ""}${esc(u.name || u.datasheet || "Unit")}</strong><small>${esc(sub || "Unit")}</small></span>
         <span class="ro-prog"><span class="ro-bar"><i style="width:${pct}%"></i></span><small>${dn}/${c} painted</small></span>
         <span class="ro-pts">${u.points ? num(u.points) + " pts" : "—"}</span>
         <span class="ro-st st-${esc(st)}">${esc(STATUS[st] || st)}</span>

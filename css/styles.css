@@ -916,3 +916,19 @@ button.lg,.btn.lg{padding:13px 22px;font-size:1rem;border-radius:12px}
   .ro-prog,.ro-pts{display:none}
 }
 .rosterdlg .ed-titles{flex-direction:column;align-items:flex-start;gap:0}
+
+/* Starred units */
+.star{background:transparent;border:0;padding:5px;border-radius:9px;color:var(--faint);line-height:0;display:inline-grid;place-items:center;flex:none}
+button.star:hover:not(:disabled){color:var(--warn);background:rgba(251,191,36,.1);border:0}
+.star.on{color:var(--warn)}
+.star.on svg{filter:drop-shadow(0 0 6px rgba(251,191,36,.45))}
+.star.big svg{width:24px;height:24px}
+.card-top{grid-template-columns:auto 1fr auto}
+.card-top .star{grid-row:1;grid-column:3;align-self:start;margin:-6px -8px 0 0}
+.card-top .pts{justify-self:end}
+.detail .row-end{display:inline-flex;align-items:center;gap:8px;margin-left:auto}
+.ro-name .star{padding:0;margin-right:5px;vertical-align:-2px;display:inline-grid}
+.ro-name .star svg{width:14px;height:14px}
+.filters button[data-f="fav"]{gap:5px}
+.filters button[data-f="fav"][aria-pressed="true"] svg{color:inherit}
+.filters button[data-f="fav"] svg{color:var(--warn)}
