@@ -870,7 +870,7 @@
           ${sec("Weapons", [["Melee", esc(u.melee)], ["Ranged", esc(u.ranged)]])}
           ${u.paints ? `<section><h4>Paint notes</h4><p class="prose">${esc(u.paints)}</p></section>` : ""}
           ${u.notes ? `<section><h4>Notes</h4><p class="prose">${esc(u.notes)}</p></section>` : ""}
-          ${canWrite ? `<section class="row-actions"><button type="button" class="primary" data-edit="${esc(u.id)}">Edit unit</button><button type="button" data-dup="${esc(u.id)}">Duplicate</button></section>` : ""}
+          ${canWrite ? `<section class="row-actions"><button type="button" class="primary" data-edit="${esc(u.id)}">Edit unit</button><button type="button" data-dup="${esc(u.id)}">Duplicate</button><button type="button" class="danger" data-del="${esc(u.id)}">Delete</button></section>` : ""}
         </div></div>`;
       $("detail").showModal(); $("detail").scrollTop = 0;
     }
@@ -985,17 +985,21 @@
       const b = $("b-del");
       if(!armed){ armed = true; b.classList.add("armed"); b.textContent = "Click again to delete"; return; }
       busy = true; b.disabled = true;
-      try {
-        await store.removeUnit(cur, true);
-        units = units.filter(x => x.id !== cur.id); setDirty(false); $("editdlg").close(); newUnit(false);
-        toast(`Deleted ${cur.name}`, async () => {
-          try { const row = await store.restoreUnit(army.id, cur); units = units.concat(row); render(); toast(`Restored ${cur.name}`); }
-          catch(err){ msg("Couldn't restore: " + errText(err), true); }
-        }, () => store.purgeImage(cur));
-      }
+      try { await deleteUnit(cur); setDirty(false); $("editdlg").close(); newUnit(false); }
       catch(err){ msg("Couldn't delete: " + errText(err), true); }
       finally { busy = false; b.disabled = false; }
     });
+    // Delete with an 8-second Undo (the photo is only removed once Undo has gone).
+    async function deleteUnit(cur){
+      await store.removeUnit(cur, true);
+      units = units.filter(x => x.id !== cur.id);
+      if(selId === cur.id) selId = null;
+      render();
+      toast(`Deleted ${cur.name}`, async () => {
+        try { const row = await store.restoreUnit(army.id, cur); units = units.concat(row); render(); toast(`Restored ${cur.name}`); }
+        catch(err){ msg("Couldn't restore: " + errText(err), true); }
+      }, () => store.purgeImage(cur));
+    }
     $("b-del").addEventListener("blur", () => setTimeout(() => { if(armed && document.activeElement !== $("b-del")) disarm(); }, 0));
 
     $("cards").addEventListener("click", e => {
@@ -1037,7 +1041,16 @@
     }
 
     async function onDetailClick(e){
-      const ed = e.target.closest("[data-edit]"), dup = e.target.closest("[data-dup]");
+      const ed = e.target.closest("[data-edit]"), dup = e.target.closest("[data-dup]"), del = e.target.closest("[data-del]");
+      if(del){
+        const u = units.find(x => x.id === del.dataset.del); if(!u || busy) return;
+        if(!del.classList.contains("armed")){ del.classList.add("armed"); del.textContent = "Click again to delete"; return; }
+        busy = true; del.disabled = true;
+        try { await deleteUnit(u); $("detail").close(); }
+        catch(err){ del.disabled = false; del.textContent = "Couldn't delete. Try again"; }
+        finally { busy = false; }
+        return;
+      }
       if(ed){ $("detail").close(); if(await okToLeave()) editUnit(ed.dataset.edit); }
       if(dup){
         const u = units.find(x => x.id === dup.dataset.dup); $("detail").close();
@@ -1449,6 +1462,22 @@
   }
   $("authform").addEventListener("submit", e => { e.preventDefault(); doAuth("in"); });
   $("au-up").addEventListener("click", () => doAuth("up"));
+
+  /* Background picker (remembered in this browser) */
+  (function(){
+    const btn = $("b-bg"), menu = $("bg-menu");
+    const mark = () => menu.querySelectorAll("[data-bg]").forEach(b => b.setAttribute("aria-pressed", b.dataset.bg === (document.documentElement.dataset.bg || "1")));
+    const toggle = on => { menu.hidden = !on; btn.setAttribute("aria-expanded", on); if(on) mark(); };
+    btn.addEventListener("click", e => { e.stopPropagation(); toggle(menu.hidden); });
+    menu.addEventListener("click", e => {
+      const o = e.target.closest("[data-bg]"); if(!o) return;
+      document.documentElement.dataset.bg = o.dataset.bg;
+      try { localStorage.setItem("ll-bg", o.dataset.bg); } catch(err){}
+      mark();
+    });
+    document.addEventListener("click", e => { if(!menu.hidden && !e.target.closest(".bgpick")) toggle(false); });
+    document.addEventListener("keydown", e => { if(e.key === "Escape" && !menu.hidden){ toggle(false); btn.focus(); } });
+  })();
 
   ART.injectDefs();
   store = S.create();

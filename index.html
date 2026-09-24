@@ -13,6 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap">
+<script>try{document.documentElement.dataset.bg=localStorage.getItem("ll-bg")||"1"}catch(e){}</script>
 <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
@@ -20,6 +21,19 @@
     <div class="topbar-in">
       <a class="brand" href="#/">Livery Ledger</a>
       <div class="top-tools">
+        <div class="bgpick">
+          <button type="button" class="btn-sm" id="b-bg" aria-expanded="false" aria-controls="bg-menu">Background</button>
+          <div class="bg-menu" id="bg-menu" hidden>
+            <h3>Background</h3>
+            <div class="bg-grid">
+              <button type="button" class="bg-opt" data-bg="1" style="background-image:url(img/bg-1-thumb.webp)" aria-label="Necrons and Ultramarines"></button>
+              <button type="button" class="bg-opt" data-bg="2" style="background-image:url(img/bg-2-thumb.webp)" aria-label="Terminators"></button>
+              <button type="button" class="bg-opt" data-bg="3" style="background-image:url(img/bg-3-thumb.webp)" aria-label="Orks and Blood Angels"></button>
+              <button type="button" class="bg-opt" data-bg="4" style="background-image:url(img/bg-4-thumb.webp)" aria-label="Tyranids"></button>
+              <button type="button" class="bg-opt none" data-bg="none">None</button>
+            </div>
+          </div>
+        </div>
         <span class="who" id="who" hidden></span>
         <button type="button" class="btn-sm" id="b-signin" hidden>Sign in</button>
         <button type="button" class="btn-sm" id="b-signout" hidden>Sign out</button>
