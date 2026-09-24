@@ -35,15 +35,20 @@
   /* ============================================================
      Shared bits
      ============================================================ */
+  const SKIN = "#c79a7e";
+  const NO_HEAD_ROLES = ["Vehicle","Monster","Dedicated Transport","Fortification"];
+  const headOf = u => ["helmet","bare","none"].includes(u.head) ? u.head : (u.noHelmet ? "bare" : "helmet");
+  const autoHead = role => NO_HEAD_ROLES.includes(role) ? "none" : "helmet";
   function unitBadge(u, scheme, size){
     const c = scheme.colors;
     const tier = scheme.tiers[u.tier] || scheme.tiers[0];
     const v = {
       helmet: u.helmet || (tier && tier.color) || c.armour, lens: u.lens || c.lens, armour: u.armour || c.armour,
       secondary: u.secondary || c.secondary, trim: u.trim || c.trim, emblem: u.emblem || c.emblem,
-      shape: u.shape || scheme.shape, noHelmet: u.noHelmet
+      shape: u.shape || scheme.shape, skin: u.skin || SKIN, head: headOf(u)
     };
-    return ART.badge(v, scheme.style, size, `${cname(v.helmet)} helmet, ${cname(v.armour)} armour with ${cname(v.trim)} trim`);
+    const hd = v.head === "bare" ? `bare head (${cname(v.skin)} skin)` : v.head === "none" ? "no head" : `${cname(v.helmet)} helmet`;
+    return ART.badge(v, scheme.style, size, `${hd}, ${cname(v.armour)} armour with ${cname(v.trim)} trim`);
   }
   function tierBadge(scheme, t, size){
     const c = scheme.colors;
@@ -505,11 +510,17 @@
             <div class="pts-hint" id="pts-hint"></div>
           </fieldset>
           <fieldset>
-            <legend>Helmet</legend>
-            ${colorField("helmet", "Helmet colour")}
-            ${colorField("lens", "Lenses / eyes")}
-            <label class="full">Helmet detail<input id="f-hdetail" list="dl-hdetail" maxlength="60" placeholder="e.g. laurel wreath, centre stripe"></label>
-            <label class="full check"><input type="checkbox" id="f-noHelmet"> Bare head (no helmet)</label>
+            <legend>Head</legend>
+            <div class="full headseg" role="radiogroup" aria-label="Head">
+              <label><input type="radio" name="head" value="helmet" checked><span>Helmet</span></label>
+              <label><input type="radio" name="head" value="bare"><span>Bare head</span></label>
+              <label><input type="radio" name="head" value="none"><span>None</span></label>
+            </div>
+            <p class="hint full" id="head-hint"></p>
+            <div class="hd-when" data-when="helmet">${colorField("helmet", "Helmet colour")}</div>
+            <div class="hd-when" data-when="bare">${colorField("skin", "Skin colour")}</div>
+            <div class="hd-when" data-when="helmet bare">${colorField("lens", "<span id=\"lens-lbl\">Lenses</span>")}</div>
+            <label class="full hd-when" data-when="helmet bare"><span id="hdetail-lbl">Helmet detail</span><input id="f-hdetail" list="dl-hdetail" maxlength="60" placeholder="e.g. laurel wreath, centre stripe"></label>
           </fieldset>
           <fieldset>
             <legend>Armour &amp; pauldrons</legend>
@@ -560,6 +571,7 @@
       </dialog>
       <datalist id="dl-scheme">${schemeColors.map(c => `<option value="${c}"></option>`).join("")}</datalist>
       <datalist id="dl-melee"></datalist><datalist id="dl-ranged"></datalist>
+      <datalist id="dl-face"><option>War paint</option><option>Scars</option><option>Tattoos</option><option>Bionic eye</option><option>Beard</option><option>Service studs</option></datalist>
       <datalist id="dl-hdetail"><option>Laurel wreath</option><option>Centre stripe</option><option>Crest</option><option>Battle damage</option><option>Squad markings</option></datalist>
 
       <dialog id="paintdlg" class="paintdlg" aria-labelledby="pd-h">
@@ -613,11 +625,23 @@
     let units = [], selId = null, filter = "all", query = "", armed = false, dirty = false, busy = false;
     let pendingPhoto = null, removePhoto = false, tierTouched = false, pointsTouched = false;
     const form = $("form");
-    const COLOR_IDS = ["helmet","lens","armour","secondary","trim","emblem","cloth","metal"];
+    const COLOR_IDS = ["helmet","lens","skin","armour","secondary","trim","emblem","cloth","metal"];
+    let headTouched = false;
+    const getHead = () => (form.querySelector('input[name="head"]:checked') || {}).value || "helmet";
+    function setHead(h){
+      form.querySelectorAll('input[name="head"]').forEach(i => i.checked = i.value === h);
+      form.querySelectorAll(".hd-when").forEach(el => el.hidden = !el.dataset.when.split(" ").includes(h));
+      $("lens-lbl").textContent = h === "bare" ? "Eyes" : "Lenses";
+      $("hdetail-lbl").textContent = h === "bare" ? "Face paint & detail" : "Helmet detail";
+      $("f-hdetail").setAttribute("list", h === "bare" ? "dl-face" : "dl-hdetail");
+      $("f-hdetail").placeholder = h === "bare" ? "e.g. war paint, scars, tattoos, bionic eye" : "e.g. laurel wreath, centre stripe";
+      $("head-hint").textContent = h === "bare" ? "For a painted face: pick a skin tone and note any war paint or scars." : h === "none" ? "No head to paint, e.g. vehicles, monsters and walkers." : "";
+      $("head-hint").hidden = h === "helmet";
+    }
 
     function defaults(){
       const c = scheme.colors, t = scheme.tiers[0];
-      return {datasheet:"", role:"", name:"", count:5, points:0, stages:[], painted:0, recipes:[], tier:0, helmet:t.color, lens:c.lens, hdetail:"", noHelmet:false,
+      return {datasheet:"", role:"", name:"", count:5, points:0, stages:[], painted:0, recipes:[], tier:0, helmet:t.color, lens:c.lens, hdetail:"", head:"helmet", skin:SKIN,
         armour:c.armour, secondary:c.secondary, trim:c.trim, emblem:c.emblem, shape:"", cloth:c.cloth, metal:c.metal,
         extras:"", melee:"", ranged:"", paints:"", notes:""};
     }
@@ -630,11 +654,12 @@
       const o = {datasheet, role: sh ? sh.r : "", name: $("f-name").value.trim(), count,
         points: Math.max(0, parseInt($("f-points").value, 10) || 0), stages: readStages(),
         painted: Math.min(count, Math.max(0, parseInt($("f-painted").value, 10) || 0)),
-        tier: +$("f-tier").value || 0, hdetail: $("f-hdetail").value.trim(), noHelmet: $("f-noHelmet").checked,
+        tier: +$("f-tier").value || 0, hdetail: $("f-hdetail").value.trim(), head: getHead(),
         shape: $("f-shape").value, extras: $("f-extras").value.trim(), melee: $("f-melee").value.trim(), ranged: $("f-ranged").value.trim(),
         paints: $("f-paints").value.trim(), notes: $("f-notes").value.trim(),
         recipes: [...$("f-recipes").querySelectorAll("input:checked")].map(i => i.value)};
       o.status = S.deriveStatus(o.stages, o.painted, o.count);
+      o.noHelmet = o.head === "bare";
       COLOR_IDS.forEach(k => o[k] = $("f-" + k).value);
       return o;
     }
@@ -650,7 +675,7 @@
       $("f-painted").value = d.painted || 0;
       renderRecipePicks(d.recipes || []);
       $("f-tier").value = String(Math.min(d.tier, scheme.tiers.length - 1));
-      $("f-hdetail").value = d.hdetail; $("f-noHelmet").checked = !!d.noHelmet;
+      $("f-hdetail").value = d.hdetail; setHead(headOf(d));
       $("f-shape").value = [...$("f-shape").options].some(o => o.value === d.shape) ? d.shape : "";
       ["extras","melee","ranged","paints","notes"].forEach(k => $("f-" + k).value = d[k] || "");
       COLOR_IDS.forEach(k => $("f-" + k).value = ART.hexOk(d[k]) ? d[k] : (defaults()[k] || "#1f1f22"));
@@ -707,11 +732,11 @@
     }
     function editUnit(id){
       const u = units.find(x => x.id === id); if(!u) return;
-      selId = id; tierTouched = true; pointsTouched = true; clearPending(); writeForm(u); disarm(); setEditing(u); setPhotoUI(); setDirty(false); msg(""); render();
+      selId = id; tierTouched = true; pointsTouched = true; headTouched = true; clearPending(); writeForm(u); disarm(); setEditing(u); setPhotoUI(); setDirty(false); msg(""); render();
       openEditor(); $("f-name").focus({preventScroll: true});
     }
     function newUnit(focus){
-      selId = null; tierTouched = false; pointsTouched = false; clearPending(); writeForm(defaults()); disarm(); setEditing(null); setPhotoUI(); setDirty(false); msg(""); render();
+      selId = null; tierTouched = false; pointsTouched = false; headTouched = false; clearPending(); writeForm(defaults()); disarm(); setEditing(null); setPhotoUI(); setDirty(false); msg(""); render();
       if(focus) $("f-sheet").focus();
     }
     function openEditor(){
@@ -801,7 +826,8 @@
     // Units saved without a colour fall back to the army's colours.
     const withColours = u => {
       const o = {...u};
-      COLOR_IDS.forEach(k => { if(!ART.hexOk(o[k])) o[k] = k === "helmet" ? (scheme.tiers[o.tier] || scheme.tiers[0]).color : scheme.colors[k]; });
+      COLOR_IDS.forEach(k => { if(!ART.hexOk(o[k])) o[k] = k === "helmet" ? (scheme.tiers[o.tier] || scheme.tiers[0]).color : k === "skin" ? SKIN : scheme.colors[k]; });
+      o.head = headOf(o);
       return o;
     };
     function cardHtml(u){
@@ -815,7 +841,7 @@
           <div class="card-top">${unitBadge(u, scheme, 60)}<div><h3>${esc(u.name)}</h3><div class="type">${esc([u.datasheet && u.datasheet !== u.name ? u.datasheet : "", u.role].filter(Boolean).join(" · ") || "Unit")}</div></div>${u.points ? `<span class="pts">${fmt(u.points)}<small>pts</small></span>` : ""}</div>
           <dl>
             <dt>Rank</dt><dd>${esc(tier.name || "—")}</dd>
-            <dt>Helmet</dt><dd>${u.noHelmet ? "Bare head" : chip(u.helmet) + esc(cname(u.helmet))}${u.hdetail ? ", " + esc(u.hdetail) : ""}</dd>
+            ${u.head === "none" ? "" : `<dt>${u.head === "bare" ? "Face" : "Helmet"}</dt><dd>${u.head === "bare" ? chip(u.skin) + "Bare head" : chip(u.helmet) + esc(cname(u.helmet))}${u.hdetail ? ", " + esc(u.hdetail) : ""}</dd>`}
             <dt>Armour</dt><dd>${chip(u.armour)}${esc(cname(u.armour))}, ${esc(cname(u.trim))} trim</dd>
             <dt>Weapons</dt><dd>${esc(weaponsText(u))}</dd>
             ${recipesOf(u).length ? `<dt>Recipes</dt><dd>${esc(recipesOf(u).map(r => r.name).join(", "))}${canWrite && missingFor(u).length ? ` <span class="need">${missingFor(u).length} to buy</span>` : ""}</dd>` : ""}
@@ -864,7 +890,9 @@
             <p class="prose" style="margin-top:10px">${u.painted} of ${plural(u.count, "model")} painted</p></section>
           ${recipesOf(u).map(r => `<section><h4>Recipe · ${esc(r.name)}${r.area ? " · " + esc(r.area) : ""}</h4>${stepsHtml(r)}</section>`).join("")}
           ${sec("Rank", [["Rank", esc(tier.name)], ["Who", esc(tier.note)]])}
-          ${sec("Helmet", [["Colour", u.noHelmet ? "Bare head" : col(u.helmet)], ["Lenses", col(u.lens)], ["Detail", esc(u.hdetail)]])}
+          ${u.head === "none" ? sec("Head", [["Head", "None (vehicle or monster)"]])
+            : u.head === "bare" ? sec("Head", [["Head", "Bare head"], ["Skin", col(u.skin)], ["Eyes", col(u.lens)], ["Face paint", esc(u.hdetail)]])
+            : sec("Helmet", [["Colour", col(u.helmet)], ["Lenses", col(u.lens)], ["Detail", esc(u.hdetail)]])}
           ${sec("Armour &amp; pauldrons", [["Armour", col(u.armour)], ["Secondary", col(u.secondary)], ["Trim", col(u.trim)], ["Emblem", (u.shape || scheme.shape) === "none" ? "None" : col(u.emblem) + " · " + esc(P.emblemName(u.shape || scheme.shape))]])}
           ${sec("Cloth &amp; details", [["Cloth", col(u.cloth)], ["Metal", col(u.metal)], ["Extras", esc(u.extras)]])}
           ${sec("Weapons", [["Melee", esc(u.melee)], ["Ranged", esc(u.ranged)]])}
@@ -896,6 +924,7 @@
     form.addEventListener("input", e => {
       if(e.target.id === "f-photo") return;
       if(e.target.id === "f-points") pointsTouched = true;
+      if(e.target.name === "head"){ headTouched = true; setHead(getHead()); }
       if(e.target.id === "f-count" && !pointsTouched){ const sel = $("f-sheet").value; const p = ptsFor(sel && sel !== "__custom" ? sheetFor(sel) : null, Math.max(1, parseInt($("f-count").value, 10) || 1)); if(p != null) $("f-points").value = p; }
       if(e.target.closest && e.target.closest("#f-stages") && e.target.value === "varnish" && e.target.checked) $("f-painted").value = $("f-count").value;
       setDirty(true); preview();
@@ -921,6 +950,7 @@
         const t = (sh.r === "Epic Hero" || sh.r === "Character") ? Math.min(2, scheme.tiers.length - 1) : 0;
         $("f-tier").value = String(t); $("f-helmet").value = scheme.tiers[t].color;
       }
+      if(!headTouched) setHead(sh ? autoHead(sh.r) : "helmet");
       if(sh && !selId) $("f-count").value = singleRole(sh.r) ? 1 : (sh.pb && sh.pb[0] ? (sh.pb[0][0] === sh.pb[0][1] ? sh.pb[0][0] : Math.max(1, sh.pb[0][0] - 1)) : 5);
       if(sh && !pointsTouched){ const p = ptsFor(sh, Math.max(1, parseInt($("f-count").value, 10) || 1)); if(p != null) $("f-points").value = p; }
       fillWeapons(); preview();
@@ -1054,7 +1084,7 @@
       if(ed){ $("detail").close(); if(await okToLeave()) editUnit(ed.dataset.edit); }
       if(dup){
         const u = units.find(x => x.id === dup.dataset.dup); $("detail").close();
-        if(u && await okToLeave()){ selId = null; tierTouched = true; pointsTouched = true; clearPending(); writeForm({...u, name: u.name + " (copy)"}); setEditing(null); setPhotoUI(); setDirty(true); render(); openEditor(); msg("Copy ready. Change what you need and save."); }
+        if(u && await okToLeave()){ selId = null; tierTouched = true; pointsTouched = true; headTouched = true; clearPending(); writeForm({...u, name: u.name + " (copy)"}); setEditing(null); setPhotoUI(); setDirty(true); render(); openEditor(); msg("Copy ready. Change what you need and save."); }
       }
     }
     $("detail").addEventListener("click", onDetailClick);
@@ -1193,7 +1223,7 @@
         const rows = pick.map(u => {
           const tierIdx = (u.sheet.r === "Epic Hero" || u.sheet.r === "Character") ? Math.min(2, scheme.tiers.length - 1) : 0;
           return {datasheet: u.sheet.n, role: u.sheet.r, name: u.name, count: u.count, points: u.points, stages: [], painted: 0, tier: tierIdx,
-            helmet: scheme.tiers[tierIdx].color, lens: c.lens, armour: c.armour, secondary: c.secondary, trim: c.trim, emblem: c.emblem, shape: "",
+            helmet: scheme.tiers[tierIdx].color, head: autoHead(u.sheet.r), skin: SKIN, lens: c.lens, armour: c.armour, secondary: c.secondary, trim: c.trim, emblem: c.emblem, shape: "",
             cloth: c.cloth, metal: c.metal, melee: u.melee.join(", "), ranged: u.ranged.join(", "), notes: u.notes.join(". ")};
         });
         const b = $("ld-add"); b.disabled = true; $("ld-msg").textContent = "Adding units…";
