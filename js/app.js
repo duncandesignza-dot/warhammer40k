@@ -436,7 +436,8 @@
             <div class="card-top">${tierBadge(a.scheme, t0, 56)}<div><h3>${esc(a.name)}</h3><div class="meta">${esc(f ? f.name : a.faction)}</div></div></div>
             <div class="prog" aria-hidden="true"><i style="width:${pct}%"></i></div>
             <div class="foot"><span>${plural(s.units, "unit")} · ${plural(s.models, "model")}</span><span>${pct}% painted</span></div>
-          </a>`;}).join("")}</div>` : ""}
+          </a>`;}).join("")}</div>
+        <section class="activity panel" id="activity" aria-labelledby="act-h"><h2 class="act-title" id="act-h">Painting activity</h2><p class="loading">Adding up your painting…</p></section>` : ""}
       <h2 class="section">Start a new ledger <small>Choose your faction</small></h2>
       <div class="row-actions">
         <input type="search" class="fsearch" id="fq" placeholder="Search factions" aria-label="Search factions">
@@ -458,6 +459,7 @@
     });
     app.querySelectorAll("[data-signin]").forEach(b => b.addEventListener("click", openAuth));
     if(me && store.updateProfile) profileEdits();
+    if(armies.length) store.listAllUnits().then(us => { if($("activity")) drawActivity(us); }).catch(err => { console.error(err); if($("activity")) $("activity").querySelector(".loading").textContent = "Couldn't load your painting history."; });
     if(store.canWrite){
       $("b-import-army").addEventListener("click", () => $("f-import-army").click());
       $("f-import-army").addEventListener("change", async e => {
@@ -809,6 +811,99 @@ Redemptor Dreadnought (210 points)</pre>
     $("sh-f").addEventListener("change", draw);
     if($("sh-mine")) $("sh-mine").addEventListener("change", draw);
     draw();
+  }
+
+  /* ============================================================
+     Painting activity (profile): models painted over time and a monthly goal
+     ============================================================ */
+  const GOAL_KEY = "ll-goal";
+  function getGoal(){
+    if(store.kind === "supabase") return Math.max(0, parseInt(((store.session && store.session.user.user_metadata) || {}).goal, 10) || 0);
+    try { return Math.max(0, parseInt(localStorage.getItem(GOAL_KEY), 10) || 0); } catch(e){ return 0; }
+  }
+  async function setGoal(n){
+    if(store.kind === "supabase"){ await store.updateProfile({goal: n || null}); return; }
+    try { if(n) localStorage.setItem(GOAL_KEY, String(n)); else localStorage.removeItem(GOAL_KEY); } catch(e){}
+  }
+  const monthKey = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  function activityOf(units){
+    const byDay = new Map();
+    units.forEach(u => (u.log || []).forEach(e => byDay.set(e.d, (byDay.get(e.d) || 0) + e.n)));
+    const sumWhere = pre => { let n = 0; byDay.forEach((v, d) => { if(d.startsWith(pre)) n += v; }); return n; };
+    const now = new Date();
+    const months = [];
+    for(let i = 11; i >= 0; i--){
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1), key = monthKey(d);
+      months.push({key, n: sumWhere(key), short: d.toLocaleDateString("en-GB", {month: "short"}), long: d.toLocaleDateString("en-GB", {month: "long", year: "numeric"})});
+    }
+    // Weeks (Monday to Sunday) in a row with something painted, counting this week or, if nothing yet, last week.
+    const weekOf = ds => { const [y, m, d] = ds.split("-").map(Number); const t = Date.UTC(y, m - 1, d); return Math.floor((t / 864e5 + 3) / 7); };
+    const weeks = new Set([...byDay.keys()].map(weekOf));
+    const tw = weekOf(monthKey(now) + "-" + String(now.getDate()).padStart(2, "0"));
+    let streak = 0, w = weeks.has(tw) ? tw : tw - 1;
+    while(weeks.has(w)){ streak++; w--; }
+    const monthTotals = new Map(); byDay.forEach((v, d) => monthTotals.set(d.slice(0, 7), (monthTotals.get(d.slice(0, 7)) || 0) + v));
+    let best = null; monthTotals.forEach((v, k) => { if(!best || v > best.n) best = {k, n: v}; });
+    const total = [...byDay.values()].reduce((a, b) => a + b, 0);
+    return {months, thisMonth: months[11].n, lastMonth: months[10], thisYear: sumWhere(String(now.getFullYear())), streak, best, total};
+  }
+  function drawActivity(units){
+    const box = $("activity"), A = activityOf(units), goal = getGoal();
+    const max = Math.max(...A.months.map(m => m.n), goal || 0, 4);
+    const step = max <= 8 ? 2 : max <= 20 ? 5 : max <= 50 ? 10 : Math.ceil(max / 50) * 10;
+    let top = Math.ceil(max / step) * step;
+    if(top % 2) top += step;   // keep the middle gridline a whole number
+    const peak = A.months.reduce((b, m, i) => m.n > A.months[b].n ? i : b, 0);
+    const diff = A.thisMonth - A.lastMonth.n, lastName = A.lastMonth.long.split(" ")[0];
+    const bestName = A.best ? new Date(A.best.k + "-01T12:00:00").toLocaleDateString("en-GB", {month: "long", year: "numeric"}) : "";
+    const pct = goal ? Math.min(100, Math.round(A.thisMonth / goal * 100)) : 0;
+    box.innerHTML = `
+      <div class="act-head"><h2 class="act-title" id="act-h">Painting activity</h2><small>Models you've marked painted across all your ledgers</small></div>
+      <div class="act-top">
+        <div class="act-stats">
+          <div class="stat"><b>${A.thisMonth}</b><span>This month</span><em>${A.lastMonth.n || A.thisMonth ? (diff === 0 ? `Same as ${lastName}` : `${Math.abs(diff)} ${diff > 0 ? "more" : "fewer"} than ${lastName}`) : "&nbsp;"}</em></div>
+          <div class="stat"><b>${A.thisYear}</b><span>This year</span></div>
+          <div class="stat"><b>${A.streak}</b><span>Week streak</span><em>${A.streak ? `${plural(A.streak, "week")} in a row` : "Paint this week to start one"}</em></div>
+          <div class="stat"><b>${A.best ? A.best.n : 0}</b><span>Best month</span><em>${esc(bestName) || "&nbsp;"}</em></div>
+        </div>
+        <div class="act-goal" id="act-goal">
+          ${goal ? `<div class="ag-row"><span class="ag-l">Monthly goal</span><button type="button" class="linkish" data-goal="edit">Change</button></div>
+            <div class="ag-val"><b>${A.thisMonth}</b> of ${goal} models${A.thisMonth >= goal ? ` <span class="ag-done">Goal reached</span>` : ""}</div>
+            <div class="meter" role="progressbar" aria-label="Monthly goal" aria-valuemin="0" aria-valuemax="${goal}" aria-valuenow="${Math.min(A.thisMonth, goal)}"><i style="width:${pct}%"></i></div>
+            <small>${A.thisMonth >= goal ? "Nice work. Anything more is a bonus." : `${goal - A.thisMonth} to go this month.`}</small>`
+          : `<div class="ag-row"><span class="ag-l">Monthly goal</span></div>
+            <p>Pick how many models you'd like to paint each month and track it here.</p>
+            <button type="button" class="btn-sm primary" data-goal="edit">Set a goal</button>`}
+        </div>
+      </div>
+      <figure class="act-chart">
+        <figcaption>Models painted each month</figcaption>
+        <div class="bars" style="--top:${top}">
+          <div class="grid" aria-hidden="true"><span style="bottom:100%"><i>${top}</i></span><span style="bottom:50%"><i>${top / 2}</i></span><span style="bottom:0"><i>0</i></span></div>
+          ${A.months.map((m, i) => `<div class="col${i === 11 ? " now" : ""}" tabindex="0" aria-label="${esc(m.long)}: ${plural(m.n, "model")} painted">
+            <div class="bar-wrap"><div class="mbar" style="height:${m.n / top * 100}%">${m.n && (i === 11 || i === peak) ? `<span class="bar-val">${m.n}</span>` : ""}</div></div>
+            <span class="tip" role="tooltip">${esc(m.long)}<b>${plural(m.n, "model")}</b></span>
+            <span class="mo" aria-hidden="true">${esc(m.short)}</span>
+          </div>`).join("")}
+        </div>
+        ${!A.total ? `<p class="hint act-empty">Your chart fills in as you mark models painted. History starts from today, so models painted before now aren't dated.</p>` : ""}
+      </figure>`;
+    box.querySelectorAll("[data-goal]").forEach(b => b.addEventListener("click", () => editGoal(units)));
+  }
+  function editGoal(units){
+    const g = $("act-goal"), goal = getGoal();
+    g.innerHTML = `<div class="ag-row"><span class="ag-l">Monthly goal</span></div>
+      <form class="ag-form" id="goal-form"><label>Models a month<input type="number" id="goal-in" min="1" max="999" inputmode="numeric" value="${goal || ""}" placeholder="10"></label>
+      <div class="row-actions"><button type="submit" class="btn-sm primary">Save</button><button type="button" class="btn-sm" id="goal-cancel">Cancel</button>${goal ? `<button type="button" class="btn-sm danger" id="goal-clear">Remove goal</button>` : ""}</div>
+      <div class="msg" id="goal-msg" role="status"></div></form>`;
+    $("goal-in").focus();
+    const done = async n => {
+      try { await setGoal(n); drawActivity(units); }
+      catch(err){ $("goal-msg").textContent = "Couldn't save your goal: " + errText(err); $("goal-msg").classList.add("err"); }
+    };
+    $("goal-form").addEventListener("submit", e => { e.preventDefault(); const n = Math.min(999, Math.max(1, parseInt($("goal-in").value, 10) || 0)); if(!parseInt($("goal-in").value, 10)){ $("goal-in").focus(); return; } done(n); });
+    $("goal-cancel").addEventListener("click", () => drawActivity(units));
+    if($("goal-clear")) $("goal-clear").addEventListener("click", () => done(0));
   }
 
   /* Profile page: change your display name (pencil) and picture (click the circle). */

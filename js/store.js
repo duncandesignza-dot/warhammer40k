@@ -16,6 +16,24 @@
     return "unbuilt";
   }
   const MAX_PHOTOS = 12;
+  const today = () => { const t = new Date(); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`; };
+  function cleanLog(list){
+    const m = new Map();
+    (Array.isArray(list) ? list : []).forEach(e => { if(e && /^\d{4}-\d\d-\d\d$/.test(e.d)){ const n = Math.max(0, Math.min(999, parseInt(e.n, 10) || 0)); if(n) m.set(e.d, Math.min(999, (m.get(e.d) || 0) + n)); } });
+    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0])).slice(-240).map(([d, n]) => ({d, n}));
+  }
+  // An existing unit that gains painted models logs them today; taking some back (a mistake or an undo) removes them from today.
+  function nextLog(prev, u){
+    if(!prev) return u.log;   // new, imported or duplicated units aren't painting activity
+    const log = cleanLog(prev.log), was = Math.min(+prev.count || 0, +prev.painted || 0);
+    const cnt = Math.min(99, Math.max(1, parseInt(u.count, 10) || 1)), now = Math.min(cnt, Math.max(0, parseInt(u.painted, 10) || 0));
+    const delta = now - was, d = today();
+    if(!delta) return log;
+    const last = log[log.length - 1];
+    if(delta > 0){ if(last && last.d === d) last.n += delta; else log.push({d, n: delta}); }
+    else if(last && last.d === d){ last.n = Math.max(0, last.n + delta); }
+    return cleanLog(log);
+  }
   const STATUS = {unbuilt:"Unbuilt",built:"Built",primed:"Primed",progress:"In progress",done:"Painted"};
   const HEX = /^#[0-9a-f]{6}$/i;
   const COLOR_FIELDS = ["helmet","skin","lens","armour","lpauldron","lpsecondary","lpemblem","rpauldron","rpsecondary","rpemblem","secondary","trim","emblem","cloth","metal"];
@@ -65,6 +83,8 @@
     o.xareas = r.xareas && typeof r.xareas === "object" ? cleanXareas(r.xareas) : null;
     // Starred: shown with a star and kept together by the "Starred" filter.
     o.fav = r.fav === true || r.fav === "true";
+    // Painting history: models painted per day, e.g. [{d: "2026-09-24", n: 3}].
+    o.log = cleanLog(r.log);
     // Extra photos (the gallery): storage paths online, small data URLs when saving in this browser.
     o.photos = (Array.isArray(r.photos) ? r.photos : []).filter(x => typeof x === "string" && (/^data:image\/(jpeg|png|webp);base64,/.test(x) || /^[\w-]+\/[\w-]+\/[\w-]+\.jpg$/.test(x))).slice(0, MAX_PHOTOS);
     if(!o.name) o.name = o.datasheet || "Unnamed unit";
@@ -206,7 +226,7 @@
         let image = prev ? prev.image || "" : "";
         if(photo) image = await blobToDataURL(await resizeImage(photo.file, 1000, .8));
         else if(remove) image = "";
-        const row = {...cleanUnit(u), id: prev ? prev.id : newId(), armyId, image, updatedAt: new Date().toISOString()};
+        const row = {...cleanUnit({...u, log: nextLog(prev, u)}), id: prev ? prev.id : newId(), armyId, image, updatedAt: new Date().toISOString()};
         const before = db.units;
         db.units = db.units.filter(x => x.id !== row.id).concat(row);
         try { save(); } catch(e){ db.units = before; throw e; }
@@ -321,7 +341,7 @@
         let image_path = prev ? prev.imagePath || null : null, oldPath = null;
         if(photo){ oldPath = image_path; image_path = await upload(armyId, await resizeImage(photo.file, 1600, .85)); }
         else if(remove){ oldPath = image_path; image_path = null; }
-        const row = {army_id: armyId, data: cleanUnit(u), image_path, updated_at: new Date().toISOString()};
+        const row = {army_id: armyId, data: cleanUnit({...u, log: id ? nextLog(prev, u) : u.log}), image_path, updated_at: new Date().toISOString()};
         const res = id ? await sb.from(U).update(row).eq("id", id).select().single() : await sb.from(U).insert(row).select().single();
         if(res.error){ if(photo && image_path) sb.storage.from(B).remove([image_path]).catch(() => {}); throw res.error; }
         if(oldPath) sb.storage.from(B).remove([oldPath]).catch(() => {});
