@@ -15,6 +15,7 @@
     if(stages.includes("built")) return "built";
     return "unbuilt";
   }
+  const MAX_PHOTOS = 12;
   const STATUS = {unbuilt:"Unbuilt",built:"Built",primed:"Primed",progress:"In progress",done:"Painted"};
   const HEX = /^#[0-9a-f]{6}$/i;
   const COLOR_FIELDS = ["helmet","skin","lens","armour","lpauldron","lpsecondary","lpemblem","rpauldron","rpsecondary","rpemblem","secondary","trim","emblem","cloth","metal"];
@@ -64,6 +65,8 @@
     o.xareas = r.xareas && typeof r.xareas === "object" ? cleanXareas(r.xareas) : null;
     // Starred: shown with a star and kept together by the "Starred" filter.
     o.fav = r.fav === true || r.fav === "true";
+    // Extra photos (the gallery): storage paths online, small data URLs when saving in this browser.
+    o.photos = (Array.isArray(r.photos) ? r.photos : []).filter(x => typeof x === "string" && (/^data:image\/(jpeg|png|webp);base64,/.test(x) || /^[\w-]+\/[\w-]+\/[\w-]+\.jpg$/.test(x))).slice(0, MAX_PHOTOS);
     if(!o.name) o.name = o.datasheet || "Unnamed unit";
     return o;
   }
@@ -210,6 +213,9 @@
         return {...row};
       },
       async removeUnit(u){ db.units = db.units.filter(x => x.id !== u.id); save(); },
+      photoUrl: p => p,
+      async addUnitPhoto(armyId, u, file){ const url = await blobToDataURL(await resizeImage(file, 900, .78)); return this.saveUnit(armyId, {...u, photos: [...(u.photos || []), url]}, u.id, null, false, u); },
+      async removeUnitPhoto(armyId, u, p){ return this.saveUnit(armyId, {...u, photos: (u.photos || []).filter(x => x !== p)}, u.id, null, false, u); },
       async restoreUnit(armyId, u){ db.units = db.units.filter(x => x.id !== u.id).concat({...u, armyId}); save(); return {...u, armyId}; },
       purgeImage(){},
       async importUnits(armyId, rows){
@@ -302,7 +308,8 @@
       },
       async removeArmy(a){
         need();
-        const paths = (mustOk(await sb.from(U).select("image_path").eq("army_id", a.id)) || []).map(r => r.image_path).filter(Boolean);
+        const paths = (mustOk(await sb.from(U).select("image_path,data->photos").eq("army_id", a.id)) || [])
+          .flatMap(r => [r.image_path, ...(Array.isArray(r.photos) ? r.photos : [])]).filter(p => typeof p === "string" && p && !/^data:/.test(p));
         mustOk(await sb.from(A).delete().eq("id", a.id));
         if(paths.length) sb.storage.from(B).remove(paths).catch(() => {});
       },
@@ -321,8 +328,21 @@
         return toUnit(res.data);
       },
       // keepImage: leave the photo in storage for a moment so "Undo" can bring the unit back with it
-      async removeUnit(u, keepImage){ need(); mustOk(await sb.from(U).delete().eq("id", u.id)); if(u.imagePath && !keepImage) sb.storage.from(B).remove([u.imagePath]).catch(() => {}); },
-      purgeImage(u){ if(u && u.imagePath) sb.storage.from(B).remove([u.imagePath]).catch(() => {}); },
+      async removeUnit(u, keepImage){ need(); mustOk(await sb.from(U).delete().eq("id", u.id)); if(!keepImage) this.purgeImage(u); },
+      // The unit's main photo and gallery photos.
+      purgeImage(u){ const paths = [u && u.imagePath, ...((u && u.photos) || [])].filter(p => p && !/^data:/.test(p)); if(paths.length) sb.storage.from(B).remove(paths).catch(() => {}); },
+      photoUrl: p => /^data:/.test(p) ? p : pub(p),
+      async addUnitPhoto(armyId, u, file){
+        need();
+        const path = await upload(armyId, await resizeImage(file, 1600, .85));
+        try { return await this.saveUnit(armyId, {...u, photos: [...(u.photos || []), path]}, u.id, null, false, u); }
+        catch(e){ sb.storage.from(B).remove([path]).catch(() => {}); throw e; }
+      },
+      async removeUnitPhoto(armyId, u, p){
+        const row = await this.saveUnit(armyId, {...u, photos: (u.photos || []).filter(x => x !== p)}, u.id, null, false, u);
+        if(!/^data:/.test(p)) sb.storage.from(B).remove([p]).catch(() => {});
+        return row;
+      },
       async restoreUnit(armyId, u){
         need();
         const res = await sb.from(U).insert({id: u.id, army_id: armyId, data: cleanUnit(u), image_path: u.imagePath || null, updated_at: new Date().toISOString()}).select().single();
@@ -372,5 +392,5 @@
     return ready ? SupaStore() : LocalStore();
   }
 
-  window.LEDGER_STORE = {create, FIELDS, STATUS, STAGES, STAGE_KEYS, deriveStatus, cleanUnit, cleanScheme, cleanRecipe, newId};
+  window.LEDGER_STORE = {create, MAX_PHOTOS, FIELDS, STATUS, STAGES, STAGE_KEYS, deriveStatus, cleanUnit, cleanScheme, cleanRecipe, newId};
 })();

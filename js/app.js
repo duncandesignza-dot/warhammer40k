@@ -1714,9 +1714,10 @@ Redemptor Dreadnought (210 points)</pre>
       } catch(err){ msg("Couldn't update: " + errText(err), true); }
       finally { busy = false; }
     }
+    const photoSrc = p => safeImg(store.photoUrl ? store.photoUrl(p) : p);
     function cardHtml(u){
       u = withColours(u);
-      const img = safeImg(u.image), tier = scheme.tiers[u.tier] || {};
+      const img = safeImg(u.image) || ((u.photos || [])[0] ? photoSrc(u.photos[0]) : ""), tier = scheme.tiers[u.tier] || {};
       const nx = canWrite ? nextStep(u) : null;
       const segs = STAGE_KEYS.map(k => `<i class="${(u.stages || []).includes(k) ? "on" : ""}"></i>`).join("");
       const pk = selecting && picked.has(u.id);
@@ -1794,7 +1795,15 @@ Redemptor Dreadnought (210 points)</pre>
       };
       const sec = (title, rows, key) => { const r = rows.filter(x => x[1]); return r.length ? box(key || title, title, `<dl>${r.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>`) : ""; };
       $("detail-body").innerHTML = `<div class="detail">
-        <div class="media">${img ? `<img src="${esc(img)}" alt="Photo of ${esc(u.name)}">` : unitBadge(u, scheme, 180)}</div>
+        <div class="media">${(() => {
+          const shots = [img ? {src: img, main: true} : null, ...(u.photos || []).map(p => ({src: photoSrc(p), path: p}))].filter(x => x && x.src);
+          const first = shots[0];
+          return `<div class="media-main" id="dt-main">${first ? `<img src="${esc(first.src)}" alt="Photo of ${esc(u.name)}">` : unitBadge(u, scheme, 180)}</div>
+            ${shots.length > 1 || canWrite ? `<div class="gallery" role="list" aria-label="Photos of ${esc(u.name)}">
+              ${shots.map((x, i) => `<div class="g-item${i === 0 ? " on" : ""}" role="listitem"><button type="button" class="g-thumb" data-show="${esc(x.src)}" aria-label="Show photo ${i + 1}"><img src="${esc(x.src)}" alt="" loading="lazy"></button>${canWrite && x.path ? `<button type="button" class="g-rm" data-rmphoto="${esc(x.path)}" aria-label="Remove this photo" title="Remove photo">×</button>` : ""}</div>`).join("")}
+              ${canWrite && (u.photos || []).length < S.MAX_PHOTOS ? `<label class="g-add" title="Add photos"><input type="file" accept="image/*" multiple data-addphoto="${esc(u.id)}" hidden><span aria-hidden="true">+</span><small>Add photo</small></label>` : ""}
+            </div>` : ""}`;
+        })()}</div>
         <div class="info">
           <div><h2 id="dt-name">${esc(u.name)}</h2>
             <div class="meta">${esc(u.datasheet || "Unit")}${u.role ? " · " + esc(u.role) : ""} · ${plural(u.count, "model")}${u.points ? " · " + fmt(u.points) + " pts" : ""}</div></div>
@@ -1915,6 +1924,7 @@ Redemptor Dreadnought (210 points)</pre>
       if(!u.name) u.name = u.datasheet;
       const cur = currentUnit();
       u.fav = !!(cur && cur.fav);
+      u.photos = cur ? cur.photos || [] : [];
       busy = true; const b = $("b-save"), label = b.textContent; b.disabled = true; b.textContent = "Saving…";
       try {
         const row = await store.saveUnit(army.id, u, cur ? cur.id : null, pendingPhoto, removePhoto, cur);
@@ -2057,6 +2067,22 @@ Redemptor Dreadnought (210 points)</pre>
       const ed = e.target.closest("[data-edit]"), dup = e.target.closest("[data-dup]"), del = e.target.closest("[data-del]");
       const sr = e.target.closest("[data-star]");
       if(sr){ toggleStar(sr.dataset.star); return; }
+      const sh = e.target.closest("[data-show]");
+      if(sh){
+        $("dt-main").innerHTML = `<img src="${esc(sh.dataset.show)}" alt="">`;
+        $("detail").querySelectorAll(".g-item").forEach(g => g.classList.toggle("on", g.contains(sh)));
+        return;
+      }
+      const rp = e.target.closest("[data-rmphoto]");
+      if(rp){
+        const u = units.find(x => x.id === $("detail").dataset.unit); if(!u || busy) return;
+        if(!rp.classList.contains("armed")){ rp.classList.add("armed"); rp.textContent = "Remove?"; setTimeout(() => { if(rp.isConnected){ rp.classList.remove("armed"); rp.textContent = "×"; } }, 3000); return; }
+        busy = true;
+        try { const row = await store.removeUnitPhoto(army.id, u, rp.dataset.rmphoto); units = units.map(x => x.id === row.id ? row : x); render(); openDetail(row.id); toast("Photo removed"); }
+        catch(err){ toast("Couldn't remove the photo: " + errText(err)); }
+        finally { busy = false; }
+        return;
+      }
       if(del){
         const u = units.find(x => x.id === del.dataset.del); if(!u || busy) return;
         if(!del.classList.contains("armed")){ del.classList.add("armed"); del.textContent = "Click again to delete"; return; }
@@ -2073,6 +2099,21 @@ Redemptor Dreadnought (210 points)</pre>
       }
     }
     $("detail").addEventListener("click", onDetailClick);
+    async function onDetailChange(e){
+      const inp = e.target.closest("[data-addphoto]"); if(!inp) return;
+      const files = [...(inp.files || [])]; inp.value = "";
+      let u = units.find(x => x.id === inp.dataset.addphoto); if(!u || !files.length || busy) return;
+      const room = S.MAX_PHOTOS - (u.photos || []).length, pick = files.slice(0, room);
+      const tile = inp.closest(".g-add"); if(tile){ tile.classList.add("busy"); tile.querySelector("small").textContent = "Uploading…"; }
+      busy = true; let added = 0;
+      try {
+        for(const f of pick){ u = await store.addUnitPhoto(army.id, u, f); units = units.map(x => x.id === u.id ? u : x); added++; }
+      } catch(err){ toast("Couldn't add the photo: " + errText(err)); }
+      finally { busy = false; }
+      render(); openDetail(u.id);
+      if(added) toast(files.length > room ? `Added ${plural(added, "photo")} (${S.MAX_PHOTOS} is the most per unit)` : `Added ${plural(added, "photo")}`);
+    }
+    $("detail").addEventListener("change", onDetailChange);
     ["listdlg", "sharedlg"].forEach(id => $(id).addEventListener("click", e => { if(e.target.closest("[data-close]") || e.target === $(id)) $(id).close(); }));
 
     /* ---------- share read-only ---------- */
@@ -2377,7 +2418,7 @@ Redemptor Dreadnought (210 points)</pre>
     view.cleanup = () => {
       document.removeEventListener("keydown", onBatchKey); document.body.classList.remove("selecting");
       document.removeEventListener("click", onDocMore); document.removeEventListener("keydown", onKeyMore); window.removeEventListener("resize", keyFade);
-      window.removeEventListener("beforeunload", onBeforeUnload); $("detail").removeEventListener("click", onDetailClick); clearPending();
+      window.removeEventListener("beforeunload", onBeforeUnload); $("detail").removeEventListener("click", onDetailClick); $("detail").removeEventListener("change", onDetailChange); clearPending();
       clearTimeout(toastTimer); $("toast").hidden = true; if(toastDone){ const fn = toastDone; toastDone = null; fn(); }
       view.guard = null;
     };
