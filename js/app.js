@@ -313,8 +313,8 @@
             </div>
           </div>
           <div class="panel">
-            <h3>Rank colours</h3>
-            <p class="hint">Each rank gets its own ${esc(PROF.head)} colour. When you pick a rank for a unit, its ${esc(PROF.head)} uses this colour.</p>
+            <h3>Ranks</h3>
+            <p class="hint">Ranks group your units, such as ${esc(draft.scheme.tiers.slice(0, 3).map(t => t.name).join(", ").replace(/, ([^,]*)$/, " and $1"))}, so you can paint some a little differently from the rest of the army. Each rank has a colour for the ${esc(PROF.head)}; a unit starts with its rank's colour, and you can still change it per unit.</p>
             <div class="tiers" id="s-tiers"></div>
             <div class="row-actions" style="margin-top:10px"><button type="button" class="btn-sm" id="s-addtier">Add rank</button></div>
           </div>

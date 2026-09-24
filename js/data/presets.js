@@ -23,8 +23,7 @@
 
   // style: "astartes" shows the power-armour helmet badge, "roundel" shows a colour roundel.
   const P = {
-    "black-templars":   {style:"astartes", armour:"#1f1f22", secondary:"#efeee9", trim:"#efeee9", emblem:"#efeee9", shape:"cross",   lens:"#b3141c", cloth:"#d8cba8", metal:"#a9adb3",
-                          tiers:[T("Black helmet","#1f1f22","Neophytes and Initiates"),T("White helmet","#efeee9","Sword Brethren"),T("Red helmet","#b3141c","Emperor's Champion and Marshal"),T("Bone helmet","#d8cba8","Chaplains")]},
+    "black-templars":   {style:"astartes", armour:"#1f1f22", secondary:"#efeee9", trim:"#efeee9", emblem:"#efeee9", shape:"cross",   lens:"#b3141c", cloth:"#d8cba8", metal:"#a9adb3"},
     "space-marines":    {style:"astartes", armour:"#5d6166", secondary:"#efeee9", trim:"#c9a13b", emblem:"#efeee9", shape:"diamond", lens:"#3fbf5a", cloth:"#d8cba8", metal:"#a9adb3"},
     "ultramarines":     {style:"astartes", armour:"#1f4aa8", secondary:"#efeee9", trim:"#c9a13b", emblem:"#efeee9", shape:"arrow",   lens:"#b3141c", cloth:"#d8cba8", metal:"#a9adb3"},
     "blood-angels":     {style:"astartes", armour:"#9e1b1b", secondary:"#1f1f22", trim:"#c9a13b", emblem:"#1f1f22", shape:"drop",    lens:"#3fbf5a", cloth:"#1f1f22", metal:"#c9a13b"},
@@ -297,6 +296,7 @@
     "thousand-sons": {tiers: [["Rubricae","Rubric Marines"],["Scarab Occult","Terminators and elites"],["Aspiring Sorcerer","Squad leaders"],["Sorcerer","Sorcerers and heroes"]]},
     "chaos-knights": {labels: {emblem:"Icon / mark", cloth:"Banners / trophies"}, extras: ["Spikes, trophies & extras", "e.g. brass spikes, skull trophies"],
                       tiers: [["War Dogs","War Dog Knights"],["Knights","Despoilers, Rampagers and others"],["Tyrants","Abominants and Tyrants"],["Hero","Your warlord"]]},
+    "black-templars": {tiers: [["Initiates","Initiates and Neophytes"],["Sword Brethren","Veterans and Terminators"],["Castellan","Castellans, Chaplains and the Emperor's Champion"],["Marshal","Marshals and your warlord"]]},
     "grey-knights": {tiers: [["Strike","Strike Squads"],["Terminator","Terminators and Paladins"],["Justicar","Justicars and characters"],["Grand Master","Your warlord and heroes"]]}
   };
 
@@ -374,9 +374,10 @@
     // Leviathan: Naggaroth Night carapace, bone-white flesh
     "tyranids":          F("Naggaroth Night","Xereus Purple","Slaanesh Grey","Wraithbone","Averland Sunset","Mephiston Red","Wraithbone","Wraithbone")
   };
-  // Rank colours: slot keys, or a paint name after @. Black Templars name their ranks by helmet colour.
+  // Rank colours: slot keys, or a paint name after @.
   const TIER_SRC = {
-    "black-templars": ["@Abaddon Black","@Corax White","@Mephiston Red","@Wraithbone"],
+    // Black Templars: black for Initiates, white helmets for Sword Brethren, gold for Marshals.
+    "black-templars": ["@Abaddon Black","@Corax White","@Mephiston Red","@Retributor Armour"],
     "necrons": ["armour","secondary","trim","@Auric Armour Gold"]
   };
   const DEFAULT_SRC = ["armour","secondary","@Mephiston Red","trim"];
