@@ -278,18 +278,39 @@
       rows.forEach(r => { const s = m[r.army_id] || (m[r.army_id] = {units:0, models:0, done:0, points:0}); const c = parseInt(r.count, 10) || 1; const p = parseInt(r.painted, 10); s.units++; s.models += c; s.done += Math.min(c, Number.isFinite(p) ? p : (r.status === "done" ? c : 0)); s.points += parseInt(r.points, 10) || 0; });
       return m;
     }
+    const tableMissing = e => /PGRST205|42P01/.test(e.code || "") || /could not find the table|does not exist/i.test(e.message || "");
+    let paintsTable = null;   // null: not checked yet; false: owned_paints isn't set up, so paints stay on the account
     const myName = () => String(((session && session.user.user_metadata) || {}).display_name || "").trim();
 
     return {
       kind: "supabase", client: sb, canShare: true,
       get session(){ return session; },
       get canWrite(){ return !!session; },
-      setSession(s){ session = s; },
+      setSession(s){ if(!s || !session || s.user.id !== session.user.id) paintsTable = null; session = s; },
       note(){ return session ? {cls:"on", text:"Saved online to your database."} : {cls:"", text:"Viewing only. Sign in to create and edit ledgers."}; },
-      async getPaints(){ return session ? cleanPaints((session.user.user_metadata || {}).paints) : []; },
+      /* Paints you own live in the owned_paints table (one row each). Lists saved on the account
+         before the table existed are moved over the first time; without the table they stay there. */
+      async getPaints(){
+        if(!session) return [];
+        const old = cleanPaints((session.user.user_metadata || {}).paints);
+        const res = await sb.from("owned_paints").select("paints").eq("owner", session.user.id).maybeSingle();
+        if(res.error){ if(tableMissing(res.error)){ paintsTable = false; return old; } throw res.error; }
+        paintsTable = true;
+        const have = cleanPaints(res.data ? res.data.paints : []);
+        if(!old.length) return have;
+        const merged = cleanPaints(have.concat(old));
+        try { await this.setPaints(merged); await this.updateProfile({paints: null}); } catch(e){ console.warn("Couldn't move owned paints", e); }
+        return merged;
+      },
       async setPaints(list){
         need();
         const paints = cleanPaints(list);
+        if(paintsTable !== false){
+          const res = await sb.from("owned_paints").upsert({owner: session.user.id, paints, updated_at: new Date().toISOString()}, {onConflict: "owner"});
+          if(!res.error){ paintsTable = true; return paints; }
+          if(!tableMissing(res.error)) throw res.error;
+          paintsTable = false;
+        }
         const {data, error} = await sb.auth.updateUser({data: {paints}});
         if(error) throw error;
         if(data && data.user) session = {...session, user: data.user};
