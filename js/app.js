@@ -148,15 +148,143 @@
     const pr = P.presetFor(fid);
     return ART.badge({...pr.colors, helmet: pr.tiers[0].color, shape: pr.shape}, pr.style, size, "");
   }
+  /* ---------- account: who's signed in, the top-bar menu and the log in / sign up / reset forms ---------- */
+  const num = n => Number(n || 0).toLocaleString("en");
+  function acct(){
+    const u = store && store.session && store.session.user;
+    if(!u) return null;
+    const email = u.email || "", meta = u.user_metadata || {};
+    const name = String(meta.display_name || meta.name || email.split("@")[0] || "Painter").trim();
+    const bits = name.split(/[\s._-]+/).filter(Boolean);
+    const initials = ((bits[0] || "?")[0] + (bits[1] ? bits[1][0] : (bits[0] || "").slice(1, 2))).toUpperCase();
+    return {name, email, initials, since: u.created_at || ""};
+  }
+  const monthYear = d => { const t = new Date(d); return isNaN(t) ? "" : t.toLocaleDateString("en-GB", {month: "long", year: "numeric"}); };
+  const CARET = `<svg class="caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>`;
   function setTop(){
-    const sup = store.kind === "supabase";
-    $("b-signin").hidden = !sup || !!store.session;
-    $("b-signout").hidden = !sup || !store.session;
-    $("who").hidden = !sup || !store.session;
-    if(sup && store.session) $("who").textContent = store.session.user.email || "Signed in";
+    const nav = $("topnav"), a = store.kind === "supabase" ? acct() : null;
+    if(store.kind !== "supabase"){ nav.innerHTML = ""; return; }
+    if(!a){
+      nav.innerHTML = `<button type="button" class="btn-sm ghost" data-auth-open="in">Log in</button><button type="button" class="btn-sm primary" data-auth-open="up">Sign up</button>`;
+      return;
+    }
+    nav.innerHTML = `<div class="acct">
+      <button type="button" class="acct-btn" id="b-acct" aria-haspopup="menu" aria-expanded="false" aria-controls="acct-menu" aria-label="Account menu for ${esc(a.name)}"><span class="avatar" aria-hidden="true">${esc(a.initials)}</span><span class="acct-name">${esc(a.name)}</span>${CARET}</button>
+      <div class="acct-menu" id="acct-menu" role="menu" hidden>
+        <div class="acct-head"><span class="avatar lg" aria-hidden="true">${esc(a.initials)}</span><span><strong>${esc(a.name)}</strong><small>${esc(a.email)}</small></span></div>
+        <a role="menuitem" href="#/">My profile and ledgers</a>
+        <button type="button" role="menuitem" disabled aria-disabled="true">Settings <span class="soon">Soon</span></button>
+        <a role="menuitem" href="#/welcome">About Livery Ledger</a>
+        <hr>
+        <button type="button" role="menuitem" data-logout>Log out</button>
+      </div>
+    </div>`;
   }
   function noteHtml(){ const n = store.note(); return `<span class="note"><span class="dot ${n.cls}"></span>${esc(n.text)}</span>`; }
-  function openAuth(){ $("au-msg").textContent = ""; $("authdlg").showModal(); $("au-email").focus(); }
+  async function logOut(){
+    if(view.guard && !(await view.guard())) return;
+    view.guard = null;
+    try { await store.signOut(); } catch(e){ console.error(e); }
+    if(location.hash !== "#/") location.hash = "#/";
+  }
+  const AUTH = {
+    in: {h: "Welcome back", p: "Log in to see your ledgers.", go: "Log in", busy: "Logging in…"},
+    up: {h: "Create your free account", p: "Plan and track every army you paint.", go: "Create account", busy: "Creating your account…"},
+    forgot: {h: "Reset your password", p: "Enter the email you signed up with and we'll send you a link to choose a new password.", go: "Send reset link", busy: "Sending…"},
+    reset: {h: "Choose a new password", p: "You're nearly done. Pick a new password for your account.", go: "Save new password", busy: "Saving…"}
+  };
+  function authErr(err){
+    const m = errText(err);
+    if(/invalid login credentials/i.test(m)) return "That email and password don't match an account. Check them, or reset your password.";
+    if(/email not confirmed/i.test(m)) return "Confirm your email first. Check your inbox for the link we sent you.";
+    if(/already (been )?registered/i.test(m)) return "There's already an account for that email. Log in instead.";
+    if(/rate limit|security purposes|too many/i.test(m)) return "Too many tries in a short time. Wait a minute, then try again.";
+    if(/different from the old|same (as the )?(old )?password/i.test(m)) return "Choose a password that's different from your old one.";
+    return m;
+  }
+  /* One form for logging in, signing up, asking for a reset link and setting a new password.
+     Used in the homepage hero and in the dialog. onDone runs once someone is logged in. */
+  function authForm(host, mode, opts){
+    host.innerHTML = `
+      <div class="auth-tabs" role="tablist" aria-label="Log in or sign up">
+        <button type="button" role="tab" data-mode="in">Log in</button><button type="button" role="tab" data-mode="up">Sign up</button>
+      </div>
+      <h2 class="auth-h"></h2>
+      <p class="auth-p"></p>
+      <form novalidate>
+        <label class="af-email">Email<input name="email" type="email" autocomplete="email" inputmode="email" required></label>
+        <label class="af-pass">Password<span class="pw"><input name="pass" type="password" minlength="6" required><button type="button" class="pw-show" aria-pressed="false">Show</button></span></label>
+        <label class="af-pass2">Confirm password<input name="pass2" type="password" autocomplete="new-password" minlength="6" required></label>
+        <p class="af-hint">At least 6 characters.</p>
+        <p class="af-forgot"><button type="button" class="linkish" data-mode="forgot">Forgot password?</button></p>
+        <button type="submit" class="primary af-go"></button>
+        <div class="msg" role="status" aria-live="polite"></div>
+        <p class="af-back"><button type="button" class="linkish" data-mode="in">Back to log in</button></p>
+      </form>`;
+    const q = sel => host.querySelector(sel), form = q("form"), msg = q(".msg");
+    let busy = false;
+    const say = (t, bad) => { msg.textContent = t || ""; msg.classList.toggle("err", !!bad); };
+    function set(m, note){
+      mode = AUTH[m] ? m : "in";
+      const t = AUTH[mode], pick = mode === "in" || mode === "up";
+      host.dataset.mode = mode;
+      q(".auth-tabs").hidden = !pick;
+      host.querySelectorAll(".auth-tabs [data-mode]").forEach(b => b.setAttribute("aria-selected", b.dataset.mode === mode));
+      q(".auth-h").textContent = t.h; q(".auth-p").textContent = t.p;
+      q(".af-email").hidden = mode === "reset";
+      q(".af-pass").hidden = mode === "forgot";
+      q(".af-pass2").hidden = q(".af-hint").hidden = mode !== "up" && mode !== "reset";
+      q(".af-forgot").hidden = mode !== "in";
+      q(".af-back").hidden = mode !== "forgot";
+      form.pass.autocomplete = mode === "in" ? "current-password" : "new-password";
+      q(".af-go").textContent = t.go;
+      say(note);
+    }
+    function focus(){ const f = [...form.querySelectorAll("input")].find(i => !i.closest("[hidden]") && !i.value) || [...form.querySelectorAll("input")].find(i => !i.closest("[hidden]")); if(f) f.focus(); }
+    host.addEventListener("click", e => {
+      const m = e.target.closest("[data-mode]");
+      if(m){ set(m.dataset.mode); focus(); return; }
+      const sh = e.target.closest(".pw-show");
+      if(sh){
+        const on = sh.getAttribute("aria-pressed") !== "true";
+        sh.setAttribute("aria-pressed", on); sh.textContent = on ? "Hide" : "Show";
+        form.pass.type = form.pass2.type = on ? "text" : "password";
+      }
+    });
+    form.addEventListener("submit", async e => {
+      e.preventDefault();
+      if(busy) return;
+      const email = form.email.value.trim(), pass = form.pass.value, pass2 = form.pass2.value;
+      if(mode !== "reset" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ say("Enter your email address.", true); form.email.focus(); return; }
+      if(mode !== "forgot" && pass.length < 6){ say("Passwords need at least 6 characters.", true); form.pass.focus(); return; }
+      if((mode === "up" || mode === "reset") && pass !== pass2){ say("The two passwords don't match.", true); form.pass2.focus(); return; }
+      busy = true; q(".af-go").disabled = true; say(AUTH[mode].busy);
+      try {
+        if(mode === "in"){ await store.signIn(email, pass); say("You're logged in."); if(opts.onDone) opts.onDone(mode); }
+        else if(mode === "up"){
+          const d = await store.signUp(email, pass);
+          // With email protection on, signing up an address that's already registered "succeeds" with no identities.
+          if(d && d.user && Array.isArray(d.user.identities) && !d.user.identities.length) say("There's already an account for that email. Log in instead, or reset your password.", true);
+          else if(d && d.session){ say("Account created. You're logged in."); if(opts.onDone) opts.onDone(mode); }
+          else say("Account created. Check your email for a link to confirm it, then log in.");
+        }
+        else if(mode === "forgot"){ await store.resetPassword(email); say("If there's an account for that email, a reset link is on its way. Check your inbox, and your spam folder too."); }
+        else { await store.updatePassword(pass); say("Password saved. You're logged in."); form.pass.value = form.pass2.value = ""; if(opts.onDone) opts.onDone(mode); }
+      } catch(err){ say(authErr(err), true); }
+      finally { busy = false; q(".af-go").disabled = false; }
+    });
+    set(mode);
+    return {set, focus};
+  }
+  let dlgAuth = null;
+  function openAuth(mode, note){
+    if(store.kind !== "supabase") return;
+    const d = $("authdlg");
+    if(!dlgAuth) dlgAuth = authForm($("auth-host"), "in", {onDone: () => setTimeout(() => { if(d.open) d.close(); }, 700)});
+    dlgAuth.set(typeof mode === "string" ? mode : "in", note);
+    if(!d.open) d.showModal();
+    dlgAuth.focus();
+  }
   function downloadJSON(obj, filename){
     const blob = new Blob([JSON.stringify(obj, null, 2)], {type: "application/json"});
     const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = filename;
@@ -183,6 +311,7 @@
   }
   let lastHash = location.hash, routing = false;
   async function route(){
+    if(/access_token=|error_description=/.test(location.hash)){ history.replaceState(null, "", location.pathname + location.search + "#/"); lastHash = location.hash; }
     if(view.guard && location.hash !== lastHash){
       if(routing) return;
       const target = location.hash;
@@ -201,6 +330,9 @@
       if(parts[0] === "new" && FBY[parts[1]]) await viewSetup({factionId: parts[1]});
       else if(parts[0] === "army" && parts[1] && parts[2] === "colours") await viewSetup({armyId: parts[1]});
       else if(parts[0] === "army" && parts[1]) await viewLedger(parts[1]);
+      else if(parts[0] === "welcome") await viewLanding();
+      // Signed out on the online version: the homepage. Signed in (or saving in this browser): your profile and ledgers.
+      else if(store.kind === "supabase" && !store.session) await viewLanding();
       else await viewHome();
     } catch(err){
       console.error(err);
@@ -227,15 +359,27 @@
       ["Xenos", FACTIONS.filter(f => f.group === "Xenos")]
     ];
     const signedOut = store.kind === "supabase" && !store.session;
+    const me = acct();
+    const tot = armies.reduce((t, x) => { const s = sum[x.id] || {}; t.units += s.units || 0; t.models += s.models || 0; t.done += s.done || 0; return t; }, {units: 0, models: 0, done: 0});
+    const since = me ? monthYear(me.since) : "";
     app.innerHTML = `
-      <div class="hero">
-        <div>
-          <h1>Livery Ledger</h1>
-          <p class="sub">Plan how you'll paint your army. Pick your faction, choose your colours, then track every unit with photos, weapons and paint recipes.</p>
+      <section class="profile-head">
+        ${me ? `<span class="avatar xl" aria-hidden="true">${esc(me.initials)}</span>` : ""}
+        <div class="ph-text">
+          <p class="eyebrow">${me ? "Your profile" : "Livery Ledger"}</p>
+          <h1>${me ? esc(me.name) : "Your ledgers"}</h1>
+          ${me ? `<p class="sub">${esc(me.email)}${since ? ` · Painting with us since ${esc(since)}` : ""}</p>` : `<p class="sub">Plan how you'll paint your army. Pick your faction, choose your colours, then track every unit with photos, weapons and paint recipes.</p>`}
+          ${me ? "" : `<div class="ph-note">${noteHtml()}</div>`}
         </div>
-        ${noteHtml()}
-      </div>
-      ${signedOut ? `<div class="banner"><span class="dot"></span>Sign in to create a ledger and see the ones you've made. <button type="button" class="btn-sm" data-signin>Sign in</button></div>` : ""}
+        <div class="stats" aria-label="Your painting so far">
+          <div class="stat"><b>${armies.length}</b><span>${armies.length === 1 ? "Ledger" : "Ledgers"}</span></div>
+          <div class="stat"><b>${num(tot.units)}</b><span>Units</span></div>
+          <div class="stat"><b>${num(tot.done)}/${num(tot.models)}</b><span>Models painted</span></div>
+          <div class="stat"><b>${tot.models ? Math.round(tot.done / tot.models * 100) : 0}%</b><span>Complete</span></div>
+        </div>
+      </section>
+      ${signedOut ? `<div class="banner"><span class="dot"></span>Log in to create a ledger and see the ones you've made. <button type="button" class="btn-sm" data-signin>Log in</button></div>` : ""}
+      ${!armies.length && !signedOut ? `<div class="first-run panel"><span class="fr-num" aria-hidden="true">1</span><div><strong>Start your first ledger</strong><p>Pick your faction below. You'll choose your colours next, then add your units.</p></div></div>` : ""}
       ${armies.length ? `<h2 class="section">Your ledgers <small>${plural(armies.length, "ledger")}</small></h2>
         <div class="ledgers">${armies.map(a => {
           const s = sum[a.id] || {units:0, models:0, done:0}, f = FBY[a.faction];
@@ -280,6 +424,184 @@
         } catch(err){ console.error(err); alertBanner("That file isn't a Livery Ledger backup."); }
       });
     }
+  }
+  /* ============================================================
+     Homepage: what Livery Ledger does, with log in / sign up in the hero
+     ============================================================ */
+  // A feature's picture: img/shots/<name>.webp when it's been added, otherwise a drawing made from the app's own parts.
+  const shot = (name, alt, art) => `<figure class="shot" data-shot="${name}"><div class="shot-art" aria-hidden="true">${art}</div><img src="img/shots/${name}.webp" alt="${esc(alt)}" loading="lazy" decoding="async"></figure>`;
+  const paintName = l => String(l || "").replace(/^Citadel\s+/, "").replace(/\s*\([^)]*\)\s*$/, "");
+  async function viewLanding(){
+    view.name = "landing";
+    document.title = "Livery Ledger · Plan and track your Warhammer 40,000 painting";
+    PROF = P.profileFor("ultramarines");
+    const me = acct(), online = store.kind === "supabase";
+    const nSheets = FACTIONS.reduce((n, f) => n + f.units.filter(u => !u.t).length, 0);
+    const nSchemes = FACTIONS.reduce((n, f) => n + P.schemesFor(f.id).length, 0);
+    const demo = P.presetFor("ultramarines"), c = demo.colors, sp = demo.slotPaints || {};
+    const b = (tierColor, size, extra) => ART.badge({...c, helmet: tierColor, shape: demo.shape, ...(extra || {})}, demo.style, size, "");
+    const show = ["ultramarines", "blood-angels", "necrons", "orks", "tau-empire", "death-guard", "adepta-sororitas", "tyranids", "space-wolves", "aeldari"].filter(id => FBY[id]);
+    const swatch = (label, k) => `<div class="ill-row"><span class="sw" style="background:${ART.hexOk(c[k]) ? c[k] : "#777"}"></span><span>${label}</span><em>${esc(paintName(sp[k]) || cname(c[k]))}</em></div>`;
+    const ICON = {
+      share: '<path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="m16 6-4-4-4 4"/><path d="M12 2v13"/>',
+      photo: '<rect x="3" y="5" width="18" height="15" rx="3"/><circle cx="12" cy="12.5" r="3.5"/><path d="M8 5l1.5-2h5L16 5"/>',
+      points: '<path d="M4 19V9"/><path d="M10 19V5"/><path d="M16 19v-7"/><path d="M22 19H2"/>',
+      cart: '<circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M2 3h3l2.6 12.2a2 2 0 0 0 2 1.6h8.2a2 2 0 0 0 2-1.5L22 8H6"/>',
+      backup: '<path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/>',
+      phone: '<rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/>'
+    };
+    const icon = k => `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[k]}</svg>`;
+    const tick = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg>';
+    const cta = me ? `<a class="btn primary lg" href="#/">Go to your ledgers</a>` : online ? `<button type="button" class="primary lg" data-cta="up">Create your free account</button>` : `<a class="btn primary lg" href="#/">Start a ledger</a>`;
+
+    app.innerHTML = `
+      <section class="lp-hero">
+        <div class="lp-copy">
+          <p class="eyebrow">For Warhammer 40,000 painters</p>
+          <h1>Plan every army you paint. <span class="grad">Track every brushstroke.</span></h1>
+          <p class="lead">Livery Ledger keeps your colour scheme, paint recipes and painting progress for every unit in one place. It covers all ${FACTIONS.length} factions and chapters, with official Citadel colours ready to go.</p>
+          <ul class="lp-ticks">
+            <li>${tick}Free to use</li><li>${tick}Import your army list</li><li>${tick}Works on your phone</li>
+          </ul>
+          <div class="lp-parade" aria-hidden="true">${show.map(id => `<span title="${esc(FBY[id].name)}">${factionBadge(id, 46)}</span>`).join("")}</div>
+        </div>
+        <div class="lp-side">
+          ${me ? `<div class="panel lp-card lp-welcome">
+              <span class="avatar xl" aria-hidden="true">${esc(me.initials)}</span>
+              <h2>Welcome back, ${esc(me.name)}</h2>
+              <p class="sub">Your ledgers are waiting.</p>
+              <a class="btn primary" href="#/">Go to your ledgers</a>
+            </div>`
+          : online ? `<div class="panel lp-card auth" id="lp-auth"></div>`
+          : `<div class="panel lp-card lp-welcome">
+              <h2>Start painting smarter</h2>
+              <p class="sub">This copy saves everything in your browser, with no account needed.</p>
+              <a class="btn primary" href="#/">Open your ledgers</a>
+            </div>`}
+        </div>
+      </section>
+
+      <section class="lp-numbers" aria-label="Livery Ledger in numbers">
+        <div><b>${FACTIONS.length}</b><span>Factions and chapters</span></div>
+        <div><b>${num(nSheets)}</b><span>Datasheets, 11th edition</span></div>
+        <div><b>${num(nSchemes)}</b><span>Official and known colour schemes</span></div>
+        <div><b>3,700+</b><span>Paints from 11 brands</span></div>
+      </section>
+
+      <section class="lp-features" id="features" aria-labelledby="lp-feat-h">
+        <div class="lp-head">
+          <p class="eyebrow">What you get</p>
+          <h2 id="lp-feat-h">Everything from sprue to display shelf</h2>
+          <p class="sub">Stop keeping your recipes in your head and your progress on scraps of paper.</p>
+        </div>
+
+        <article class="lp-feat">
+          <div class="lp-text">
+            <p class="eyebrow">Colour schemes</p>
+            <h3>Your army's colours, area by area</h3>
+            <p>Pick your faction and start from its official Citadel colours, or a known scheme like a successor chapter. Then make it yours: armour, trim, lenses and cloth, each pauldron, and extra areas for weapons and details.</p>
+            <ul class="lp-list"><li>${tick}Official colours for every faction</li><li>${tick}Rank colours for sergeants, veterans and heroes</li><li>${tick}Colour badges that show how each unit will look</li></ul>
+          </div>
+          ${shot("colours", "Choosing an army's colours in Livery Ledger", `<div class="ill ill-scheme">
+            <div class="ill-badges">${demo.tiers.map(t => `<div>${b(t.color, 92)}<small>${esc(t.name)}</small></div>`).join("")}</div>
+            <div class="ill-rows">${swatch("Armour", "armour")}${swatch("Trim", "trim")}${swatch("Markings", "secondary")}${swatch("Lenses", "lens")}</div>
+          </div>`)}
+        </article>
+
+        <article class="lp-feat flip">
+          <div class="lp-text">
+            <p class="eyebrow">Unit tracker</p>
+            <h3>Every unit, from built to varnished</h3>
+            <p>Add units from real datasheets with their weapons, points and model count. Tick off each stage as you go and watch your army's progress climb.</p>
+            <ul class="lp-list"><li>${tick}Stages from built and primed to based and varnished</li><li>${tick}Search, filter and group your units</li><li>${tick}Points total against your list's limit</li></ul>
+          </div>
+          ${shot("units", "A unit card with painting stages and progress", `<div class="ill ill-unit">
+            <div class="ill-card">
+              <div class="ill-top">${b(c.armour, 64)}<div><strong>Intercessor Squad</strong><small>Battleline · 10 models · 160 pts</small></div></div>
+              <div class="ill-stages">${S.STAGES.map(([, l], i) => `<span class="${i < 3 ? "on" : i === 3 ? "now" : ""}">${esc(l)}</span>`).join("")}</div>
+              <div class="ill-prog"><i style="width:40%"></i></div>
+              <div class="ill-foot"><span>4 of 10 painted</span><span>40%</span></div>
+            </div>
+            <div class="ill-card ghost">
+              <div class="ill-top">${b(c.trim, 52)}<div><strong>Captain</strong><small>Character · 80 pts</small></div></div>
+              <div class="ill-prog"><i style="width:100%"></i></div>
+            </div>
+          </div>`)}
+        </article>
+
+        <article class="lp-feat">
+          <div class="lp-text">
+            <p class="eyebrow">Paints and recipes</p>
+            <h3>Recipes you write once and use everywhere</h3>
+            <p>Write down each step: prime, basecoat, shade, layer, highlight. Your recipes are saved to your account, so the next army can reuse them. Mark the paints you own and Livery Ledger tells you what to buy.</p>
+            <ul class="lp-list"><li>${tick}Over 3,700 paints from 11 brands</li><li>${tick}Recipes shared across all your ledgers</li><li>${tick}A shopping list of paints you don't have yet</li></ul>
+          </div>
+          ${shot("recipes", "A step-by-step paint recipe", `<div class="ill ill-recipe">
+            <div class="ill-rh"><strong>Ultramarine armour</strong><small>5 steps</small></div>
+            ${[["Prime", "Chaos Black", "#0b0b0b"], ["Basecoat", "Macragge Blue", "#0f3d7c"], ["Shade", "Nuln Oil", "#1a1b1f"], ["Layer", "Calgar Blue", "#2a5aa6"], ["Edge highlight", "Fenrisian Grey", "#7d9cbc"]].map(([t, n, h], i) =>
+              `<div class="ill-step"><span class="n">${i + 1}</span><span class="sw" style="background:${h}"></span><span><strong>${n}</strong><small>${t}</small></span>${i === 3 ? `<em class="buy">To buy</em>` : `<em class="own">Owned</em>`}</div>`).join("")}
+          </div>`)}
+        </article>
+
+        <article class="lp-feat flip">
+          <div class="lp-text">
+            <p class="eyebrow">List import</p>
+            <h3>Paste your army list, get your units</h3>
+            <p>Bring your list over from the Warhammer 40,000 app, New Recruit, BattleScribe or a list-builder share code. Units, sizes, points and wargear come straight in, ready to paint.</p>
+            <ul class="lp-list"><li>${tick}Matches units to real datasheets</li><li>${tick}Picks up allies, like Knights and Assassins</li><li>${tick}Sets your points limit for you</li></ul>
+          </div>
+          ${shot("import", "Importing an army list", `<div class="ill ill-import">
+            <pre>Captain (80 points)
+  • Warlord
+Intercessor Squad (160 points)
+  • 10x Intercessor
+Redemptor Dreadnought (210 points)</pre>
+            <div class="ill-arrow" aria-hidden="true">→</div>
+            <div class="ill-rows">${[["Captain", "1", "80"], ["Intercessor Squad", "10", "160"], ["Redemptor Dreadnought", "1", "210"]].map(([n, m, pt]) => `<div class="ill-row"><span class="ck">${tick}</span><span>${n}</span><em>${m} · ${pt} pts</em></div>`).join("")}</div>
+          </div>`)}
+        </article>
+      </section>
+
+      <section class="lp-grid" aria-labelledby="lp-more-h">
+        <h2 id="lp-more-h" class="lp-grid-h">And the little things that help</h2>
+        <div class="lp-cards">
+          ${[["share", "Share your army", "Send a read-only link so friends can see your colours and progress."],
+             ["photo", "A photo for every unit", "Keep a picture of each unit as it comes together."],
+             ["points", "Points at a glance", "See your army's total against the limit you're building to."],
+             ["cart", "Shopping list", "Every paint your recipes need that you don't own yet, ready to copy."],
+             ["backup", "Backups", "Download a ledger any time, and bring it back whenever you like."],
+             ["phone", "At the painting desk", "Made for your phone, so it's there beside the brushes."]]
+            .map(([k, h, t]) => `<div class="panel lp-mini"><span class="lp-ico">${icon(k)}</span><h3>${h}</h3><p>${t}</p></div>`).join("")}
+        </div>
+      </section>
+
+      <section class="lp-steps" aria-labelledby="lp-steps-h">
+        <div class="lp-head"><p class="eyebrow">How it works</p><h2 id="lp-steps-h">From idea to painted army in three steps</h2></div>
+        <ol>
+          <li><span class="n">1</span><h3>Pick your faction</h3><p>Choose from ${FACTIONS.length} factions and Space Marine chapters.</p></li>
+          <li><span class="n">2</span><h3>Set your colours</h3><p>Start from the official scheme, then change anything you like.</p></li>
+          <li><span class="n">3</span><h3>Paint and track</h3><p>Add your units, follow your recipes and tick off each stage.</p></li>
+        </ol>
+      </section>
+
+      <section class="lp-cta panel">
+        <div><h2>Your army deserves a plan</h2><p class="sub">Free, and ready in under a minute.</p></div>
+        ${cta}
+      </section>
+    `;
+    app.querySelectorAll(".shot img").forEach(img => {
+      const ok = () => img.closest(".shot").classList.add("has-img");
+      if(img.complete && img.naturalWidth) ok(); else img.addEventListener("load", ok);
+      img.addEventListener("error", () => img.remove());
+    });
+    let heroAuth = null;
+    if($("lp-auth")) heroAuth = authForm($("lp-auth"), "up", {onDone: () => { if(location.hash !== "#/") location.hash = "#/"; }});
+    app.querySelectorAll("[data-cta]").forEach(btn => btn.addEventListener("click", () => {
+      if(!heroAuth){ openAuth(btn.dataset.cta); return; }
+      heroAuth.set(btn.dataset.cta);
+      $("lp-auth").scrollIntoView({behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center"});
+      setTimeout(() => heroAuth.focus(), 350);
+    }));
   }
   function alertBanner(text){
     const b = document.createElement("div"); b.className = "banner"; b.innerHTML = `<span class="dot warn"></span>${esc(text)}`;
@@ -1986,24 +2308,27 @@
   document.querySelectorAll("dialog").forEach(d => d.addEventListener("click", e => {
     if(e.target.closest("[data-close]") || e.target === d) d.close();
   }));
-  $("b-signin").addEventListener("click", openAuth);
-  $("b-signout").addEventListener("click", async () => { try { await store.signOut(); } catch(e){} });
-  async function doAuth(mode){
-    const email = $("au-email").value.trim(), pass = $("au-pass").value, m = $("au-msg");
-    if(!email || !pass){ m.textContent = "Enter your email and password."; return; }
-    if(pass.length < 6){ m.textContent = "Passwords need at least 6 characters."; return; }
-    $("au-in").disabled = $("au-up").disabled = true; m.textContent = mode === "up" ? "Creating account…" : "Signing in…";
-    try {
-      if(mode === "up"){
-        const d = await store.signUp(email, pass);
-        m.textContent = d && d.session ? "Account created. You're signed in." : "Account created. Check your email to confirm it, then sign in.";
-        if(d && d.session) setTimeout(() => $("authdlg").close(), 700);
-      } else { await store.signIn(email, pass); m.textContent = ""; $("authdlg").close(); }
-    } catch(err){ m.textContent = errText(err); }
-    finally { $("au-in").disabled = $("au-up").disabled = false; }
-  }
-  $("authform").addEventListener("submit", e => { e.preventDefault(); doAuth("in"); });
-  $("au-up").addEventListener("click", () => doAuth("up"));
+  // Account menu: opens on click, closes on a pick, a click elsewhere or Escape; arrow keys move through it.
+  const acctOpen = on => {
+    const m = $("acct-menu"), btn = $("b-acct"); if(!m) return;
+    m.hidden = !on; btn.setAttribute("aria-expanded", on);
+    if(on) m.querySelector("a,button:not(:disabled)").focus();
+  };
+  $("topnav").addEventListener("click", e => {
+    const o = e.target.closest("[data-auth-open]");
+    if(o){ openAuth(o.dataset.authOpen); return; }
+    if(e.target.closest("#b-acct")){ e.stopPropagation(); acctOpen($("acct-menu").hidden); return; }
+    if(e.target.closest("[data-logout]")){ acctOpen(false); logOut(); return; }
+    if(e.target.closest("#acct-menu a")) acctOpen(false);
+  });
+  $("topnav").addEventListener("keydown", e => {
+    const m = $("acct-menu"); if(!m || m.hidden) return;
+    const items = [...m.querySelectorAll("a,button:not(:disabled)")], i = items.indexOf(document.activeElement);
+    if(e.key === "ArrowDown" || e.key === "ArrowUp"){ e.preventDefault(); items[(i + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length].focus(); }
+    else if(e.key === "Escape"){ acctOpen(false); $("b-acct").focus(); }
+    else if(e.key === "Tab") acctOpen(false);
+  });
+  document.addEventListener("click", e => { if(!e.target.closest(".acct")) acctOpen(false); });
 
   /* Background picker (remembered in this browser) */
   (function(){
@@ -2022,6 +2347,14 @@
   })();
 
   ART.injectDefs();
+  // A reset or confirm link that has expired comes back as #error=...&error_description=...: note it before anything reads the address.
+  const linkErr = (() => {
+    const h = location.hash;
+    if(!/error_description=/.test(h) || /access_token=/.test(h)) return null;
+    const q = new URLSearchParams(h.replace(/^#\/?/, ""));
+    history.replaceState(null, "", location.pathname + location.search + "#/");
+    return {code: q.get("error_code") || "", text: q.get("error_description") || ""};
+  })();
   store = S.create();
   window.addEventListener("hashchange", route);
   if(store.kind === "supabase"){
@@ -2029,9 +2362,14 @@
     store.client.auth.onAuthStateChange((event, session) => {
       const was = store.session;
       const changed = first || (!!session) !== (!!was) || (session && was && session.user.id !== was.user.id);
+      const wasFirst = first;
       store.setSession(session); first = false;
       setTop();
       if(changed) setTimeout(route, 0);
+      // Opened the link in a password reset email: they're signed in, now ask for the new password.
+      if(event === "PASSWORD_RECOVERY") setTimeout(() => openAuth("reset"), 60);
+      else if(wasFirst && linkErr) setTimeout(() => openAuth(/expired|invalid/i.test(linkErr.code + linkErr.text) ? "forgot" : "in",
+        /expired|invalid/i.test(linkErr.code + linkErr.text) ? "That link has expired or was already used. Enter your email and we'll send a new one." : linkErr.text), 60);
     });
   } else {
     route();

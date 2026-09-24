@@ -316,7 +316,10 @@
       },
       async signIn(email, pass){ const {error} = await sb.auth.signInWithPassword({email, password: pass}); if(error) throw error; },
       async signUp(email, pass){ const {data, error} = await sb.auth.signUp({email, password: pass, options: {emailRedirectTo: location.href.split("#")[0]}}); if(error) throw error; return data; },
-      async signOut(){ await sb.auth.signOut(); }
+      async signOut(){ await sb.auth.signOut(); },
+      // Emails a link back to this page; opening it signs the person in and fires PASSWORD_RECOVERY.
+      async resetPassword(email){ const {error} = await sb.auth.resetPasswordForEmail(email, {redirectTo: location.href.split("#")[0]}); if(error) throw error; },
+      async updatePassword(pass){ const {data, error} = await sb.auth.updateUser({password: pass}); if(error) throw error; if(data && data.user && session) session = {...session, user: data.user}; }
     };
   }
 
