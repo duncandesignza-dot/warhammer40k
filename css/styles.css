@@ -226,14 +226,14 @@ dd{margin:0;overflow-wrap:anywhere}
 .empty{padding:40px 20px;border:1px dashed var(--line-strong);border-radius:var(--r-lg);color:var(--muted);text-align:center;grid-column:1/-1;background:var(--surface-2)}
 
 /* dialogs */
-dialog{border:1px solid var(--line-strong);background:var(--surface-solid);color:var(--ink);padding:0;max-width:min(920px,calc(100vw - 32px));width:100%;max-height:calc(100vh - 32px);overflow:auto;border-radius:var(--r-xl);box-shadow:0 30px 80px -20px rgba(0,0,0,.8),0 0 0 1px rgba(61,220,132,.06)}
+dialog{border:1px solid var(--line-strong);background:var(--surface-solid);color:var(--ink);padding:0;max-width:min(1120px,calc(100vw - 32px));width:100%;max-height:calc(100vh - 32px);overflow:auto;border-radius:var(--r-xl);box-shadow:0 30px 80px -20px rgba(0,0,0,.8),0 0 0 1px rgba(61,220,132,.06)}
 dialog::backdrop{background:var(--scrim);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
 dialog[open]{animation:pop .18s ease-out}
 @keyframes pop{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}
 dialog.small{max-width:min(460px,calc(100vw - 32px))}
 .dlg-close{position:sticky;top:0;height:0;display:flex;justify-content:flex-end;z-index:2;pointer-events:none}
 .dlg-close button{pointer-events:auto;background:rgba(13,17,20,.85);backdrop-filter:blur(8px);font-size:.8rem;padding:6px 12px;margin:12px;border-radius:99px}
-.detail{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr)}
+.detail{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr)}
 @media (max-width:720px){.detail{grid-template-columns:1fr}}
 .detail .media{background:radial-gradient(400px 260px at 50% 40%,rgba(61,220,132,.14),transparent 70%),#0a0e10;min-height:280px;display:grid;place-items:center;padding:22px}
 .detail .media img{max-width:100%;max-height:70vh;object-fit:contain;display:block;border-radius:var(--r)}
@@ -381,7 +381,7 @@ button.pill:hover:not(:disabled){background:var(--brand-soft);border-color:var(-
 /* ---------- unit editor modal ---------- */
 .list-head .btn-add{margin-right:auto;margin-left:12px;padding:7px 14px;font-size:.85rem;border-radius:99px}
 @media (max-width:900px){.list-head .btn-add{display:none}}
-dialog.editdlg{max-width:min(1120px,calc(100vw - 32px));width:100%;max-height:calc(100dvh - 32px);padding:0;overflow:hidden}
+dialog.editdlg{max-width:min(1240px,calc(100vw - 32px));width:100%;max-height:calc(100dvh - 32px);padding:0;overflow:hidden}
 dialog.editdlg[open]{display:flex}
 .editor-form{display:flex;flex-direction:column;width:100%;max-height:calc(100dvh - 32px);min-height:0}
 .ed-top{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:16px 22px;border-bottom:1px solid var(--line);background:var(--surface-solid);flex:none}
@@ -431,7 +431,7 @@ dialog.editdlg[open]{display:flex}
 .stage span small{font-family:var(--mono);font-size:.6rem;color:var(--faint);margin-left:4px;text-transform:uppercase;letter-spacing:.06em}
 .hint-sm{margin:0;font-size:.8rem;color:var(--muted)}
 .need{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:99px;font-family:var(--mono);font-size:.62rem;font-weight:700;color:var(--warn);background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.3);vertical-align:1px}
-dialog.paintdlg{max-width:min(980px,calc(100vw - 32px));width:100%;max-height:calc(100dvh - 32px);overflow:hidden;padding:0}
+dialog.paintdlg{max-width:min(1120px,calc(100vw - 32px));width:100%;max-height:calc(100dvh - 32px);overflow:hidden;padding:0}
 dialog.paintdlg[open]{display:flex}
 .pd-wrap{display:flex;flex-direction:column;width:100%;max-height:calc(100dvh - 32px);min-height:0}
 .pd-tabs{padding:14px 22px 0;flex:none}
