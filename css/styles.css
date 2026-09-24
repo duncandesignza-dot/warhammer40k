@@ -636,3 +636,9 @@ dialog{overflow-x:hidden}
 /* Unit details: the Edit / Duplicate / Delete row stays pinned to the bottom while the details scroll, like the editor's buttons. */
 .detail section.row-actions{position:sticky;bottom:0;z-index:2;margin:0 -24px -24px;padding:14px 24px calc(14px + env(safe-area-inset-bottom,0px));background:rgba(13,17,20,.94);border-top:1px solid var(--line);border-radius:0;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
 @media (max-width:720px){.detail section.row-actions{flex-wrap:nowrap;gap:8px}.detail section.row-actions>*{flex:1;white-space:nowrap;padding-left:10px;padding-right:10px}.detail section.row-actions .danger{flex:0 0 auto}}
+/* Space Marine pauldrons painted differently: a small group per shoulder */
+.pd-group{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:12px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface-2)}
+.pd-group[hidden]{display:none}
+.pd-h{grid-column:1/-1;margin:0;font-family:var(--mono);font-size:.62rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:700}
+.split-check{margin-top:14px;flex-wrap:wrap}
+.split-check small{flex-basis:100%;color:var(--muted);font-size:.78rem;padding-left:26px}

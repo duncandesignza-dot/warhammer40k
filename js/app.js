@@ -13,18 +13,22 @@
   // Armies saved before skin existed pick up the faction's starting skin.
   function fillSkin(scheme, fid){
     if(!ART.hexOk(scheme.colors.skin)) scheme.colors.skin = P.presetFor(fid).colors.skin;
-    // Space Marine pauldrons saved before they had their own colours: same as the armour.
+    // Space Marine pauldrons saved before they had their own colours: same as the armour's.
     if(P.profileFor(fid).pauldrons) PAULDRONS.forEach(k => {
       if(ART.hexOk(scheme.colors[k])) return;
-      scheme.colors[k] = scheme.colors.armour;
-      const ap = (scheme.slotPaints || {}).armour; if(ap) (scheme.slotPaints = scheme.slotPaints || {})[k] = ap;
+      const b = P.PAULDRON_BASE[k];
+      scheme.colors[k] = scheme.colors[b];
+      const bp = (scheme.slotPaints || {})[b]; if(bp) (scheme.slotPaints = scheme.slotPaints || {})[k] = bp;
     });
   }
-  const PAULDRONS = ["lpauldron","rpauldron"];
-  // When the armour changes, pauldrons still matching the old armour follow it.
-  function followArmour(get, set, old, now){
-    PAULDRONS.forEach(k => { const p = get(k); if(p && p.hex.toLowerCase() === old.hex.toLowerCase() && (p.paint || "") === (old.paint || "")) set(k, now); });
+  const PAULDRONS = P.PAULDRON_KEYS;
+  const BASE_OF = P.PAULDRON_BASE;
+  // When the armour, secondary or emblem colour changes, pauldron colours still matching the old one follow it.
+  function followBase(base, get, set, old, now){
+    PAULDRONS.filter(k => BASE_OF[k] === base).forEach(k => { const p = get(k); if(p && p.hex.toLowerCase() === old.hex.toLowerCase() && (p.paint || "") === (old.paint || "")) set(k, now); });
   }
+  // Colours for the badge's shoulder pad: the left pauldron's own when they're painted differently.
+  const padColours = (o, split) => split && PROF.pauldrons ? {pauldron: o.lpauldron, ptrim: o.lpsecondary, pemblem: o.lpemblem} : {};
   const QUICK = ["Black","White","Bone","Silver","Gunmetal","Gold","Brass","Red","Crimson","Blue","Navy","Green","Purple","Yellow"];
 
   const $ = id => document.getElementById(id);
@@ -64,7 +68,7 @@
       helmet: u.helmet || (tier && tier.color) || c.armour, lens: u.lens || c.lens, armour: u.armour || c.armour,
       secondary: u.secondary || c.secondary, trim: u.trim || c.trim, emblem: u.emblem || c.emblem,
       shape: u.shape || scheme.shape, skin: u.skin || c.skin || SKIN, head: headOf(u),
-      pauldron: PROF.pauldrons ? (u.lpauldron || c.lpauldron || u.armour || c.armour) : ""
+      ...padColours({lpauldron: u.lpauldron || u.armour || c.armour, lpsecondary: u.lpsecondary || u.secondary || c.secondary, lpemblem: u.lpemblem || u.emblem || c.emblem}, u.splitPauldrons)
     };
     const hd = v.head === "bare" ? `bare head (${cname(v.skin)} skin)` : v.head === "none" ? "no head" : `${cname(v.helmet)} ${PROF.head}`;
     return ART.badge(v, scheme.style, size, `${hd}, ${cname(v.armour)} ${PROF.labels.armour.toLowerCase()} with ${cname(v.trim)} ${PROF.labels.trim.toLowerCase()}`);
@@ -118,7 +122,7 @@
   }
   function tierBadge(scheme, t, size){
     const c = scheme.colors;
-    return ART.badge({helmet: t.color, lens: c.lens, armour: c.armour, secondary: c.secondary, trim: c.trim, emblem: c.emblem, shape: scheme.shape}, scheme.style, size, `${t.name}: ${cname(t.color)} ${PROF.head}`);
+    return ART.badge({helmet: t.color, lens: c.lens, armour: c.armour, secondary: c.secondary, trim: c.trim, emblem: c.emblem, shape: scheme.shape, ...padColours(c, scheme.splitPauldrons)}, scheme.style, size, `${t.name}: ${cname(t.color)} ${PROF.head}`);
   }
   function factionBadge(fid, size){
     const pr = P.presetFor(fid);
@@ -303,10 +307,11 @@
             <h3>Colours</h3>
             <p class="hint">Pick the paint you use for each area. The picker also has plain colours and a custom colour.</p>
             <div class="cgrid">${colorKeys().map(([k, label]) => `
-              <div class="cfield">
+              <div class="cfield${BASE_OF[k] ? " pd-when" : ""}"${BASE_OF[k] && !draft.scheme.splitPauldrons ? " hidden" : ""}>
                 <span class="cf-l">${label}</span>
                 <span id="s-${k}"></span>
               </div>`).join("")}</div>
+            ${PROF.pauldrons ? `<label class="check split-check"><input type="checkbox" id="s-split" ${draft.scheme.splitPauldrons ? "checked" : ""}> Paint each pauldron differently <small>Gives the left and right pauldron their own colour, secondary and emblem colour. New units start with this setting.</small></label>` : ""}
           </div>
           <div class="panel">
             <h3>Emblem</h3>
@@ -386,6 +391,7 @@
       renderCurrent();
       colorKeys().forEach(([k]) => slots[k].set({hex: sch.colors[k], paint: sch.slotPaints[k] || ""}));
       app.querySelectorAll("[data-style]").forEach(b => b.setAttribute("aria-pressed", b.dataset.style === sch.style));
+      if($("s-split")){ $("s-split").checked = !!sch.splitPauldrons; app.querySelectorAll(".cfield.pd-when").forEach(el => el.hidden = !sch.splitPauldrons); }
     }
     // Paint pickers for the army colours and rank colours.
     const slotOpts = {
@@ -399,7 +405,7 @@
           const old = {hex: sch.colors[k], paint: sch.slotPaints[k] || ""};
           const put = (key, x) => { sch.colors[key] = x.hex; if(x.paint) sch.slotPaints[key] = x.paint; else delete sch.slotPaints[key]; };
           put(k, v);
-          if(k === "armour") followArmour(key => slots[key] ? {hex: sch.colors[key], paint: sch.slotPaints[key] || ""} : null, put, old, v);
+          if(["armour","secondary","emblem"].includes(k)) followBase(k, key => slots[key] ? {hex: sch.colors[key], paint: sch.slotPaints[key] || ""} : null, (key, x) => { put(key, x); slots[key].set(x); }, old, v);
           setupDirty = true; renderPreview();
         }});
     });
@@ -459,6 +465,7 @@
     function onInput(e){
       const t = e.target;
       if(t.id !== "s-emq") setupDirty = true;
+      if(t.id === "s-split"){ sch.splitPauldrons = t.checked; app.querySelectorAll(".cfield.pd-when").forEach(el => el.hidden = !t.checked); renderPreview(); return; }
       if(t.id === "s-emq"){ emq = t.value.trim(); emLimit = 90; renderIcons(); return; }
       if(t.dataset.tname != null){ sch.tiers[+t.dataset.tname].name = t.value; renderPreview(); }
       if(t.dataset.tnote != null){ sch.tiers[+t.dataset.tnote].note = t.value; renderPreview(); }
@@ -670,7 +677,6 @@
           <fieldset>
             <legend>${esc(PROF.legends.body)}</legend>
             ${colorField("armour", esc(LB.armour))}
-            ${PROF.pauldrons ? colorField("lpauldron", esc(LB.lpauldron)) + colorField("rpauldron", esc(LB.rpauldron)) : ""}
             ${colorField("secondary", esc(LB.secondary))}
             ${colorField("trim", esc(LB.trim))}
             ${colorField("emblem", esc(LB.emblem) + " colour")}
@@ -679,6 +685,11 @@
               <optgroup label="${esc(f.name)} icons">${sheetIcons.map(i => `<option value="icon:${esc(i.id)}">${esc(i.n)}</option>`).join("")}</optgroup>
               <optgroup label="Simple shapes">${P.SHAPES.map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</optgroup>
             </select></label>
+            ${PROF.pauldrons ? `<label class="full check"><input type="checkbox" id="f-split"> Paint each pauldron differently</label>
+            ${["l", "r"].map(side => `<div class="pd-group full" data-side="${side}" hidden>
+              <h5 class="pd-h">${side === "l" ? "Left" : "Right"} pauldron</h5>
+              ${colorField(side + "pauldron", "Colour")}${colorField(side + "psecondary", "Secondary")}${colorField(side + "pemblem", "Emblem colour")}
+            </div>`).join("")}` : ""}
           </fieldset>
           <fieldset>
             <legend>${esc(PROF.legends.details)}</legend>
@@ -768,7 +779,8 @@
     let units = [], selId = null, filter = "all", query = "", armed = false, dirty = false, busy = false;
     let pendingPhoto = null, removePhoto = false, tierTouched = false, pointsTouched = false;
     const form = $("form");
-    const COLOR_IDS = ["helmet","lens","skin","armour",...(PROF.pauldrons ? PAULDRONS : []),"secondary","trim","emblem","cloth","metal"].filter(k => k !== "skin" || hasSkin);
+    // Pauldrons last: an unset one copies the unit's armour, secondary or emblem colour.
+    const COLOR_IDS = ["helmet","lens","skin","armour","secondary","trim","emblem","cloth","metal",...(PROF.pauldrons ? PAULDRONS : [])].filter(k => k !== "skin" || hasSkin);
     let headTouched = false;
     const getHead = () => (form.querySelector('input[name="head"]:checked') || {}).value || "helmet";
     function setHead(h){
@@ -785,7 +797,7 @@
     function defaults(){
       const c = scheme.colors, t = scheme.tiers[0];
       return {datasheet:"", role:"", name:"", count:5, points:0, stages:[], painted:0, recipes:[], tier:0, helmet:t.color, lens:c.lens, hdetail:"", head:PROF.defaultHead, skin:c.skin,
-        armour:c.armour, lpauldron:c.lpauldron, rpauldron:c.rpauldron, secondary:c.secondary, trim:c.trim, emblem:c.emblem, shape:"", cloth:c.cloth, metal:c.metal,
+        armour:c.armour, ...Object.fromEntries(PAULDRONS.map(k => [k, c[k]])), splitPauldrons: !!scheme.splitPauldrons, secondary:c.secondary, trim:c.trim, emblem:c.emblem, shape:"", cloth:c.cloth, metal:c.metal,
         extras:"", melee:"", ranged:"", paints:"", notes:""};
     }
     const readStages = () => [...$("f-stages").querySelectorAll("input:checked")].map(i => i.value);
@@ -806,6 +818,7 @@
       COLOR_IDS.forEach(k => o[k] = $("f-" + k).value);
       o.slotPaints = {};
       COLOR_IDS.forEach(k => { const p = slotApi[k].get().paint; if(p) o.slotPaints[k] = p; });
+      o.splitPauldrons = !!($("f-split") && $("f-split").checked);
       return o;
     }
     function writeForm(u){
@@ -825,11 +838,12 @@
       ["extras","melee","ranged","paints","notes"].forEach(k => $("f-" + k).value = d[k] || "");
       COLOR_IDS.forEach(k => {
         // Pauldrons a unit hasn't set yet match that unit's own armour.
-        const fallback = PAULDRONS.includes(k) && ART.hexOk(d.armour) ? d.armour : (defaults()[k] || "#1f1f22");
-        const hex = ART.hexOk(d[k]) ? d[k] : fallback;
-        slotApi[k].set({hex, paint: paintOf(d, k, hex) || (PAULDRONS.includes(k) && !ART.hexOk(d[k]) ? paintOf(d, "armour", hex) : "")});
+        const b = BASE_OF[k], unset = b && !ART.hexOk(d[k]);
+        const hex = !unset && ART.hexOk(d[k]) ? d[k] : unset ? slotApi[b].get().hex : (defaults()[k] || "#1f1f22");
+        slotApi[k].set({hex, paint: unset ? slotApi[b].get().paint : paintOf(d, k, hex)});
       });
-      lastArmour = slotApi.armour.get();
+      ["armour","secondary","emblem"].forEach(k => lastBase[k] = slotApi[k].get());
+      if($("f-split")){ $("f-split").checked = !!d.splitPauldrons; showSplit(); }
       fillWeapons(); preview();
     }
     // Paint pickers in the editor. A unit colour that matches the army (or rank) colour shows the
@@ -842,7 +856,8 @@
     }
     const slotLabel = k => k === "emblem" ? LB.emblem + " colour" : LB[k];
     const slotApi = {};
-    let lastArmour = {hex: scheme.colors.armour, paint: ""};
+    const lastBase = {};
+    const showSplit = () => form.querySelectorAll(".pd-group").forEach(g => g.hidden = !$("f-split").checked);
     form.querySelectorAll("[data-slot]").forEach(h => {
       const k = h.dataset.slot;
       slotApi[k] = PU.slot(h, {id: "f-" + k, label: slotLabel(k), value: {hex: scheme.colors[k] || "#1f1f22", paint: ""},
@@ -850,8 +865,7 @@
         swatches: () => Object.keys(scheme.colors).filter(c => COLOR_IDS.includes(c)).map(c => ({hex: scheme.colors[c], paint: (scheme.slotPaints || {})[c] || ""}))
           .concat(scheme.tiers.map(t => ({hex: t.color, paint: t.paint || ""}))),
         onChange: v => {
-          if(k === "armour"){ followArmour(key => slotApi[key] ? slotApi[key].get() : null, (key, x) => slotApi[key].set(x), lastArmour, v); }
-          if(k === "armour") lastArmour = {...v};
+          if(lastBase[k]){ followBase(k, key => slotApi[key] ? slotApi[key].get() : null, (key, x) => slotApi[key].set(x), lastBase[k], v); lastBase[k] = {...v}; }
           setDirty(true); preview();
         }});
     });
@@ -1004,12 +1018,12 @@
     // Units saved without a colour fall back to the army's colours.
     const withColours = u => {
       const o = {...u};
-      const unsetPauldron = k => PAULDRONS.includes(k) && !ART.hexOk(u[k]);
-      // (Pauldrons come after the armour in COLOR_IDS, so an unset one can copy the unit's armour.)
-      COLOR_IDS.forEach(k => { if(!ART.hexOk(o[k])) o[k] = k === "helmet" ? (scheme.tiers[o.tier] || scheme.tiers[0]).color : unsetPauldron(k) ? o.armour : scheme.colors[k]; });
+      const unsetPauldron = k => BASE_OF[k] && !ART.hexOk(u[k]);
+      // (Pauldrons come last in COLOR_IDS, so an unset one can copy the unit's armour, secondary or emblem.)
+      COLOR_IDS.forEach(k => { if(!ART.hexOk(o[k])) o[k] = k === "helmet" ? (scheme.tiers[o.tier] || scheme.tiers[0]).color : unsetPauldron(k) ? o[BASE_OF[k]] : scheme.colors[k]; });
       o.head = headOf(o);
       o.slotPaints = {};
-      COLOR_IDS.forEach(k => { const p = unsetPauldron(k) ? paintOf(u, "armour", o.armour) : paintOf(u, k, o[k]); if(p) o.slotPaints[k] = p; });
+      COLOR_IDS.forEach(k => { const p = unsetPauldron(k) ? paintOf(u, BASE_OF[k], o[k]) : paintOf(u, k, o[k]); if(p) o.slotPaints[k] = p; });
       return o;
     };
     // Paint name for a colour area if one was picked, otherwise the colour's name.
@@ -1091,7 +1105,8 @@
           ${u.head === "none" ? sec(esc(PROF.legends.head), [["Head", "None (vehicle or monster)"]])
             : u.head === "bare" ? sec(esc(PROF.legends.head), [["Head", "Bare head"], ["Skin", colk("skin")], ["Eyes", colk("lens")], ["Face paint", esc(u.hdetail)]])
             : sec(esc(PROF.legends.head), [[esc(LB.helmet), colk("helmet")], [esc(LB.lens), colk("lens")], ["Detail", esc(u.hdetail)]])}
-          ${sec(esc(PROF.legends.body), [[esc(LB.armour), colk("armour")], ...(PROF.pauldrons ? [[esc(LB.lpauldron), colk("lpauldron")], [esc(LB.rpauldron), colk("rpauldron")]] : []), [esc(LB.secondary), colk("secondary")], [esc(LB.trim), colk("trim")], [esc(LB.emblem), (u.shape || scheme.shape) === "none" ? "None" : colk("emblem") + " · " + esc(P.emblemName(u.shape || scheme.shape))]])}
+          ${sec(esc(PROF.legends.body), [[esc(LB.armour), colk("armour")], [esc(LB.secondary), colk("secondary")], [esc(LB.trim), colk("trim")], [esc(LB.emblem), (u.shape || scheme.shape) === "none" ? "None" : colk("emblem") + " · " + esc(P.emblemName(u.shape || scheme.shape))],
+            ...(PROF.pauldrons && u.splitPauldrons ? PAULDRONS.map(k => [esc(LB[k]), colk(k)]) : [])])}
           ${sec(esc(PROF.legends.details), [[esc(LB.cloth), colk("cloth")], [esc(LB.metal), colk("metal")], [esc(LB.skin), PROF.skinAlways ? colk("skin") : ""], ["Extras", esc(u.extras)]])}
           ${sec("Weapons", [["Melee", esc(u.melee)], ["Ranged", esc(u.ranged)]])}
           ${u.paints ? `<section><h4>Paint notes</h4><p class="prose">${esc(u.paints)}</p></section>` : ""}
@@ -1153,6 +1168,7 @@
       if(sh && !pointsTouched){ const p = ptsFor(sh, Math.max(1, parseInt($("f-count").value, 10) || 1)); if(p != null) $("f-points").value = p; }
       fillWeapons(); preview();
     });
+    if($("f-split")) $("f-split").addEventListener("change", showSplit);
     $("f-tier").addEventListener("change", () => { tierTouched = true; const t = scheme.tiers[+$("f-tier").value]; if(t) slotApi.helmet.set({hex: t.color, paint: t.paint || ""}); preview(); });
 
     function takePhoto(file){

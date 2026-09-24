@@ -4,7 +4,7 @@
   const CFG = window.LEDGER_CONFIG || {};
 
   const FIELDS = ["datasheet","role","name","count","status","tier","head","helmet","skin","lens","hdetail","noHelmet",
-    "armour","lpauldron","rpauldron","secondary","trim","emblem","shape","cloth","metal","extras","melee","ranged","paints","notes","points","painted"];
+    "armour","lpauldron","lpsecondary","lpemblem","rpauldron","rpsecondary","rpemblem","secondary","trim","emblem","shape","cloth","metal","extras","melee","ranged","paints","notes","points","painted"];
   const STAGES = [["built","Built"],["primed","Primed"],["base","Basecoat"],["shade","Shade"],["highlight","Highlight"],["basing","Basing"],["varnish","Varnish"]];
   const STAGE_KEYS = STAGES.map(s => s[0]);
   const STAGES_FOR_STATUS = {unbuilt:[], built:["built"], primed:["built","primed"], progress:["built","primed","base"], done:STAGE_KEYS.slice()};
@@ -17,10 +17,10 @@
   }
   const STATUS = {unbuilt:"Unbuilt",built:"Built",primed:"Primed",progress:"In progress",done:"Painted"};
   const HEX = /^#[0-9a-f]{6}$/i;
-  const COLOR_FIELDS = ["helmet","skin","lens","armour","lpauldron","rpauldron","secondary","trim","emblem","cloth","metal"];
+  const COLOR_FIELDS = ["helmet","skin","lens","armour","lpauldron","lpsecondary","lpemblem","rpauldron","rpsecondary","rpemblem","secondary","trim","emblem","cloth","metal"];
 
   // Paint chosen for each colour area, e.g. {armour: "Citadel Abaddon Black"}. The colour itself stays in the hex fields.
-  const SLOT_KEYS = ["helmet","skin","lens","armour","lpauldron","rpauldron","secondary","trim","emblem","cloth","metal"];
+  const SLOT_KEYS = ["helmet","skin","lens","armour","lpauldron","lpsecondary","lpemblem","rpauldron","rpsecondary","rpemblem","secondary","trim","emblem","cloth","metal"];
   function cleanSlotPaints(m){
     const o = {};
     if(m && typeof m === "object") SLOT_KEYS.forEach(k => { const v = String(m[k] || "").trim().slice(0, 90); if(v) o[k] = v; });
@@ -48,6 +48,8 @@
     o.recipes = Array.isArray(r.recipes) ? [...new Set(r.recipes.map(x => String(x).slice(0, 40)))].slice(0, 20) : [];
     COLOR_FIELDS.forEach(f => { if(!HEX.test(o[f])) o[f] = ""; });
     o.slotPaints = cleanSlotPaints(r.slotPaints);
+    // Each pauldron painted in its own colours (Space Marines); off means both follow the armour.
+    o.splitPauldrons = r.splitPauldrons === true || r.splitPauldrons === "true";
     if(!o.name) o.name = o.datasheet || "Unnamed unit";
     return o;
   }
@@ -71,7 +73,7 @@
     // Skin came later: leave it out when missing so the app can use the faction's starting skin.
     if(HEX.test((s.colors||{}).skin)) colors.skin = s.colors.skin;
     // Separate pauldron colours (Space Marines) are optional too: missing means "same as the armour".
-    ["lpauldron","rpauldron"].forEach(k => { if(HEX.test((s.colors||{})[k])) colors[k] = s.colors[k]; });
+    ["lpauldron","lpsecondary","lpemblem","rpauldron","rpsecondary","rpemblem"].forEach(k => { if(HEX.test((s.colors||{})[k])) colors[k] = s.colors[k]; });
     const tiers = (Array.isArray(s.tiers) ? s.tiers : []).slice(0, 8).map(t => ({
       name: String((t && t.name) || "Tier").slice(0, 40),
       note: String((t && t.note) || "").slice(0, 80),
@@ -80,7 +82,7 @@
     }));
     const limit = Math.min(20000, Math.max(0, parseInt(s.limit, 10) || 0));
     const recipes = (Array.isArray(s.recipes) ? s.recipes : []).slice(0, 60).filter(r => r && r.id).map(cleanRecipe);
-    return {style: s.style === "roundel" ? "roundel" : "astartes", limit, recipes, colors, slotPaints: cleanSlotPaints(s.slotPaints), shape: String(s.shape || "cross").slice(0, 160), tiers: tiers.length ? tiers : [{name:"Line", note:"", color:colors.armour}]};
+    return {style: s.style === "roundel" ? "roundel" : "astartes", limit, recipes, colors, slotPaints: cleanSlotPaints(s.slotPaints), splitPauldrons: s.splitPauldrons === true, shape: String(s.shape || "cross").slice(0, 160), tiers: tiers.length ? tiers : [{name:"Line", note:"", color:colors.armour}]};
   }
   const cleanPaints = list => [...new Set((Array.isArray(list) ? list : []).map(p => String(p).trim().slice(0, 90)).filter(Boolean))].slice(0, 600);
   function cleanArmy(a){
