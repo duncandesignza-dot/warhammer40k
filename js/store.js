@@ -4,7 +4,7 @@
   const CFG = window.LEDGER_CONFIG || {};
 
   const FIELDS = ["datasheet","role","name","count","status","tier","helmet","lens","hdetail","noHelmet",
-    "armour","secondary","trim","emblem","shape","cloth","metal","extras","melee","ranged","paints","notes","points","painted"];
+    "armour","secondary","trim","emblem","shape","cloth","metal","skin","extras","melee","ranged","paints","notes","points","painted"];
   const STAGES = [["built","Built"],["primed","Primed"],["base","Basecoat"],["shade","Shade"],["highlight","Highlight"],["basing","Basing"],["varnish","Varnish"]];
   const STAGE_KEYS = STAGES.map(s => s[0]);
   const STAGES_FOR_STATUS = {unbuilt:[], built:["built"], primed:["built","primed"], progress:["built","primed","base"], done:STAGE_KEYS.slice()};
@@ -17,7 +17,7 @@
   }
   const STATUS = {unbuilt:"Unbuilt",built:"Built",primed:"Primed",progress:"In progress",done:"Painted"};
   const HEX = /^#[0-9a-f]{6}$/i;
-  const COLOR_FIELDS = ["helmet","lens","armour","secondary","trim","emblem","cloth","metal"];
+  const COLOR_FIELDS = ["helmet","lens","armour","secondary","trim","emblem","cloth","metal","skin"];
 
   const newId = () => (crypto.randomUUID ? crypto.randomUUID() : "id" + Date.now().toString(36) + Math.random().toString(36).slice(2, 10));
 
@@ -43,6 +43,8 @@
     s = s || {};
     const colors = {};
     ["armour","secondary","trim","emblem","lens","cloth","metal"].forEach(k => { colors[k] = HEX.test((s.colors||{})[k]) ? s.colors[k] : "#1f1f22"; });
+    // Skin came later: leave it out when missing so the app can use the faction's starting skin.
+    if(HEX.test((s.colors||{}).skin)) colors.skin = s.colors.skin;
     const tiers = (Array.isArray(s.tiers) ? s.tiers : []).slice(0, 8).map(t => ({
       name: String((t && t.name) || "Tier").slice(0, 40),
       note: String((t && t.note) || "").slice(0, 80),

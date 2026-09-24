@@ -7,7 +7,11 @@
   const FACTIONS = DATA.factions;
   const FBY = Object.fromEntries(FACTIONS.map(f => [f.id, f]));
   const ROLE_ORDER = ["Epic Hero","Character","Battleline","Infantry","Mounted","Beast","Swarm","Monster","Vehicle","Dedicated Transport","Fortification","Other"];
-  const COLOR_KEYS = [["armour","Armour"],["secondary","Secondary"],["trim","Trim"],["emblem","Emblem"],["lens","Lenses / eyes"],["cloth","Robes / cloth"],["metal","Weapons / metal"]];
+  // What each colour slot means for the faction on screen (set when a page opens).
+  let PROF = P.profileFor("space-marines");
+  const colorKeys = () => PROF.keys.map(k => [k, PROF.labels[k]]);
+  // Armies saved before skin existed pick up the faction's starting skin.
+  function fillSkin(scheme, fid){ if(!ART.hexOk(scheme.colors.skin)) scheme.colors.skin = P.presetFor(fid).colors.skin; }
   const QUICK = ["Black","White","Bone","Silver","Gunmetal","Gold","Brass","Red","Crimson","Blue","Navy","Green","Purple","Yellow"];
 
   const $ = id => document.getElementById(id);
@@ -41,13 +45,13 @@
     const v = {
       helmet: u.helmet || (tier && tier.color) || c.armour, lens: u.lens || c.lens, armour: u.armour || c.armour,
       secondary: u.secondary || c.secondary, trim: u.trim || c.trim, emblem: u.emblem || c.emblem,
-      shape: u.shape || scheme.shape, noHelmet: u.noHelmet
+      shape: u.shape || scheme.shape, noHelmet: u.noHelmet && !!PROF.bare
     };
-    return ART.badge(v, scheme.style, size, `${cname(v.helmet)} helmet, ${cname(v.armour)} armour with ${cname(v.trim)} trim`);
+    return ART.badge(v, scheme.style, size, `${cname(v.helmet)} ${PROF.head}, ${cname(v.armour)} ${PROF.labels.armour.toLowerCase()} with ${cname(v.trim)} ${PROF.labels.trim.toLowerCase()}`);
   }
   function tierBadge(scheme, t, size){
     const c = scheme.colors;
-    return ART.badge({helmet: t.color, lens: c.lens, armour: c.armour, secondary: c.secondary, trim: c.trim, emblem: c.emblem, shape: scheme.shape}, scheme.style, size, `${t.name}: ${cname(t.color)} helmet`);
+    return ART.badge({helmet: t.color, lens: c.lens, armour: c.armour, secondary: c.secondary, trim: c.trim, emblem: c.emblem, shape: scheme.shape}, scheme.style, size, `${t.name}: ${cname(t.color)} ${PROF.head}`);
   }
   function factionBadge(fid, size){
     const pr = P.presetFor(fid);
@@ -199,7 +203,10 @@
     let army = null;
     if(armyId){ army = await store.getArmy(armyId); if(!army){ location.hash = "#/"; return; } factionId = army.faction; }
     const f = FBY[factionId] || FBY["space-marines"];
+    PROF = P.profileFor(f.id);
     const draft = army ? {name: army.name, scheme: JSON.parse(JSON.stringify(army.scheme))} : {name: "", scheme: P.presetFor(f.id)};
+    fillSkin(draft.scheme, f.id);
+    const known = P.schemesFor(f.id);
     const editing = !!army;
     document.title = (editing ? "Colours · " + army.name : "New " + f.name + " ledger") + " · Livery Ledger";
     const locked = !store.canWrite;
@@ -217,10 +224,15 @@
             <h3>Army</h3>
             <label>Army name<input id="s-name" maxlength="80" placeholder="e.g. ${esc(f.name)} Crusade" value="${esc(draft.name)}"></label>
           </div>
+          ${known.length ? `<div class="panel">
+            <h3>Start from a known scheme</h3>
+            <p class="hint">Sets every colour and the emblem to a well-known ${esc(f.name)} scheme. You can change anything afterwards.</p>
+            <div class="schemes" id="s-schemes">${known.map((k, i) => `<button type="button" class="scheme" data-scheme="${i}">${ART.pauldron(k.colors.armour, k.colors.trim, k.colors.emblem, k.shape || draft.scheme.shape, 40)}<span>${esc(k.name)}</span></button>`).join("")}</div>
+          </div>` : ""}
           <div class="panel">
             <h3>Colours</h3>
             <p class="hint">Pick a colour, or tap a swatch.</p>
-            <div class="cgrid">${COLOR_KEYS.map(([k, label]) => `
+            <div class="cgrid">${colorKeys().map(([k, label]) => `
               <div class="cfield">
                 <label for="s-${k}">${label}</label>
                 <input type="color" id="s-${k}" value="${esc(draft.scheme.colors[k])}">
@@ -230,7 +242,7 @@
           </div>
           <div class="panel">
             <h3>Emblem</h3>
-            <p class="hint">Shown on the shoulder pad in your emblem colour. Pick a faction icon or a simple shape.</p>
+            <p class="hint">Shown on your army badge in the emblem colour. Pick a faction icon or a simple shape.</p>
             <div class="em-current" id="s-emcur"></div>
             <input type="search" id="s-emq" class="em-search" placeholder="Search all ${EMB.icons.length} icons, e.g. Khorne, Iyanden, Goffs" aria-label="Search icons">
             <h4 class="em-h" id="s-emh">Suggested for ${esc(f.name)}</h4>
@@ -248,7 +260,7 @@
           </div>
           <div class="panel">
             <h3>Rank colours</h3>
-            <p class="hint">Each rank gets its own helmet colour. When you pick a rank for a unit, its helmet uses this colour.</p>
+            <p class="hint">Each rank gets its own ${esc(PROF.head)} colour. When you pick a rank for a unit, its ${esc(PROF.head)} uses this colour.</p>
             <div class="tiers" id="s-tiers"></div>
             <div class="row-actions" style="margin-top:10px"><button type="button" class="btn-sm" id="s-addtier">Add rank</button></div>
           </div>
@@ -296,10 +308,10 @@
       $("s-addtier").disabled = sch.tiers.length >= 8;
     }
     function renderPreview(){
-      $("s-preview").innerHTML = sch.tiers.map(t => `<div class="pv-tier">${tierBadge(sch, t, 60)}<span><strong>${esc(t.name || "Rank")}</strong><small>${esc(t.note || cname(t.color) + " helmet")}</small></span></div>`).join("");
+      $("s-preview").innerHTML = sch.tiers.map(t => `<div class="pv-tier">${tierBadge(sch, t, 60)}<span><strong>${esc(t.name || "Rank")}</strong><small>${esc(t.note || cname(t.color) + " " + PROF.head)}</small></span></div>`).join("");
       $("s-shapes").querySelectorAll("[data-shape]").forEach(b => { b.setAttribute("aria-pressed", b.dataset.shape === sch.shape); b.innerHTML = ART.shapeIcon(b.dataset.shape, sch.colors.emblem, 34) + esc(P.SHAPES.find(s => s[0] === b.dataset.shape)[1]); });
       renderCurrent();
-      COLOR_KEYS.forEach(([k]) => { $("s-" + k).value = sch.colors[k]; $("s-" + k + "-n").textContent = cname(sch.colors[k]); });
+      colorKeys().forEach(([k]) => { $("s-" + k).value = sch.colors[k]; $("s-" + k + "-n").textContent = cname(sch.colors[k]); });
       app.querySelectorAll("[data-style]").forEach(b => b.setAttribute("aria-pressed", b.dataset.style === sch.style));
     }
     renderIcons(); renderTiers(); renderPreview();
@@ -329,18 +341,29 @@
     function onInput(e){
       const t = e.target;
       if(t.id !== "s-emq") setupDirty = true;
-      const ck = COLOR_KEYS.find(([k]) => t.id === "s-" + k);
+      const ck = colorKeys().find(([k]) => t.id === "s-" + k);
       if(ck){ sch.colors[ck[0]] = t.value; renderPreview(); return; }
       if(t.id === "s-emq"){ emq = t.value.trim(); emLimit = 90; renderIcons(); return; }
       if(t.dataset.tname != null){ sch.tiers[+t.dataset.tname].name = t.value; renderPreview(); }
       if(t.dataset.tnote != null){ sch.tiers[+t.dataset.tnote].note = t.value; renderPreview(); }
       if(t.dataset.tcolor != null){ sch.tiers[+t.dataset.tcolor].color = t.value; renderPreview(); }
-      if(t.id === "s-reset" && t.checked){ const p = P.presetFor(f.id); Object.assign(sch, p); renderTiers(); renderPreview(); t.checked = false; }
+      if(t.id === "s-reset" && t.checked){ const p = P.presetFor(f.id); Object.assign(sch, p); renderTiers(); renderPreview(); t.checked = false; $("s-msg").textContent = ""; }
     }
     let armed = false;
     async function onClick(e){
       const t = e.target.closest("button"); if(!t) return;
-      if(t.dataset.sw || t.dataset.shape || t.dataset.style || t.dataset.tdel != null || t.id === "s-addtier") setupDirty = true;
+      if(t.dataset.sw || t.dataset.shape || t.dataset.style || t.dataset.scheme || t.dataset.tdel != null || t.id === "s-addtier") setupDirty = true;
+      if(t.dataset.scheme){
+        // Keep rank names (they may have been edited) but recolour the standard ranks to match.
+        const k = known[+t.dataset.scheme];
+        sch.colors = {...sch.colors, ...k.colors};
+        if(k.shape) sch.shape = k.shape;
+        const std = P.tiersFor(f.id, sch.colors);
+        sch.tiers.forEach((tr, i) => { if(std[i]) tr.color = std[i].color; });
+        renderTiers(); renderPreview();
+        $("s-msg").classList.remove("err"); $("s-msg").textContent = `Using the ${k.name} scheme. Save to keep it.`;
+        return;
+      }
       if(t.dataset.sw){ sch.colors[t.dataset.sw] = t.dataset.hex; renderPreview(); return; }
       if(t.dataset.shape){ sch.shape = t.dataset.shape; renderPreview(); return; }
       if(t.id === "s-emmore"){ emLimit += 90; renderIcons(); return; }
@@ -374,6 +397,9 @@
     }
     const f = FBY[army.faction] || {name: army.faction, units: []};
     const scheme = army.scheme;
+    PROF = P.profileFor(army.faction);
+    fillSkin(scheme, army.faction);
+    const LB = PROF.labels;
     document.title = army.name + " · Livery Ledger";
     const canWrite = store.canWrite && (!army.owner || !store.session || army.owner === store.session.user.id);
     const STAGES = S.STAGES, STAGE_KEYS = S.STAGE_KEYS;
@@ -440,7 +466,7 @@
       </div>
 
       ${!canWrite ? `<div class="banner viewonly"><span class="dot on"></span><span>You're viewing a shared ledger. You can look but not change anything.</span>${store.kind === "supabase" && !store.session ? `<button type="button" class="btn-sm" data-signin>Sign in</button>` : ""}</div>` : ""}
-      <section class="key" aria-label="Rank colours">${scheme.tiers.map(t => `<div>${tierBadge(scheme, t, 44)}<span><strong>${esc(t.name)}</strong><small>${esc(t.note || cname(t.color) + " helmet")}</small></span></div>`).join("")}</section>
+      <section class="key" aria-label="Rank colours">${scheme.tiers.map(t => `<div>${tierBadge(scheme, t, 44)}<span><strong>${esc(t.name)}</strong><small>${esc(t.note || cname(t.color) + " " + PROF.head)}</small></span></div>`).join("")}</section>
 
         <section class="list" aria-labelledby="army-h">
           <div class="list-head">
@@ -505,18 +531,18 @@
             <div class="pts-hint" id="pts-hint"></div>
           </fieldset>
           <fieldset>
-            <legend>Helmet</legend>
-            ${colorField("helmet", "Helmet colour")}
-            ${colorField("lens", "Lenses / eyes")}
-            <label class="full">Helmet detail<input id="f-hdetail" list="dl-hdetail" maxlength="60" placeholder="e.g. laurel wreath, centre stripe"></label>
-            <label class="full check"><input type="checkbox" id="f-noHelmet"> Bare head (no helmet)</label>
+            <legend>${esc(PROF.legends.head)}</legend>
+            ${colorField("helmet", esc(LB.helmet))}
+            ${colorField("lens", esc(LB.lens))}
+            <label class="full">${esc(PROF.detail[0])}<input id="f-hdetail" list="dl-hdetail" maxlength="60" placeholder="${esc(PROF.detail[1])}"></label>
+            <label class="full check"${PROF.bare ? "" : " hidden"}><input type="checkbox" id="f-noHelmet"> ${esc(PROF.bare)}</label>
           </fieldset>
           <fieldset>
-            <legend>Armour &amp; pauldrons</legend>
-            ${colorField("armour", "Armour")}
-            ${colorField("secondary", "Secondary")}
-            ${colorField("trim", "Trim")}
-            ${colorField("emblem", "Emblem colour")}
+            <legend>${esc(PROF.legends.body)}</legend>
+            ${colorField("armour", esc(LB.armour))}
+            ${colorField("secondary", esc(LB.secondary))}
+            ${colorField("trim", esc(LB.trim))}
+            ${colorField("emblem", esc(LB.emblem) + " colour")}
             <label class="full">Emblem<select id="f-shape">
               <option value="">Army emblem (${esc(P.emblemName(scheme.shape))})</option>
               <optgroup label="${esc(f.name)} icons">${sheetIcons.map(i => `<option value="icon:${esc(i.id)}">${esc(i.n)}</option>`).join("")}</optgroup>
@@ -524,10 +550,11 @@
             </select></label>
           </fieldset>
           <fieldset>
-            <legend>Cloth &amp; details</legend>
-            ${colorField("cloth", "Robes / cloth")}
-            ${colorField("metal", "Weapons / metal")}
-            <label class="full">Purity seals, freehand &amp; extras<input id="f-extras" maxlength="120" placeholder="e.g. red wax seals, freehand on kneepad"></label>
+            <legend>${esc(PROF.legends.details)}</legend>
+            ${colorField("cloth", esc(LB.cloth))}
+            ${colorField("metal", esc(LB.metal))}
+            ${PROF.hide.includes("skin") ? "" : colorField("skin", esc(LB.skin))}
+            <label class="full">${esc(PROF.extras[0])}<input id="f-extras" maxlength="120" placeholder="${esc(PROF.extras[1])}"></label>
           </fieldset>
           <fieldset>
             <legend>Weapons</legend>
@@ -560,7 +587,7 @@
       </dialog>
       <datalist id="dl-scheme">${schemeColors.map(c => `<option value="${c}"></option>`).join("")}</datalist>
       <datalist id="dl-melee"></datalist><datalist id="dl-ranged"></datalist>
-      <datalist id="dl-hdetail"><option>Laurel wreath</option><option>Centre stripe</option><option>Crest</option><option>Battle damage</option><option>Squad markings</option></datalist>
+      <datalist id="dl-hdetail">${PROF.detailOpts.map(o => `<option>${esc(o)}</option>`).join("")}</datalist>
 
       <dialog id="paintdlg" class="paintdlg" aria-labelledby="pd-h">
         <div class="pd-wrap">
@@ -613,12 +640,12 @@
     let units = [], selId = null, filter = "all", query = "", armed = false, dirty = false, busy = false;
     let pendingPhoto = null, removePhoto = false, tierTouched = false, pointsTouched = false;
     const form = $("form");
-    const COLOR_IDS = ["helmet","lens","armour","secondary","trim","emblem","cloth","metal"];
+    const COLOR_IDS = ["helmet","lens","armour","secondary","trim","emblem","cloth","metal","skin"].filter(k => !PROF.hide.includes(k));
 
     function defaults(){
       const c = scheme.colors, t = scheme.tiers[0];
       return {datasheet:"", role:"", name:"", count:5, points:0, stages:[], painted:0, recipes:[], tier:0, helmet:t.color, lens:c.lens, hdetail:"", noHelmet:false,
-        armour:c.armour, secondary:c.secondary, trim:c.trim, emblem:c.emblem, shape:"", cloth:c.cloth, metal:c.metal,
+        armour:c.armour, secondary:c.secondary, trim:c.trim, emblem:c.emblem, shape:"", cloth:c.cloth, metal:c.metal, skin:c.skin,
         extras:"", melee:"", ranged:"", paints:"", notes:""};
     }
     const readStages = () => [...$("f-stages").querySelectorAll("input:checked")].map(i => i.value);
@@ -815,8 +842,9 @@
           <div class="card-top">${unitBadge(u, scheme, 60)}<div><h3>${esc(u.name)}</h3><div class="type">${esc([u.datasheet && u.datasheet !== u.name ? u.datasheet : "", u.role].filter(Boolean).join(" · ") || "Unit")}</div></div>${u.points ? `<span class="pts">${fmt(u.points)}<small>pts</small></span>` : ""}</div>
           <dl>
             <dt>Rank</dt><dd>${esc(tier.name || "—")}</dd>
-            <dt>Helmet</dt><dd>${u.noHelmet ? "Bare head" : chip(u.helmet) + esc(cname(u.helmet))}${u.hdetail ? ", " + esc(u.hdetail) : ""}</dd>
-            <dt>Armour</dt><dd>${chip(u.armour)}${esc(cname(u.armour))}, ${esc(cname(u.trim))} trim</dd>
+            <dt>${esc(LB.helmet)}</dt><dd>${u.noHelmet && PROF.bare ? "Bare head" : chip(u.helmet) + esc(cname(u.helmet))}${u.hdetail ? ", " + esc(u.hdetail) : ""}</dd>
+            <dt>${esc(LB.armour)}</dt><dd>${chip(u.armour)}${esc(cname(u.armour))}, ${esc(cname(u.trim))} ${esc(LB.trim.toLowerCase())}</dd>
+            ${PROF.skinOnCard ? `<dt>${esc(LB.skin)}</dt><dd>${chip(u.skin)}${esc(cname(u.skin))}</dd>` : ""}
             <dt>Weapons</dt><dd>${esc(weaponsText(u))}</dd>
             ${recipesOf(u).length ? `<dt>Recipes</dt><dd>${esc(recipesOf(u).map(r => r.name).join(", "))}${canWrite && missingFor(u).length ? ` <span class="need">${missingFor(u).length} to buy</span>` : ""}</dd>` : ""}
           </dl>
@@ -864,9 +892,9 @@
             <p class="prose" style="margin-top:10px">${u.painted} of ${plural(u.count, "model")} painted</p></section>
           ${recipesOf(u).map(r => `<section><h4>Recipe · ${esc(r.name)}${r.area ? " · " + esc(r.area) : ""}</h4>${stepsHtml(r)}</section>`).join("")}
           ${sec("Rank", [["Rank", esc(tier.name)], ["Who", esc(tier.note)]])}
-          ${sec("Helmet", [["Colour", u.noHelmet ? "Bare head" : col(u.helmet)], ["Lenses", col(u.lens)], ["Detail", esc(u.hdetail)]])}
-          ${sec("Armour &amp; pauldrons", [["Armour", col(u.armour)], ["Secondary", col(u.secondary)], ["Trim", col(u.trim)], ["Emblem", (u.shape || scheme.shape) === "none" ? "None" : col(u.emblem) + " · " + esc(P.emblemName(u.shape || scheme.shape))]])}
-          ${sec("Cloth &amp; details", [["Cloth", col(u.cloth)], ["Metal", col(u.metal)], ["Extras", esc(u.extras)]])}
+          ${sec(esc(PROF.legends.head), [[esc(LB.helmet), u.noHelmet && PROF.bare ? "Bare head" : col(u.helmet)], [esc(LB.lens), col(u.lens)], ["Detail", esc(u.hdetail)]])}
+          ${sec(esc(PROF.legends.body), [[esc(LB.armour), col(u.armour)], [esc(LB.secondary), col(u.secondary)], [esc(LB.trim), col(u.trim)], [esc(LB.emblem), (u.shape || scheme.shape) === "none" ? "None" : col(u.emblem) + " · " + esc(P.emblemName(u.shape || scheme.shape))]])}
+          ${sec(esc(PROF.legends.details), [[esc(LB.cloth), col(u.cloth)], [esc(LB.metal), col(u.metal)], [esc(LB.skin), PROF.hide.includes("skin") ? "" : col(u.skin)], ["Extras", esc(u.extras)]])}
           ${sec("Weapons", [["Melee", esc(u.melee)], ["Ranged", esc(u.ranged)]])}
           ${u.paints ? `<section><h4>Paint notes</h4><p class="prose">${esc(u.paints)}</p></section>` : ""}
           ${u.notes ? `<section><h4>Notes</h4><p class="prose">${esc(u.notes)}</p></section>` : ""}
@@ -1194,7 +1222,7 @@
           const tierIdx = (u.sheet.r === "Epic Hero" || u.sheet.r === "Character") ? Math.min(2, scheme.tiers.length - 1) : 0;
           return {datasheet: u.sheet.n, role: u.sheet.r, name: u.name, count: u.count, points: u.points, stages: [], painted: 0, tier: tierIdx,
             helmet: scheme.tiers[tierIdx].color, lens: c.lens, armour: c.armour, secondary: c.secondary, trim: c.trim, emblem: c.emblem, shape: "",
-            cloth: c.cloth, metal: c.metal, melee: u.melee.join(", "), ranged: u.ranged.join(", "), notes: u.notes.join(". ")};
+            cloth: c.cloth, metal: c.metal, skin: c.skin, melee: u.melee.join(", "), ranged: u.ranged.join(", "), notes: u.notes.join(". ")};
         });
         const b = $("ld-add"); b.disabled = true; $("ld-msg").textContent = "Adding units…";
         try {
@@ -1243,7 +1271,7 @@
        ============================================================ */
     const PU = window.LEDGER_PAINTUI;
     const TECHNIQUES = ["Prime","Basecoat","Layer","Shade / wash","Contrast","Dry brush","Edge highlight","Highlight","Glaze","Technical","Varnish","Other"];
-    const AREAS = ["Armour","Trim","Helmet","Lenses / eyes","Robes / cloth","Metal","Weapons","Skin","Leather","Emblem","Base","Other"];
+    const AREAS = PROF.areas;
     let owned = new Set(), ownedList = [];
     const isOwned = label => owned.has(PU.norm(label));
     const recipesOf = u => (u.recipes || []).map(id => (scheme.recipes || []).find(r => r.id === id)).filter(Boolean);
@@ -1338,7 +1366,7 @@
         <div class="r-edit">
           <div class="r-grid">
             <label>Recipe name<input id="re-name" maxlength="60" value="${esc(r.name)}" placeholder="e.g. Black armour"></label>
-            <label>Used for<select id="re-area"><option value="">Choose…</option>${AREAS.map(a => `<option ${a === r.area ? "selected" : ""}>${a}</option>`).join("")}</select></label>
+            <label>Used for<select id="re-area"><option value="">Choose…</option>${(r.area && !AREAS.includes(r.area) ? [r.area, ...AREAS] : AREAS).map(a => `<option ${a === r.area ? "selected" : ""}>${esc(a)}</option>`).join("")}</select></label>
           </div>
           <h4 class="em-h">Steps</h4>
           <ol class="r-steps" id="re-steps">${r.steps.map((st, i) => `<li>
