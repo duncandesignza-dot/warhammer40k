@@ -2496,6 +2496,20 @@ Redemptor Dreadnought (210 points)</pre>
     }
 
     let pdTab = "recipes", editingRecipe = null, buyAll = false, ownedQuery = "", libDelArmed = "";
+    let suggesting = null;   // starter recipes waiting to be added: [{recipe, on, have}]
+    // Starter recipes from this army's colours (one per colour area that has a paint picked).
+    const SUG_AREAS = [["armour", "Armour"], ["secondary", "Secondary"], ["trim", "Trim"], ["cloth", "Robes / cloth"], ["metal", "Weapons / metal"], ["skin", "Skin"]];
+    function buildSuggestions(){
+      const sp = scheme.slotPaints || {}, existing = scheme.recipes || [], seen = new Set();
+      return SUG_AREAS.filter(([k]) => k !== "skin" || PROF.skinAlways || units.some(u => headOf(u) === "bare")).map(([k, area]) => {
+        const base = sp[k]; if(!base || seen.has(PU.norm(base))) return null;
+        const steps = PU.suggestSteps(base, k); if(!steps) return null;
+        seen.add(PU.norm(base));
+        const have = existing.some(r => r.area === area || r.steps.some(st => /basecoat/i.test(st.t) && PU.norm(st.p) === PU.norm(base)));
+        const label = PROF.labels[k] || area;
+        return {on: !have, have, recipe: {id: S.newId(), name: `${label}: ${PU.shortName(base)}`, area: AREAS.includes(area) ? area : label, notes: "Suggested from your colours. Change anything you like.", steps}};
+      }).filter(Boolean);
+    }
     function openPaints(tab){
       pdTab = tab || pdTab; editingRecipe = null;
       $("pd-tabs").querySelectorAll("[data-tab]").forEach(b => b.setAttribute("aria-pressed", b.dataset.tab === pdTab));
@@ -2507,11 +2521,22 @@ Redemptor Dreadnought (210 points)</pre>
       const body = $("pd-body");
       $("pd-tabs").querySelectorAll("[data-tab]").forEach(b => b.setAttribute("aria-pressed", b.dataset.tab === pdTab));
       if(editingRecipe){ renderRecipeEditor(body); return; }
+      if(pdTab === "recipes" && suggesting){
+        const n = suggesting.filter(x => x.on).length;
+        body.innerHTML = `
+          <div class="pd-head"><p class="hint">Suggested from your army's colours: prime, basecoat, a Citadel shade that suits the colour, then a layer and an edge highlight. Untick any you don't want; you can edit them afterwards.</p></div>
+          ${suggesting.length ? `<div class="recipes">${suggesting.map((x, i) => `<article class="recipe sug${x.on ? " on" : ""}">
+            <header><label class="check"><input type="checkbox" data-sug="${i}" ${x.on ? "checked" : ""}> <span><strong>${esc(x.recipe.name)}</strong>${x.have ? `<small>You already have a recipe for this</small>` : ""}</span></label></header>
+            ${stepsHtml(x.recipe)}</article>`).join("")}</div>`
+            : `<div class="empty">Pick paints for your army's colours first (Edit colours), then come back for suggestions.</div>`}
+          <div class="row-actions">${suggesting.length ? `<button type="button" class="primary" data-act="sug-add" ${n ? "" : "disabled"}>Add ${plural(n, "recipe")}</button>` : ""}<button type="button" data-act="sug-cancel">${suggesting.length ? "Cancel" : "Back"}</button></div>`;
+        return;
+      }
       if(pdTab === "recipes"){
         const list = scheme.recipes || [];
         body.innerHTML = `
           <div class="pd-head"><p class="hint">Write a recipe once, then tick it on every unit that uses it. Paints you don't own show as <span class="own no">To buy</span>.</p>
-          ${canWrite ? `<button type="button" class="primary btn-sm" data-act="new-recipe">+ New recipe</button>` : ""}</div>
+          ${canWrite ? `<span class="row-actions"><button type="button" class="btn-sm" data-act="suggest">Suggest recipes</button><button type="button" class="primary btn-sm" data-act="new-recipe">+ New recipe</button></span>` : ""}</div>
           ${canWrite ? `<h4 class="em-h">In this ledger</h4>` : ""}
           ${list.length ? `<div class="recipes">${list.map(r => {
             const n = units.filter(u => (u.recipes || []).includes(r.id)).length;
@@ -2595,13 +2620,29 @@ Redemptor Dreadnought (210 points)</pre>
     });
     $("paintdlg").addEventListener("click", async e => {
       if(e.target === $("paintdlg")){ $("paintdlg").close(); return; }
+      const sg = e.target.closest("[data-sug]");
+      if(sg){ suggesting[+sg.dataset.sug].on = sg.checked; renderPaints(); return; }
       const tab = e.target.closest("[data-tab]");
-      if(tab){ libDelArmed = ""; syncRecipeDraft(); if(editingRecipe && !confirmDropRecipe()) return; editingRecipe = null; pdTab = tab.dataset.tab; renderPaints(); return; }
+      if(tab){ libDelArmed = ""; suggesting = null; syncRecipeDraft(); if(editingRecipe && !confirmDropRecipe()) return; editingRecipe = null; pdTab = tab.dataset.tab; renderPaints(); return; }
       const b = e.target.closest("[data-act]");
       if(libDelArmed && (!b || b.dataset.act !== "lib-del")){ libDelArmed = ""; if(!b){ renderPaints(); return; } }
       if(!b) return;
       const act = b.dataset.act;
       if(editingRecipe) syncRecipeDraft();
+      if(act === "suggest"){ await PU.load(); suggesting = buildSuggestions(); renderPaints(); return; }
+      if(act === "sug-cancel"){ suggesting = null; renderPaints(); return; }
+      if(act === "sug-add"){
+        const add = suggesting.filter(x => x.on).map(x => ({...x.recipe, at: new Date().toISOString()}));
+        if(!add.length) return;
+        b.disabled = true;
+        try { await saveRecipes((scheme.recipes || []).concat(add)); }
+        catch(err){ b.disabled = false; toast("Couldn't add the recipes: " + errText(err)); return; }
+        suggesting = null; renderPaints();
+        try { await saveToLibrary(add); } catch(err){ console.warn(err); }
+        refreshRecipes();
+        toast(`Added ${plural(add.length, "recipe")}`);
+        return;
+      }
       if(act === "new-recipe"){ editingRecipe = {id: S.newId(), name: "", area: "", notes: "", steps: [{t: "Prime", p: ""}, {t: "Basecoat", p: ""}, {t: "Shade / wash", p: ""}, {t: "Edge highlight", p: ""}], isNew: true}; renderPaints(); }
       else if(act === "edit-recipe" || act === "dup-recipe"){
         const r = (scheme.recipes || []).find(x => x.id === b.dataset.id); if(!r) return;
@@ -2663,7 +2704,7 @@ Redemptor Dreadnought (210 points)</pre>
     });
     function confirmDropRecipe(){ return true; }
     $("pd-close").addEventListener("click", () => $("paintdlg").close());
-    $("paintdlg").addEventListener("close", () => { editingRecipe = null; renderRecipePicks(); });
+    $("paintdlg").addEventListener("close", () => { editingRecipe = null; suggesting = null; renderRecipePicks(); });
     $("b-paints").addEventListener("click", () => openPaints("recipes"));
     $("f-manage-recipes").addEventListener("click", () => openPaints("recipes"));
     $("f-recipes").addEventListener("change", () => { setDirty(true); preview(); });

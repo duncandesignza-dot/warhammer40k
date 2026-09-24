@@ -64,7 +64,7 @@
     p._k = /discontinued|\bair\b|spray|primer|thinner|medium|varnish|texture|soil|technical|colou?rshift|chameleon|\bdry\b|\bfx\b|effect|pigment|transparent|fluo|neon/.test(s) ? "skip"
       : /shade|wash|\bink|\btone\b/.test(s) ? "wash"
       : /contrast|speedpaint|xpress|instant/.test(s) ? "contrast"
-      : METAL.test(s) ? "metal" : "paint";
+      : METAL.test(s.replace(/steel legion/g, "")) ? "metal" : "paint";
     return p._k;
   }
   // Shades can't be matched by colour (Citadel's are recorded as brushed over white, others as in the pot),
@@ -81,6 +81,7 @@
     "biel-tan green": ["Army Painter|Green Tone", "Vallejo|Green Wash", "Reaper|Green Wash"],
     "coelia greenshade": ["Army Painter|Green Tone", "Vallejo|Green Wash"],
     "casandora yellow": ["Vallejo|Yellow Wash"],
+    "cassandora yellow": ["Vallejo|Yellow Wash"],
     "fuegan orange": ["Vallejo|Orange Wash"]
   };
   function washSwaps(p){
@@ -287,6 +288,64 @@
     show(); load().then(show);
     return {get: () => ({...v}), set(nv){ v = {hex: okHex(nv.hex) ? nv.hex : v.hex, paint: nv.paint || ""}; show(); }, close};
   }
+  /* A starter recipe for a colour: prime, basecoat, a Citadel shade that suits the colour, then two
+     lighter Citadel layers for the layer and edge highlight. Returns steps [{t, p}] or null. */
+  const citadelBy = (name, setRe) => { const c = cat.list.find(x => x.brand === "Citadel" && x.nk === norm(name) && (!setRe || setRe.test(x.set))); return c ? c.label : ""; };
+  const hueOf = q => (Math.atan2(q[2], q[1]) * 180 / Math.PI + 360) % 360;
+  const hueGap = (a, b) => { const d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d; };
+  function nearestLayer(target, want, not, near){
+    let best = null, bd = 1e9;
+    const colourful = Math.hypot(target[1], target[2]) > 12, th = hueOf(target);
+    const nh = near && Math.hypot(near[1], near[2]) > 12 ? hueOf(near) : null;   // stay near the previous step's hue
+    for(const c of cat.list){
+      if(c.brand !== "Citadel" || c.set !== "Layer" || !okHex(c.hex) || not.includes(c.nk)) continue;
+      const k = kind(c); if(want === "metal" ? k !== "metal" : k !== "paint") continue;
+      const q = c._lab || (c._lab = lab(c.hex));
+      // A colourful base never jumps to a different colour family (blue -> purple, brown -> red).
+      if(colourful && want !== "metal" && Math.hypot(q[1], q[2]) > 12 && (hueGap(hueOf(q), th) > 35 || (nh != null && hueGap(hueOf(q), nh) > 25))) continue;
+      // Compared as lightness, colourfulness and hue, with hue weighted most: a red should
+      // highlight with a lighter red, not a flesh tone or an orange.
+      const C1 = Math.hypot(target[1], target[2]), C2 = Math.hypot(q[1], q[2]);
+      const dh = Math.atan2(q[2], q[1]) - Math.atan2(target[2], target[1]);
+      const dH = 2 * Math.sqrt(C1 * C2) * Math.sin(dh / 2);
+      const d = Math.sqrt(((target[0] - q[0]) * .6) ** 2 + ((C1 - C2) * .7) ** 2 + (dH * 2.2) ** 2);
+      if(d < bd){ bd = d; best = c; }
+    }
+    return best;
+  }
+  function shadeFor(p, L, area){
+    const [l, a, b] = L, chroma = Math.hypot(a, b), hue = (Math.atan2(b, a) * 180 / Math.PI + 360) % 360;
+    if(area === "skin" && hue >= 20 && hue < 85) return "Reikland Fleshshade";   // flesh tones; green or blue skin goes by colour
+    if(kind(p) === "metal") return b > 18 && hue > 55 && hue < 100 ? "Reikland Fleshshade" : "Nuln Oil";
+    if(l < 28) return "Nuln Oil";
+    if(chroma < 12) return l > 60 && b > 4 ? "Seraphim Sepia" : "Nuln Oil";
+    if(hue >= 25 && hue < 85 && l < 50) return "Agrax Earthshade";
+    if(hue < 30 || hue >= 340) return "Carroburg Crimson";
+    if(hue < 60) return "Fuegan Orange";
+    if(hue < 100) return l > 55 ? "Cassandora Yellow" : "Agrax Earthshade";
+    if(hue < 200) return chroma > 35 ? "Biel-Tan Green" : "Athonian Camoshade";
+    if(hue < 290) return "Drakenhof Nightshade";
+    return "Druchii Violet";
+  }
+  function suggestSteps(label, area){
+    const p = label ? find(label) : null;
+    if(!p || !okHex(p.hex)) return null;
+    const k = kind(p), L = p._lab || (p._lab = lab(p.hex));
+    const spray = p.brand === "Citadel" ? citadelBy(p.name, /^Spray$/) : "";
+    const prime = spray || citadelBy(L[0] < 45 ? "Chaos Black" : (L[2] > 6 ? "Wraithbone" : "Grey Seer"), /^Spray$/);
+    if(k === "contrast") return [{t: "Prime", p: citadelBy(L[0] < 35 ? "Grey Seer" : "Wraithbone", /^Spray$/)}, {t: "Contrast", p: label}];
+    if(k === "wash") return null;
+    const want = k === "metal" ? "metal" : "paint";
+    // Dark colours get more colourful as they get lighter (Waaagh! Flesh -> Warboss Green, not a grey).
+    const C0 = Math.hypot(L[1], L[2]), h0 = (Math.atan2(L[2], L[1]) * 180 / Math.PI + 360) % 360;
+    const brown = h0 >= 20 && h0 < 85 && L[0] < 50 && C0 < 40;   // browns and drabs stay earthy
+    const boost = L[0] < 40 && C0 > 8 && want !== "metal" && !brown ? 1.3 : brown ? .85 : 1;
+    const layer = nearestLayer([Math.min(95, L[0] + 12), L[1] * boost, L[2] * boost], want, [p.nk]);
+    const high = nearestLayer([Math.min(98, L[0] + 26), L[1] * .88 * boost, L[2] * .88 * boost], want, [p.nk, layer ? layer.nk : ""], layer && (layer._lab || (layer._lab = lab(layer.hex))));
+    const shade = citadelBy(shadeFor(p, L, area), /^Shade$/);
+    return [{t: "Prime", p: prime}, {t: "Basecoat", p: label}, shade && {t: "Shade / wash", p: shade},
+      layer && {t: "Layer", p: layer.label}, high && {t: "Edge highlight", p: high.label}].filter(st => st && st.p);
+  }
   // "Or: Army Painter Dark Tone, Vallejo Black Wash" for lists; "" when nothing is close enough.
   const swapsText = (label, n) => { const sim = cat ? similar(label, n || 2) : []; return sim.length ? "Or: " + sim.map(c => `${c.brand} ${c.name}`).join(", ") : ""; };
   // Short name for a paint label ("Citadel Abaddon Black" -> "Abaddon Black"); other text as it is.
@@ -297,5 +356,5 @@
     return p ? {name: p.name, meta: [p.brand, p.set].filter(Boolean).join(" · ")} : {name: label || "", meta: ""};
   }
 
-  window.LEDGER_PAINTUI = {load, find, search, swatch, picker, norm, slot, shortName, describe, similar, swapsText};
+  window.LEDGER_PAINTUI = {load, find, search, swatch, picker, norm, slot, shortName, describe, similar, swapsText, suggestSteps};
 })();
