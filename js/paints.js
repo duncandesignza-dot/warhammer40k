@@ -70,7 +70,21 @@
         <span class="pn"><strong>${esc(p.brand ? p.name : p.label)}</strong><small>${esc([p.brand, p.set].filter(Boolean).join(" · "))}</small></span>
         ${own.has(p.key) ? `<span class="pown">Owned</span>` : ""}</div>`).join("");
       box.hidden = false; input.setAttribute("aria-expanded", "true");
+      place();
     }
+    // Float the list over everything (so dialogs can't clip it), below the input or above if there's no room.
+    function place(){
+      if(box.hidden) return;
+      const r = input.getBoundingClientRect(), vh = window.innerHeight, gap = 6;
+      const below = vh - r.bottom - gap - 12, above = r.top - gap - 12;
+      const up = below < 260 && above > below;
+      const maxH = Math.max(160, Math.min(380, up ? above : below));
+      Object.assign(box.style, {left: r.left + "px", width: Math.max(r.width, 280) + "px", maxHeight: maxH + "px",
+        top: up ? "" : (r.bottom + gap) + "px", bottom: up ? (vh - r.top + gap) + "px" : ""});
+    }
+    const onMove = () => { if(!box.hidden) place(); };
+    window.addEventListener("resize", onMove);
+    document.addEventListener("scroll", onMove, true);
     function hide(){ box.hidden = true; active = -1; input.setAttribute("aria-expanded", "false"); }
     function pick(i){ const p = items[i]; if(!p) return; input.value = p.label; hide(); picking = true; input.dispatchEvent(new Event("input", {bubbles: true})); picking = false; if(opts.onPick) opts.onPick(p.label); }
     input.addEventListener("input", () => { if(picking) return; active = -1; load().then(show); });

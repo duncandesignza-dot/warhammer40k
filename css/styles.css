@@ -520,3 +520,10 @@ body::after{
 .site-foot p{margin:0;max-width:90ch;font-size:.76rem;line-height:1.5;color:var(--faint)}
 .wrap{padding-bottom:40px}
 @media (max-width:900px){.site-foot{padding-bottom:calc(90px + env(safe-area-inset-bottom,0px))}}
+.detail section.row-actions .danger{margin-left:auto}
+
+/* paint picker floats above dialogs; paints window keeps a steady size */
+.psuggest{position:fixed;top:auto;right:auto;z-index:1000}
+dialog.paintdlg{height:min(760px,calc(100dvh - 32px))}
+.pd-wrap{height:100%;max-height:none}
+@media (max-width:760px){dialog.paintdlg{height:100dvh}}
