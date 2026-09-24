@@ -166,6 +166,20 @@
   const avatarHtml = (a, cls) => `<span class="avatar${cls ? " " + cls : ""}${a.avatar ? " has-img" : ""}" aria-hidden="true">${avatarInner(a)}</span>`;
   const monthYear = d => { const t = new Date(d); return isNaN(t) ? "" : t.toLocaleDateString("en-GB", {month: "long", year: "numeric"}); };
   const CARET = `<svg class="caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>`;
+  /* ---------- installable app (PWA) ---------- */
+  let installEvt = null;
+  const standalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+  const installable = () => !!installEvt && !standalone();
+  window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); installEvt = e; if(store) setTop(); });
+  window.addEventListener("appinstalled", () => { installEvt = null; if(store) setTop(); });
+  async function installApp(){
+    if(!installEvt) return false;
+    installEvt.prompt();
+    try { await installEvt.userChoice; } catch(e){}
+    installEvt = null; setTop();
+    return true;
+  }
+  const clearOfflineData = () => { try { navigator.serviceWorker && navigator.serviceWorker.controller && navigator.serviceWorker.controller.postMessage({type: "clear-data"}); } catch(e){} };
   function setTop(){
     const nav = $("topnav"), a = store.kind === "supabase" ? acct() : null;
     if(store.kind !== "supabase"){ nav.innerHTML = ""; return; }
@@ -182,6 +196,7 @@
         <button type="button" role="menuitem" data-roster>Your roster</button>
         <a role="menuitem" href="#/shared">Shared armies</a>
         <button type="button" role="menuitem" disabled aria-disabled="true">Settings <span class="soon">Soon</span></button>
+        ${installable() ? `<button type="button" role="menuitem" data-install>Install app</button>` : ""}
         <hr>
         <button type="button" role="menuitem" data-logout>Log out</button>
       </div>
@@ -192,6 +207,7 @@
     if(view.guard && !(await view.guard())) return;
     view.guard = null;
     try { await store.signOut(); } catch(e){ console.error(e); }
+    clearOfflineData();
     if(location.hash !== "#/") location.hash = "#/";
   }
   const AUTH = {
@@ -2574,6 +2590,7 @@ Redemptor Dreadnought (210 points)</pre>
     if(o){ openAuth(o.dataset.authOpen); return; }
     if(e.target.closest("#b-acct")){ e.stopPropagation(); acctOpen($("acct-menu").hidden); return; }
     if(e.target.closest("[data-logout]")){ acctOpen(false); logOut(); return; }
+    if(e.target.closest("[data-install]")){ acctOpen(false); installApp(); return; }
     if(e.target.closest("#acct-menu a")) acctOpen(false);
   });
   $("topnav").addEventListener("keydown", e => {
@@ -2601,6 +2618,10 @@ Redemptor Dreadnought (210 points)</pre>
     document.addEventListener("keydown", e => { if(e.key === "Escape" && !menu.hidden){ toggle(false); btn.focus(); } });
   })();
 
+  // Offline support (only on the real site: https, not local test copies).
+  if("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(e => console.warn("Service worker not registered", e));
+  const onlineState = () => { $("offline").hidden = navigator.onLine !== false; };
+  window.addEventListener("online", onlineState); window.addEventListener("offline", onlineState); onlineState();
   ART.injectDefs();
   // A reset or confirm link that has expired comes back as #error=...&error_description=...: note it before anything reads the address.
   const linkErr = (() => {

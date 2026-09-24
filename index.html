@@ -11,6 +11,11 @@
 <meta property="og:type" content="website">
 <link rel="icon" href="img/logo.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Livery Ledger">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap">
@@ -104,6 +109,7 @@
     </div>
   </dialog>
 
+  <div class="offline-pill" id="offline" role="status" hidden><span class="dot warn"></span>You're offline. Showing what was last loaded on this device; changes need a connection.</div>
   <div class="toast" id="toast" role="status" aria-live="polite" hidden><span></span><button type="button">Undo</button></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.1/dist/umd/supabase.js"></script>

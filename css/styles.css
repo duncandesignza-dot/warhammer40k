@@ -969,3 +969,6 @@ button.star.big:hover:not(:disabled){border:1px solid rgba(251,191,36,.5)}
 .lcard .card-top .tag{grid-row:1;grid-column:3;justify-self:end;align-self:start;margin:0}
 .lp-cta-btns{display:flex;gap:10px;flex-wrap:wrap}
 @media (max-width:640px){.lp-cta-btns{width:100%}.sh-tools select{flex:1 1 100%}.sh-count{margin-left:0}}
+
+/* Offline notice */
+.offline-pill{position:fixed;left:50%;top:calc(70px + env(safe-area-inset-top,0px));transform:translateX(-50%);z-index:60;display:flex;gap:10px;align-items:center;max-width:calc(100vw - 32px);padding:9px 16px;border-radius:99px;font-size:.84rem;background:rgba(13,17,20,.95);border:1px solid rgba(251,191,36,.4);box-shadow:0 12px 30px -10px rgba(0,0,0,.8)}
