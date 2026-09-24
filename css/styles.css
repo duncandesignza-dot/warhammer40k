@@ -606,6 +606,12 @@ div.hd-when{display:contents}
 .more-menu{position:absolute;right:0;top:calc(100% + 6px);z-index:40;min-width:190px;padding:6px;display:flex;flex-direction:column;gap:2px;background:rgba(13,17,20,.97);border:1px solid var(--line-strong);border-radius:var(--r);box-shadow:0 20px 50px -10px rgba(0,0,0,.8);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
 .more-menu button{justify-content:flex-start;background:transparent;border:0;font-weight:500;font-size:.85rem;padding:9px 10px;border-radius:9px}
 .more-menu button:hover{background:var(--brand-soft)}
+.more-menu hr{border:0;border-top:1px solid var(--line);margin:4px 2px}
+.more-menu .menu-danger{color:var(--bad)}
+.more-menu .menu-danger:hover{background:rgba(248,113,113,.1)}
+.leavebox .dl-tip{font-size:.84rem}
+.leavebox .msg:empty{display:none}
+.linkish{display:inline;background:none;border:0;padding:0;font:inherit;color:var(--brand);text-decoration:underline;text-underline-offset:2px;cursor:pointer}
 /* Paints already used in a ledger, offered on an empty My paints tab */
 .used-here{margin-top:22px;padding-top:16px;border-top:1px solid var(--line)}
 .used-here .hint{margin-bottom:12px}
