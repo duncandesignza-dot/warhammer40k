@@ -98,16 +98,23 @@
   /* Suggestion dropdown for a text input, styled like the paint picker (the browser's own datalist
      popup can't be styled). getList() returns the options; typing filters them, and any other
      text is still allowed. */
+  const comboBoxes = new Map();
   function combo(input, getList){
+    // Clear out lists left behind by pages that have since been replaced.
+    comboBoxes.forEach((inp, b) => { if(!inp.isConnected){ b.remove(); comboBoxes.delete(b); } });
     const box = document.createElement("div");
+    comboBoxes.set(box, input);
     box.className = "psuggest"; box.hidden = true; box.setAttribute("role", "listbox");
     input.classList.add("combo");
     input.setAttribute("autocomplete", "off"); input.setAttribute("role", "combobox"); input.setAttribute("aria-expanded", "false");
-    // Outside the label, so a click on an option doesn't also land on the input and reopen the list.
-    (input.closest("label") || input).after(box);
+    // Straight on the page (or the open dialog), not inside a panel: a blurred panel would pin the
+    // fixed-position list to itself instead of the screen. Also keeps option clicks off the label.
+    (input.closest("dialog") || document.body).appendChild(box);
     let items = [], active = -1;
-    function show(){
+    function show(typed){
       const all = getList() || [], q = input.value.trim().toLowerCase();
+      // Typed a name in full: nothing left to choose, so get out of the way of the form.
+      if(typed && q && all.some(o => o.toLowerCase() === q)){ hide(); return; }
       // Everything when the box is empty or already holds one of the options, otherwise the matches.
       items = !q || all.some(o => o.toLowerCase() === q) ? all : all.filter(o => o.toLowerCase().includes(q));
       if(!items.length){ hide(); return; }
@@ -125,14 +132,16 @@
         top: up ? "" : (r.bottom + gap) + "px", bottom: up ? (vh - r.top + gap) + "px" : ""});
     }
     function hide(){ box.hidden = true; active = -1; input.setAttribute("aria-expanded", "false"); }
-    function pick(i){ if(items[i] == null) return; input.value = items[i]; hide(); input.dispatchEvent(new Event("input", {bubbles: true})); }
-    const onMove = () => { if(!box.isConnected){ window.removeEventListener("resize", onMove); document.removeEventListener("scroll", onMove, true); return; } place(); };
+    function pick(i){ if(items[i] == null) return; input.value = items[i]; hide(); input.dispatchEvent(new Event("input", {bubbles: true})); input.dispatchEvent(new Event("change", {bubbles: true})); }
+    const onMove = () => { if(!input.isConnected){ box.remove(); comboBoxes.delete(box); }
+      if(!box.isConnected){ window.removeEventListener("resize", onMove); document.removeEventListener("scroll", onMove, true); return; } place(); };
     window.addEventListener("resize", onMove);
     document.addEventListener("scroll", onMove, true);
-    input.addEventListener("focus", show);
+    // Opens on a click, typing or the down arrow, not on focus alone, so the page can put the
+    // cursor back in the box (say after adding a kit) without the list covering what's below.
     input.addEventListener("click", () => { if(box.hidden) show(); });
-    input.addEventListener("input", e => { active = -1; if(e.isTrusted) show(); });
-    input.addEventListener("blur", () => setTimeout(hide, 150));
+    input.addEventListener("input", e => { active = -1; if(e.isTrusted) show(true); });
+    input.addEventListener("blur", () => setTimeout(() => { if(document.activeElement !== input) hide(); }, 150));
     input.addEventListener("keydown", e => {
       if(e.key === "ArrowDown"){ e.preventDefault(); if(box.hidden){ show(); return; } active = Math.min(items.length - 1, active + 1); show(); }
       else if(box.hidden) return;

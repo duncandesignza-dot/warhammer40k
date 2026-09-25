@@ -1116,7 +1116,7 @@ small.swaps{display:block;color:var(--brand-2);font-size:.74rem;margin-top:2px}
 .bars .tip{position:absolute;bottom:calc(100% - 10px);left:50%;transform:translateX(-50%);z-index:3;display:none;flex-direction:column;align-items:center;gap:2px;white-space:nowrap;padding:7px 10px;border-radius:10px;background:rgba(13,17,20,.97);border:1px solid var(--line-strong);box-shadow:0 12px 30px -10px rgba(0,0,0,.8);font-size:.74rem;color:var(--muted)}
 .bars .tip b{color:var(--ink);font-size:.86rem}
 .bars .col:hover .tip,.bars .col:focus-visible .tip{display:flex}
-.act-empty{margin:12px 0 0}
+.act-empty,.panel p.act-empty{margin:20px 0 0}
 @media (max-width:900px){.act-top{grid-template-columns:1fr}}
 @media (max-width:640px){.activity{padding:18px 14px}.act-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.bars .mo{font-size:.56rem}.bars{padding-left:24px}.bars .grid{left:24px}.bars .grid i{left:-24px;width:20px}}
 
