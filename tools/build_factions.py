@@ -5,6 +5,10 @@ Build js/data/factions.js from the BSData Warhammer 40,000 11th edition reposito
 Usage:
   git clone --depth 1 https://github.com/BSData/wh40k-11e bsdata
   python3 tools/build_factions.py bsdata
+  python3 tools/data_changes.py OLD_factions.js js/data/factions.js   # optional: what changed
+
+.github/workflows/refresh-datasheets.yml does this every Monday and opens a pull request when
+something changed.
 
 Writes js/data/factions.js (window.LEDGER_FACTIONS = {...}).
 Unit names, battlefield roles and weapon names come straight from the data files, along with
