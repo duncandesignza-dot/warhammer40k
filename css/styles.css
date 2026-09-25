@@ -1484,3 +1484,28 @@ dialog.wdlg.wide{max-width:min(760px,calc(100vw - 24px))}
 .ill-games .ill-row em{color:var(--ink);font-weight:700}
 .lp-war>*{min-width:0}
 @media (max-width:380px){.lpw-art .ill-stats{gap:6px}.lpw-art .ill-stats div{padding:10px}.lpw-art .ill-stats b{font-size:1.2rem}.lpw-list .ill-row{flex-wrap:wrap;gap:4px 10px}}
+/* ---------- Livery and War: shared overview layout ---------- */
+.sec-acts{display:flex;gap:10px 16px;align-items:center;flex-wrap:wrap}
+.sec-acts>a:not(.btn){font-size:.88rem;font-weight:600}
+.act-sum .war-stats{margin:0}
+.act-sum .wstat small a{color:var(--brand)}
+.war-status .ws-rule{margin-left:10px;font-family:var(--body);font-size:.78rem;font-weight:500;letter-spacing:0;text-transform:none;color:var(--muted)}
+.profile-head+.war-tabs{margin-top:4px}
+.ro-tools.war-filters{padding:0}
+.ro-page{display:flex;flex-direction:column}
+.fpick-tools{margin-bottom:18px}
+.fgroup .fg-h{font-family:var(--mono);font-size:.7rem;text-transform:uppercase;letter-spacing:.12em;color:var(--brand);margin:0 0 12px;font-weight:700}
+.war-newform{max-width:560px;display:flex;flex-direction:column;gap:14px}
+.war-newform .hint{margin:0;color:var(--muted);font-size:.86rem}
+@media (max-width:640px){.sec-h .sec-acts{width:100%;justify-content:space-between}}
+@media (max-width:640px){.war-tabs{flex-wrap:wrap;overflow:visible}.war-tabs a{flex:1 1 auto;text-align:center}}
+.wt-unit{display:flex;align-items:center;gap:6px}
+.wt-unit>span{display:flex;flex-direction:column;min-width:0}
+.wt-unit .star{margin-left:-6px}
+.seg button svg{width:13px;height:13px;vertical-align:-2px;color:var(--warn)}
+.seg button[aria-pressed="true"] svg{color:inherit}
+.lb-name .star{padding:0;vertical-align:-3px}
+.lb-name .star svg{width:15px;height:15px}
+header.top .wh-id{min-width:0}
+header.top .wh-id .eyebrow{margin-bottom:6px}
+header.top .wh-id h1{margin:0}
