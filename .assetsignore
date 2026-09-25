@@ -8,3 +8,4 @@ supabase
 node_modules
 .wrangler
 .gitignore
+tests

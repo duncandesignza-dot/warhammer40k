@@ -1,0 +1,87 @@
+# Rebuilds js/data/factions.js from the latest BSData (Warhammer 40,000 11th edition) once a week,
+# and opens a pull request only when units, points, detachments or enhancements have changed and the
+# tests still pass.
+# Merge the pull request to put the new data live. Run it by hand from the Actions tab any time.
+name: Refresh datasheet data
+
+on:
+  schedule:
+    - cron: "17 4 * * 1" # Mondays, 04:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: refresh-datasheets
+  cancel-in-progress: true
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download the latest BSData
+        run: git clone --depth 1 https://github.com/BSData/wh40k-11e "$RUNNER_TEMP/bsdata"
+
+      - name: Rebuild the datasheet data
+        run: |
+          cp js/data/factions.js "$RUNNER_TEMP/factions.before.js"
+          python3 tools/build_factions.py "$RUNNER_TEMP/bsdata"
+
+      - name: Work out what changed
+        id: changes
+        run: |
+          set +e
+          python3 tools/data_changes.py "$RUNNER_TEMP/factions.before.js" js/data/factions.js > "$RUNNER_TEMP/changes.md"
+          code=$?
+          set -e
+          cat "$RUNNER_TEMP/changes.md" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$code" = "3" ]; then
+            echo "::error::The new build looks broken, so no pull request was opened. See the summary."
+            exit 1
+          fi
+          if [ "$code" = "10" ]; then
+            echo "Nothing to update."
+            git checkout -- js/data/factions.js
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          elif [ "$code" = "0" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "commit=$(git -C "$RUNNER_TEMP/bsdata" log -1 --format=%h)" >> "$GITHUB_OUTPUT"
+          else
+            exit "$code"
+          fi
+
+      # Pull requests opened by this workflow don't start the Tests workflow (a GitHub rule),
+      # so the new data is tested here, and nothing is opened if a test fails.
+      - uses: actions/setup-node@v4
+        if: steps.changes.outputs.changed == 'true'
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: tests/package-lock.json
+
+      - name: Test the site with the new data
+        if: steps.changes.outputs.changed == 'true'
+        working-directory: tests
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npx playwright test
+
+      - name: Open a pull request
+        if: steps.changes.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: data/bsdata-refresh
+          delete-branch: true
+          add-paths: js/data/factions.js
+          commit-message: "Datasheet data: BSData ${{ steps.changes.outputs.commit }}"
+          title: "Datasheet data: BSData ${{ steps.changes.outputs.commit }}"
+          body-path: ${{ runner.temp }}/changes.md
