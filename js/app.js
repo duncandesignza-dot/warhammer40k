@@ -242,6 +242,7 @@
         : `<a role="menuitem" href="#/livery">Overview</a>
         <a role="menuitem" href="#/livery/ledgers">My ledgers</a>
         <a role="menuitem" href="#/livery/roster">Your roster</a>
+        <a role="menuitem" href="#/livery/paints">Paints &amp; recipes</a>
         <a role="menuitem" href="#/livery/activity">Painting activity</a>`}
         <a role="menuitem" href="#/shame">Pile of shame</a>
         <a role="menuitem" href="#/shared">Shared armies</a>
@@ -443,6 +444,7 @@
         else if(parts[1] === "ledgers") await viewLiveryLedgers();
         else if(parts[1] === "roster") await viewLiveryRoster();
         else if(parts[1] === "activity") await viewLiveryActivity();
+        else if(parts[1] === "paints") await viewLiveryPaints();
         else await viewLivery();
       }
       // "#/" (and the old "#/welcome"): the homepage.
@@ -1273,8 +1275,8 @@
   const shameBtn = () => `<a class="btn btn-sm" href="#/shame">Pile of shame${shameCount() ? `<span class="count">${shameCount()}</span>` : ""}</a>`;
   const settingsBtn = `<a class="btn btn-sm" href="#/settings">Settings</a>`;
 
-  const LIV_TABS = [["", "Overview"], ["ledgers", "Ledgers"], ["roster", "Roster"], ["activity", "Painting activity"]];
-  const livTabs = on => `<nav class="war-tabs" aria-label="Livery Ledger">${LIV_TABS.map(([k, l]) => `<a href="#/livery${k ? "/" + k : ""}"${k === on ? ` aria-current="page"` : ""}>${l}</a>`).join("")}</nav>`;
+  const LIV_TABS = [["", "Overview"], ["ledgers", "Ledgers"], ["roster", "Roster"], ["paints", "Paints & recipes"], ["activity", "Painting activity"]];
+  const livTabs = on => `<nav class="war-tabs" aria-label="Livery Ledger">${LIV_TABS.map(([k, l]) => `<a href="#/livery${k ? "/" + k : ""}"${k === on ? ` aria-current="page"` : ""}>${esc(l)}</a>`).join("")}</nav>`;
   // A page's heading on the tab pages (the overview has the profile header instead).
   const tabHead = (eyebrow, title, sub, actions) => `<section class="page-head war-head">
       <div><p class="eyebrow">${eyebrow}</p><h1>${title}</h1>${sub ? `<p class="sub">${sub}</p>` : ""}</div>
@@ -1386,6 +1388,159 @@
       <section class="activity panel" id="activity" aria-labelledby="act-h"><h2 class="act-title" id="act-h">Painting activity</h2><p class="loading">Adding up your painting…</p></section>`;
     try { const us = await store.listAllUnits(); if($("activity")) drawActivity(us); }
     catch(err){ console.error(err); if($("activity")) $("activity").querySelector(".loading").textContent = "Couldn't load your painting history."; }
+  }
+
+
+  /* ---------- Livery: paints and recipes across every ledger ---------- */
+  const RECIPE_TECHS = ["Prime","Basecoat","Layer","Shade / wash","Contrast","Dry brush","Edge highlight","Highlight","Glaze","Technical","Varnish","Other"];
+  const RECIPE_AREAS = ["Armour", "Secondary", "Trim", "Robes / cloth", "Weapons / metal", "Skin", "Lenses", "Base", "Other"];
+  let paintsTab = "recipes";
+  async function viewLiveryPaints(){
+    view.name = "liv-paints"; document.title = "Paints & recipes · Livery Ledger";
+    let armies = [], units = [], library = null, libMsg = "", ownedList = [], editing = null, q = "", delArmed = "";
+    app.innerHTML = `${tabHead("Livery Ledger", "Paints &amp; recipes", "Your recipes, the paints on your shelf and what you still need, across all your ledgers.", "")}
+      ${livTabs("paints")}
+      <div class="seg pp-tabs" role="group" aria-label="Section" id="pp-tabs">
+        <button type="button" data-pt="recipes">Recipes</button><button type="button" data-pt="owned">My paints</button><button type="button" data-pt="buy">To buy <span class="buy-badge" id="pp-buy" hidden></span></button>
+      </div>
+      <div id="pp-body" class="pp-body"><p class="hint">Loading…</p></div>`;
+    try {
+      const res = await Promise.all([liveryData(), store.listAllUnits(), store.getPaints().catch(() => []), PU.load()]);
+      armies = res[0].armies; units = res[1]; ownedList = res[2] || [];
+    } catch(err){ console.error(err); $("pp-body").innerHTML = `<p class="hint">Couldn't load your paints: ${esc(errText(err))}</p>`; return; }
+    try { library = store.getLibrary ? await store.getLibrary() : []; }
+    catch(err){ library = null; libMsg = err.code === "nolib" ? "To keep a recipe library, add the recipes table to Supabase: run supabase/features.sql or supabase-setup.sql in the SQL editor." : "Couldn't load your recipe library."; }
+    const owned = () => new Set(ownedList.map(PU.norm));
+    const isOwned = p => owned().has(PU.norm(p));
+    const live = () => (library || []).filter(r => !r.deleted);
+    // Which ledgers use each recipe (their own copy carries the same id).
+    const usedIn = id => armies.filter(a => (a.scheme.recipes || []).some(r => r.id === id));
+    const paintLine = label => { const d = PU.describe(label); return `<strong>${esc(d.name)}</strong>${d.meta ? `<small class="pmeta">${esc(d.meta)}</small>` : ""}`; };
+    const steps = r => r.steps.length ? `<ol class="steps">${r.steps.map(st => { const d = PU.describe(st.p);
+      return `<li>${PU.swatch(st.p)}<span class="st-x"><span class="st-t">${esc(st.t || "Step")}</span><span class="st-p">${esc(d.name || "—")}${d.meta ? `<small>${esc(d.meta)}</small>` : ""}</span></span>${st.p ? (isOwned(st.p) ? `<span class="own ok">Owned</span>` : `<span class="own no">To buy</span>`) : ""}</li>`; }).join("")}</ol>` : `<p class="prose">No steps yet.</p>`;
+    // Every paint your ledgers call for that isn't on your shelf.
+    function shopping(){
+      const need = new Map();
+      const add = (p, why) => { if(!p || isOwned(p)) return; const k = PU.norm(p); if(!need.has(k)) need.set(k, {label: p, why: []}); if(!need.get(k).why.includes(why)) need.get(k).why.push(why); };
+      armies.forEach(a => {
+        const us = units.filter(u => u.armyId === a.id), used = new Set(us.flatMap(u => u.recipes || []));
+        (a.scheme.recipes || []).filter(r => used.has(r.id)).forEach(r => r.steps.forEach(st => add(st.p, a.name)));
+        Object.values(a.scheme.slotPaints || {}).forEach(p => add(p, a.name));
+        (a.scheme.tiers || []).forEach(t => add(t.paint, a.name));
+        Object.values(a.scheme.xareas || {}).forEach(v => add(v && v.paint, a.name));
+        us.forEach(u => { Object.values(u.slotPaints || {}).forEach(p => add(p, a.name)); Object.values(u.xareas || {}).forEach(v => add(v && v.paint, a.name)); });
+      });
+      return [...need.values()].sort((a, b) => a.label.localeCompare(b.label));
+    }
+    async function saveLib(rows){ await store.putLibrary(rows); library = await store.getLibrary(); }
+    function draw(){
+      $("pp-tabs").querySelectorAll("[data-pt]").forEach(b => b.setAttribute("aria-pressed", b.dataset.pt === paintsTab));
+      const buy = shopping(); $("pp-buy").hidden = !buy.length; $("pp-buy").textContent = buy.length;
+      const body = $("pp-body");
+      if(editing){ drawEditor(body); return; }
+      if(paintsTab === "recipes"){
+        const list = live().filter(r => !q || [r.name, r.area, ...r.steps.map(s => s.p)].join(" ").toLowerCase().includes(q)).sort((a, b) => a.name.localeCompare(b.name));
+        body.innerHTML = library === null ? `<p class="hint">${esc(libMsg)}</p>` : `
+          <div class="pp-head"><p class="hint">Recipes saved in any ledger are kept here. Edit one and the change reaches every ledger that uses it. To use a recipe, open a ledger's Paints &amp; recipes and add it from your library.</p>
+            <div class="row-actions">${live().length > 6 ? `<input type="search" id="pp-q" placeholder="Search recipes" aria-label="Search recipes" value="${esc(q)}">` : ""}<button type="button" class="primary btn-sm" data-pa="new">+ New recipe</button></div></div>
+          ${list.length ? `<div class="recipes">${list.map(r => { const us = usedIn(r.id); return `<article class="recipe">
+            <header><div><h3>${esc(r.name)}</h3><small>${esc([r.area, plural(r.steps.length, "step")].filter(Boolean).join(" · "))}</small></div>
+              <div class="row-actions"><button type="button" class="btn-sm" data-pa="edit" data-id="${esc(r.id)}">Edit</button><button type="button" class="btn-sm" data-pa="dup" data-id="${esc(r.id)}">Duplicate</button><button type="button" class="btn-sm danger${delArmed === r.id ? " armed" : ""}" data-pa="del" data-id="${esc(r.id)}">${delArmed === r.id ? "Tap again to delete" : "Delete"}</button></div></header>
+            ${steps(r)}
+            ${r.notes ? `<p class="prose r-notes">${esc(r.notes)}</p>` : ""}
+            <p class="r-used">${us.length ? `Used in ${us.map(a => `<a href="#/army/${esc(a.id)}">${esc(a.name)}</a>`).join(", ")}` : "Not in any ledger yet"}</p>
+          </article>`; }).join("")}</div>`
+          : `<div class="empty">${live().length ? "No recipes match." : "No recipes yet. Write your first one, like your main armour colour, and add it to any ledger."}</div>`}`;
+        const pq = $("pp-q"); if(pq) pq.addEventListener("input", () => { q = pq.value.trim().toLowerCase(); const pos = pq.selectionStart; draw(); const n = $("pp-q"); if(n){ n.focus(); n.setSelectionRange(pos, pos); } });
+      } else if(paintsTab === "owned"){
+        const shown = ownedList.filter(p => !q || PU.norm(p).includes(PU.norm(q))).sort((a, b) => a.localeCompare(b));
+        body.innerHTML = `
+          <p class="hint">Paints you own are saved to your ${store.kind === "supabase" ? "account" : "browser"} and shared by all your ledgers.</p>
+          <div class="add-paint"><span class="pwrap-host"><input id="op-add" placeholder="Add a paint, e.g. Abaddon Black" aria-label="Add a paint"></span><button type="button" class="primary" data-pa="add-owned">Add</button></div>
+          <div class="owned-head"><strong>${plural(ownedList.length, "paint")}</strong>${ownedList.length > 8 ? `<input type="search" id="op-q" class="search" placeholder="Filter" aria-label="Filter your paints" value="${esc(q)}">` : ""}</div>
+          ${ownedList.length ? `<div class="owned">${shown.map(p => `<span class="ochip" title="${esc(p)}">${PU.swatch(p)}<span>${esc(PU.describe(p).name)}</span><button type="button" data-pa="rm-owned" data-p="${esc(p)}" aria-label="Remove ${esc(p)}">×</button></span>`).join("")}</div>` : `<div class="empty">No paints yet. Add the ones on your shelf and Livery Ledger shows what you still need.</div>`}`;
+        PU.picker($("op-add"), {owned: () => owned(), extra: () => [], onPick: () => {}});
+        $("op-add").addEventListener("keydown", e => { if(e.key === "Enter"){ e.preventDefault(); addOwned(); } });
+        const oq = $("op-q"); if(oq) oq.addEventListener("input", () => { q = oq.value; const pos = oq.selectionStart; draw(); const n = $("op-q"); if(n){ n.focus(); n.setSelectionRange(pos, pos); } });
+      } else {
+        body.innerHTML = `
+          <p class="hint">Paints in your ledgers' colours and the recipes your units use that aren't in <em>My paints</em>.</p>
+          ${buy.length ? `<ul class="buy">${buy.map(it => `<li>${PU.swatch(it.label)}<span class="b-n">${paintLine(it.label)}<small>For ${esc(it.why.slice(0, 3).join(", "))}${it.why.length > 3 ? ` and ${it.why.length - 3} more` : ""}</small></span><button type="button" class="btn-sm" data-pa="got" data-p="${esc(it.label)}">I have it</button></li>`).join("")}</ul>
+            <div class="row-actions"><button type="button" class="btn-sm" data-pa="copy-buy">Copy list</button><span class="hint" id="buy-msg" role="status"></span></div>`
+          : `<div class="empty">${armies.length ? "You have every paint your ledgers need." : "Start a ledger and pick your colours to see what to buy."}</div>`}`;
+      }
+    }
+    function drawEditor(body){
+      const r = editing;
+      body.innerHTML = `
+        <div class="r-edit panel">
+          <h2 class="ph">${r.isNew ? "New recipe" : "Edit recipe"}</h2>
+          <div class="r-grid">
+            <label>Recipe name<input id="re-name" maxlength="60" value="${esc(r.name)}" placeholder="e.g. Black armour"></label>
+            <label>Used for<input id="re-area" maxlength="30" list="re-areas" value="${esc(r.area)}" placeholder="e.g. Armour"><datalist id="re-areas">${RECIPE_AREAS.map(a => `<option value="${esc(a)}">`).join("")}</datalist></label>
+          </div>
+          <h3 class="em-h">Steps</h3>
+          <ol class="r-steps">${r.steps.map((st, i) => `<li>
+            <span class="r-num">${i + 1}</span>
+            <select data-st="${i}" aria-label="Technique for step ${i + 1}">${(RECIPE_TECHS.includes(st.t) ? RECIPE_TECHS : [st.t, ...RECIPE_TECHS]).map(t => `<option ${t === st.t ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>
+            <span class="pwrap-host">${PU.swatch(st.p, "in-input")}<input data-sp="${i}" value="${esc(st.p)}" placeholder="Paint" aria-label="Paint for step ${i + 1}"></span>
+            <span class="r-btns"><button type="button" class="btn-sm" data-pa="up" data-i="${i}" ${i ? "" : "disabled"} aria-label="Move step ${i + 1} up">↑</button><button type="button" class="btn-sm" data-pa="down" data-i="${i}" ${i < r.steps.length - 1 ? "" : "disabled"} aria-label="Move step ${i + 1} down">↓</button><button type="button" class="btn-sm" data-pa="rm-step" data-i="${i}" aria-label="Remove step ${i + 1}">×</button></span>
+          </li>`).join("")}</ol>
+          <button type="button" class="btn-sm" data-pa="add-step">+ Add step</button>
+          <label>Notes<textarea id="re-notes" rows="2" maxlength="300" placeholder="e.g. thin the highlight, only on top edges">${esc(r.notes)}</textarea></label>
+          <div class="r-bar"><span class="hint" id="re-msg" role="status"></span>
+            <div class="ed-bar-actions"><button type="button" data-pa="cancel">Cancel</button><button type="button" class="primary" data-pa="save">Save recipe</button></div></div>
+        </div>`;
+      body.querySelectorAll("[data-sp]").forEach(inp => PU.picker(inp, {owned: () => owned(), extra: () => ownedList}));
+      if(r.isNew && !r.name) $("re-name").focus();
+    }
+    const syncDraft = () => {
+      const r = editing; if(!r || !$("re-name")) return;
+      r.name = $("re-name").value; r.area = $("re-area").value; r.notes = $("re-notes").value;
+      $("pp-body").querySelectorAll("[data-st]").forEach(el => r.steps[+el.dataset.st].t = el.value);
+      $("pp-body").querySelectorAll("[data-sp]").forEach(el => r.steps[+el.dataset.sp].p = el.value.trim());
+    };
+    async function addOwned(){
+      const inp = $("op-add"), v = inp.value.trim(); if(!v) return;
+      const hit = PU.find(v) || PU.search(v, [], 1)[0];
+      const label = hit && PU.norm(hit.label) === PU.norm(v) ? hit.label : v;
+      try { ownedList = await store.setPaints(ownedList.concat(label)); q = ""; draw(); $("op-add").focus(); }
+      catch(err){ flash("Couldn't save: " + errText(err)); }
+    }
+    $("pp-tabs").addEventListener("click", e => { const b = e.target.closest("[data-pt]"); if(!b) return; syncDraft(); editing = null; q = ""; paintsTab = b.dataset.pt; draw(); });
+    $("pp-body").addEventListener("click", async e => {
+      const b = e.target.closest("[data-pa]"); if(!b) return;
+      const act = b.dataset.pa, find = () => live().find(r => r.id === b.dataset.id);
+      if(act === "new") { editing = {id: S.newId(), name: "", area: "", notes: "", steps: [{t: "Prime", p: ""}, {t: "Basecoat", p: ""}, {t: "Shade / wash", p: ""}, {t: "Layer", p: ""}], isNew: true}; draw(); }
+      else if(act === "edit") { const r = find(); if(r){ editing = JSON.parse(JSON.stringify(r)); draw(); } }
+      else if(act === "dup") { const r = find(); if(r){ editing = {...JSON.parse(JSON.stringify(r)), id: S.newId(), name: r.name + " (copy)", isNew: true}; draw(); } }
+      else if(act === "del") {
+        if(delArmed !== b.dataset.id){ delArmed = b.dataset.id; draw(); setTimeout(() => { if(delArmed === b.dataset.id){ delArmed = ""; if(!editing && paintsTab === "recipes" && $("pp-body")) draw(); } }, 4000); return; }
+        const r = find(); delArmed = "";
+        // Removed from the library; ledgers that use it keep their own copy.
+        try { await saveLib([{...r, deleted: true, at: new Date().toISOString()}]); flash(`Deleted ${r.name}`); draw(); } catch(err){ flash("Couldn't delete: " + errText(err)); }
+      }
+      else if(act === "add-step") { syncDraft(); editing.steps.push({t: "Layer", p: ""}); draw(); const l = $("pp-body").querySelectorAll("[data-sp]"); if(l.length) l[l.length - 1].focus(); }
+      else if(act === "rm-step") { syncDraft(); editing.steps.splice(+b.dataset.i, 1); draw(); }
+      else if(act === "up" || act === "down") { syncDraft(); const i = +b.dataset.i, j = act === "up" ? i - 1 : i + 1; [editing.steps[i], editing.steps[j]] = [editing.steps[j], editing.steps[i]]; draw(); }
+      else if(act === "cancel") { editing = null; draw(); }
+      else if(act === "save") {
+        syncDraft(); const r = editing;
+        r.name = r.name.trim(); r.steps = r.steps.filter(st => st.p || st.t === "Other");
+        if(!r.name){ $("re-msg").textContent = "Give the recipe a name."; $("re-name").focus(); return; }
+        b.disabled = true;
+        try { const {isNew, ...clean} = r; await saveLib([{...clean, at: new Date().toISOString()}]); editing = null; flash(`Saved ${r.name}`); draw(); }
+        catch(err){ $("re-msg").textContent = "Couldn't save: " + errText(err); b.disabled = false; }
+      }
+      else if(act === "add-owned") addOwned();
+      else if(act === "rm-owned") { try { ownedList = await store.setPaints(ownedList.filter(p => p !== b.dataset.p)); draw(); } catch(err){ flash("Couldn't save: " + errText(err)); } }
+      else if(act === "got") { try { ownedList = await store.setPaints(ownedList.concat(b.dataset.p)); draw(); } catch(err){ flash("Couldn't save: " + errText(err)); } }
+      else if(act === "copy-buy") {
+        const text = shopping().map(it => "- " + PU.describe(it.label).name + (PU.describe(it.label).meta ? ` (${PU.describe(it.label).meta})` : "")).join("\n");
+        try { await navigator.clipboard.writeText(text); $("buy-msg").textContent = "List copied."; } catch(err){ $("buy-msg").textContent = "Your browser blocked the clipboard."; }
+      }
+    });
+    draw();
   }
 
   /* ---------- starting something new: pick a faction ---------- */
