@@ -368,6 +368,73 @@
     const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = filename;
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1500);
   }
+  /* ---------- backups ---------- */
+  // A backup keeps each item's id so a restore can link lists to their units and battles to their lists.
+  const backupUnit = u => ({...S.cleanUnit(u), id: u.id, image: u.image || "", photos: (u.photos || []).map(p => store.photoUrl(p))});
+  const backupLedger = (a, units) => ({id: a.id, faction: a.faction, name: a.name, scheme: a.scheme, public: a.public, units: units.filter(u => u.armyId === a.id).map(backupUnit)});
+  async function warRecords(armyIds){
+    try {
+      const [ls, gs] = await Promise.all([store.listLists(), store.listGames()]);
+      const keep = x => !armyIds || armyIds.includes(x.armyId);
+      return {lists: ls.filter(keep).map(({createdAt, updatedAt, ...l}) => l), games: gs.filter(keep).map(({createdAt, updatedAt, ...g}) => g)};
+    } catch(e){ return {lists: [], games: []}; }
+  }
+  // Any backup file (everything, one ledger, or older versions) as {ledgers, lists, games, ...}.
+  function readBackup(d){
+    if(!d || typeof d !== "object") return null;
+    if(Array.isArray(d.ledgers)) return {ledgers: d.ledgers, lists: d.lists || [], games: d.games || [], recipes: d.recipeLibrary || [], paints: d.paintsOwned || [], kits: d.pileOfShame || [], exported: d.exported};
+    const units = Array.isArray(d) ? d : d.units;
+    if(!Array.isArray(units)) return null;
+    const a = d.army || {};
+    return {ledgers: [{id: a.id || "army", faction: a.faction || "", name: a.name || "", scheme: a.scheme, units}], lists: d.lists || [], games: d.games || [], recipes: [], paints: [], kits: [], exported: d.exported, single: true};
+  }
+  const toBlob = async src => { const r = await fetch(src); if(!r.ok) throw new Error("photo"); return r.blob(); };
+  // Adds a backup's ledgers, units (with photos), lists and battles alongside what's already here. into: restore one
+  // ledger's units into an existing army instead of making a new one. Units not in an army go back to the faction's holder.
+  async function restoreBackup(b, {into = null, progress = () => {}} = {}){
+    const out = {ledgers: 0, units: 0, photosMissed: 0, lists: 0, games: 0, warFailed: false};
+    const armyMap = {}, unitMap = {}, listMap = {};
+    const existing = into ? [] : await store.listArmies();
+    const total = b.ledgers.reduce((n, L) => n + (L.units || []).length, 0);
+    let done = 0;
+    for(const L of b.ledgers){
+      let target = into;
+      if(!target){
+        const pool = L.scheme && L.scheme.pool && existing.find(a => a.scheme && a.scheme.pool && a.faction === L.faction);
+        target = pool ? pool.id : (await store.saveArmy({faction: L.faction, name: L.name || factionName(L.faction), scheme: L.scheme, public: L.public === true})).id;
+        if(!(L.scheme && L.scheme.pool)) out.ledgers++;
+      }
+      armyMap[L.id] = target;
+      for(const u of (L.units || []).filter(r => r && typeof r === "object" && (r.name || r.datasheet))){
+        const {id, image, photos, ...rest} = u;
+        let main = null;
+        if(image){ try { main = {file: await toBlob(image)}; } catch(e){ out.photosMissed++; } }
+        let row = await store.saveUnit(target, {...rest, photos: []}, null, main, false, null);
+        for(const p of (photos || []).slice(0, 12)){
+          try { row = await store.addUnitPhoto(target, row, await toBlob(p)); } catch(e){ out.photosMissed++; }
+        }
+        if(id) unitMap[id] = row.id;
+        out.units++; progress(++done, total);
+      }
+    }
+    try {
+      for(const l of b.lists || []){
+        const armyId = armyMap[l.armyId] || (b.single && into) || null; if(!armyId) continue;
+        const units = (l.units || []).map(e => !e || !e.u ? e : unitMap[e.u] ? {...e, u: unitMap[e.u]} : null).filter(Boolean);
+        const {id, ...rest} = l;
+        const saved = await store.saveList({...rest, armyId, units});
+        if(id) listMap[id] = saved.id; out.lists++;
+      }
+      for(const g of b.games || []){
+        const armyId = armyMap[g.armyId] || (b.single && into) || null; if(!armyId) continue;
+        const {id, ...rest} = g;
+        await store.saveGame({...rest, armyId, listId: listMap[g.listId] || "", mvp: unitMap[g.mvp] || ""});
+        out.games++;
+      }
+      if(out.games) await syncRecords(Object.values(armyMap));
+    } catch(e){ console.warn("Couldn't restore lists and battles", e); out.warFailed = true; }
+    return out;
+  }
   const slug = s => String(s || "army").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "army";
   function errText(err){ return (err && err.message) ? err.message : "Something went wrong. Check your connection and try again."; }
 
@@ -860,12 +927,11 @@
         <section class="war-sec" aria-labelledby="cf-h">
           <div class="sec-h"><h2 id="cf-h">Current force</h2>
             <div class="seg" role="group" aria-label="Show"><button type="button" data-filter="all" aria-pressed="${filter === "all"}">All units</button><button type="button" data-filter="notready" aria-pressed="${filter === "notready"}">Not battle ready</button><button type="button" data-filter="fav" aria-pressed="${filter === "fav"}">${STAR(true)} Starred</button></div></div>
-          ${shown.length ? `<div class="wt-scroll"><table class="wtable">
+          ${shown.length ? `<div class="wt-scroll"><table class="wtable cards" role="table">
             <thead><tr><th scope="col">Unit</th><th scope="col">Role</th><th scope="col" class="n">Owned</th><th scope="col" class="n">Built</th><th scope="col" class="n">Painted</th><th scope="col" class="n">Ready</th><th scope="col" class="n">Points</th></tr></thead>
             <tbody>${shown.map(u => { const r = readiness(u); return `<tr><th scope="row"><span class="wt-unit">${warStar(u)}<span><button type="button" class="linkish" data-unit="${esc(u.id)}">${esc(u.name)}</button>${u.own === "planned" ? PLANNED_TAG : ""}${u.datasheet && u.datasheet !== u.name ? `<small>${esc(u.datasheet)}</small>` : ""}</span></span></th>
-              <td>${esc(u.role || "—")}</td><td class="n">${r.planned ? `<span title="Planned: not bought yet">–</span>` : r.owned}</td><td class="n">${r.built}</td><td class="n">${r.painted}</td>
-              <td class="n"><span class="rdy ${r.ready >= r.owned ? "ok" : r.ready ? "part" : "no"}">${r.ready}</span></td><td class="n">${num(r.points)}</td></tr>`; }).join("")}</tbody>
-            ${filter === "all" ? `<tfoot><tr><th scope="row">Total</th><td></td><td class="n">${t.models}</td><td class="n">${t.built}</td><td class="n">${t.painted}</td><td class="n">${t.ready}</td><td class="n">${num(t.points)}</td></tr></tfoot>` : ""}
+              <td class="wt-sub">${esc(u.role || "—")}</td>${statCells(r)}</tr>`; }).join("")}</tbody>
+            ${filter === "all" ? `<tfoot><tr><th scope="row">Total</th><td class="wt-sub"></td><td class="n" data-label="Models">${t.models}</td><td class="n" data-label="Built">${t.built}</td><td class="n" data-label="Painted">${t.painted}</td><td class="n" data-label="Ready">${t.ready}</td><td class="n" data-label="Points">${num(t.points)}</td></tr></tfoot>` : ""}
           </table></div>` : `<p class="hint">${filter === "fav" ? "No starred units yet. Tap the star beside a unit to keep it handy." : "Every unit is battle ready."}</p>`}
         </section>` : `<section class="panel war-empty"><h2>No units yet</h2><p class="sub">Add the units you own one at a time, or paste an army list to add them all at once.</p><div class="war-actions"><button type="button" class="primary" data-add-unit>+ Add unit</button><button type="button" data-from-list>Add from a list</button></div></section>`}
         <section class="war-sec" aria-labelledby="al-h"><div class="sec-h"><h2 id="al-h">Army lists</h2>${D.warMissing ? "" : `<button type="button" class="btn-sm" data-new-list="${esc(id)}">+ New list</button>`}</div>
@@ -875,6 +941,7 @@
         <section class="war-sec danger-zone" aria-labelledby="dz-h"><h2 id="dz-h" class="sr-only">Manage army</h2>
           <p class="hint dz-note">Deleting removes this army from War Ledger and Livery Ledger: its ${plural(units.length, "unit")} and their photos, colours and recipes${ls.length ? `, ${plural(ls.length, "army list")}` : ""}${gs.length ? `, ${plural(gs.length, "battle report")}` : ""}. It can't be undone.</p>
           <div class="row-actions"><button type="button" class="btn-sm" data-rename>Rename army</button><button type="button" class="btn-sm danger" id="w-delarmy">Delete army</button><span class="msg" id="w-amsg" role="status"></span></div></section>`;
+      tableRoles(app);
       armButton($("w-delarmy"), "Tap again to delete it everywhere", async () => {
         try { await store.removeArmy(army); flash(`Deleted ${army.name}`); location.hash = "#/war/armies"; }
         catch(err){ $("w-amsg").textContent = "Couldn't delete: " + errText(err); }
@@ -951,13 +1018,13 @@
       const armyCell = a => isPool(a) ? `<span class="wc-loose">Not in an army</span><small>${esc(factionName(a.faction))}</small>` : `<a href="#/war/army/${esc(a.id)}">${esc(a.name)}</a>`;
       $("wc-out").innerHTML = `
         <p class="wc-sum">${plural(list.length - t.planned, "unit")} · ${plural(t.models, "model")} · ${ptsText(t.points)} · ${pctOf(t.ready, t.models)}% battle ready${t.planned ? ` · ${t.planned} planned` : ""}</p>
-        ${list.length ? `<div class="wt-scroll"><table class="wtable">
+        ${list.length ? `<div class="wt-scroll"><table class="wtable cards" role="table">
           <thead><tr><th scope="col">Unit</th><th scope="col">Army</th><th scope="col" class="n">Owned</th><th scope="col" class="n">Built</th><th scope="col" class="n">Painted</th><th scope="col" class="n">Ready</th><th scope="col" class="n">Points</th></tr></thead>
           <tbody>${list.map(u => { const r = readiness(u), a = armyOf(u.armyId); return `<tr><th scope="row"><span class="wt-unit">${warStar(u)}<span><button type="button" class="linkish" data-unit="${esc(u.id)}">${esc(u.name)}</button>${u.own === "planned" ? PLANNED_TAG : ""}<small>${esc(u.role || "")}</small></span></span></th>
-            <td>${armyCell(a)}</td><td class="n">${r.planned ? `<span title="Planned: not bought yet">–</span>` : r.owned}</td><td class="n">${r.built}</td><td class="n">${r.painted}</td>
-            <td class="n"><span class="rdy ${r.ready >= r.owned ? "ok" : r.ready ? "part" : "no"}">${r.ready}</span></td><td class="n">${num(r.points)}</td></tr>`; }).join("")}</tbody>
+            <td class="wt-sub">${armyCell(a)}</td>${statCells(r)}</tr>`; }).join("")}</tbody>
         </table></div>` : `<p class="hint">${D.units.length ? "No units match." : "No units yet. Add one here, or add them to one of your armies."}</p>`}
         ${kits.length ? `<p class="hint wc-kits"><a href="#/shame">Pile of shame</a>: ${plural(kits.length, "kit")} and ${plural(kits.reduce((a, k) => a + k.models, 0), "model")} still on the sprue.</p>` : ""}`;
+      tableRoles($("wc-out"));
     }
     $("wc-q").addEventListener("input", e => { q = e.target.value.trim().toLowerCase(); draw(); });
     $("wc-army").addEventListener("change", e => { armyF = e.target.value; draw(); });
@@ -1945,6 +2012,18 @@
      ============================================================ */
   // A feature's picture: img/shots/<name>.webp when it's been added, otherwise a drawing made from the app's own parts.
   const WAR_FIELDS = ["built", "ready", "bought", "price", "shop", "assembly", "own"];
+  // A unit's numbers in the War tables. data-label names each one when the table becomes cards on phones.
+  const statCells = r => `<td class="n" data-label="Owned">${r.planned ? `<span title="Planned: not bought yet">–</span>` : r.owned}</td><td class="n" data-label="Built">${r.built}</td><td class="n" data-label="Painted">${r.painted}</td>
+    <td class="n" data-label="Ready"><span class="rdy ${r.ready >= r.owned ? "ok" : r.ready ? "part" : "no"}">${r.ready}</span></td><td class="n" data-label="Points">${num(r.points)}</td>`;
+  // Tables restyled as cards lose their table meaning in some screen readers unless every part says what it is.
+  function tableRoles(root){
+    root.querySelectorAll("table.cards").forEach(t => {
+      t.querySelectorAll("thead,tbody,tfoot").forEach(x => x.setAttribute("role", "rowgroup"));
+      t.querySelectorAll("tr").forEach(x => x.setAttribute("role", "row"));
+      t.querySelectorAll("th").forEach(x => x.setAttribute("role", x.getAttribute("scope") === "row" ? "rowheader" : "columnheader"));
+      t.querySelectorAll("td").forEach(x => x.setAttribute("role", "cell"));
+    });
+  }
   const PLANNED_TAG = `<span class="tag plan" title="Planned: not bought yet">Planned</span>`;
   const singleRole = r => ["Epic Hero","Character","Vehicle","Monster","Dedicated Transport","Fortification"].includes(r);
   /* ---------- army list import: reads pasted lists and list-builder share codes for one faction ---------- */
@@ -2891,6 +2970,42 @@ Redemptor Dreadnought (210 points)</pre>
   /* ============================================================
      Settings
      ============================================================ */
+  // Restore a backup: pick which ledgers to bring back (ones you already have start unticked), then add them.
+  async function openRestore(b){
+    const mine = await store.listArmies().catch(() => []), have = new Set(mine.map(a => a.name.trim().toLowerCase()));
+    const havePool = new Set(mine.filter(a => a.scheme && a.scheme.pool).map(a => a.faction));
+    const real = b.ledgers.map((L, i) => ({L, i})).filter(x => !(x.L.scheme && x.L.scheme.pool)), loose = b.ledgers.filter(L => L.scheme && L.scheme.pool);
+    const count = (arr, fn) => arr.filter(fn).length;
+    const d = modal("Restore from a file", `
+      <p class="sub">${b.exported ? `This backup was made on ${esc(niceDay(String(b.exported).slice(0, 10)))}. ` : ""}What you pick is added alongside what's already here. Nothing is replaced or deleted.</p>
+      ${real.length ? `<fieldset class="wfs"><legend>Ledgers</legend><div class="rs-list">${real.map(({L, i}) => { const dup = have.has(String(L.name || "").trim().toLowerCase());
+        return `<label class="chk"><input type="checkbox" data-rs="${i}"${dup ? "" : " checked"}><span>${esc(L.name || "Untitled")} <small>${esc(factionName(L.faction))} · ${plural((L.units || []).length, "unit")}${count(b.lists, l => l.armyId === L.id) ? ` · ${plural(count(b.lists, l => l.armyId === L.id), "list")}` : ""}${count(b.games, g => g.armyId === L.id) ? ` · ${plural(count(b.games, g => g.armyId === L.id), "battle")}` : ""}${dup ? " · you already have a ledger with this name" : ""}</small></span></label>`; }).join("")}</div></fieldset>` : ""}
+      ${loose.length ? (() => { const dup = loose.some(L => havePool.has(L.faction)); return `<label class="chk"><input type="checkbox" id="rs-loose"${dup ? "" : " checked"}><span>Units not in an army <small>${plural(loose.reduce((n, L) => n + (L.units || []).length, 0), "unit")}${dup ? " · you already have units not in an army, so these could double up" : ""}</small></span></label>`; })() : ""}
+      ${b.recipes.length || b.paints.length || b.kits.length ? `<label class="chk"><input type="checkbox" id="rs-extra" checked><span>Recipes, paints and pile of shame <small>${[b.recipes.length ? plural(b.recipes.length, "recipe") : "", b.paints.length ? plural(b.paints.length, "paint") : "", b.kits.length ? plural(b.kits.length, "kit") : ""].filter(Boolean).join(" · ")}. Ones you already have are skipped.</small></span></label>` : ""}
+      <p class="hint">Your settings stay as they are. Army lists and battle reports come back with their ledgers.</p>
+      <div class="row-actions"><button type="submit" class="primary" id="rs-go">Restore</button><span class="msg" id="rs-msg" role="status"></span></div>`, "wide");
+    d.querySelector("form").addEventListener("submit", async ev => {
+      ev.preventDefault();
+      const picked = [...d.querySelectorAll("[data-rs]:checked")].map(x => b.ledgers[+x.dataset.rs]).concat($("rs-loose") && $("rs-loose").checked ? loose : []);
+      const extra = $("rs-extra") && $("rs-extra").checked;
+      if(!picked.length && !extra){ $("rs-msg").textContent = "Pick something to restore."; return; }
+      const go = $("rs-go"); go.disabled = true; d.querySelectorAll("input").forEach(x => x.disabled = true);
+      try {
+        const r = await restoreBackup({...b, ledgers: picked}, {progress: (i, n) => { $("rs-msg").textContent = `Restoring ${i} of ${n} units…`; }});
+        let extraText = "";
+        if(extra){
+          if(b.recipes.length){ const mine = new Set((await store.getLibrary().catch(() => [])).map(x => x.id)); const add = b.recipes.filter(x => x && x.id && !mine.has(x.id)); if(add.length) await store.putLibrary(add); }
+          if(b.paints.length) await store.setPaints([...(await store.getPaints()), ...b.paints]);
+          if(b.kits.length){ const cur = await getShame(); await putShame(cur.concat(b.kits.filter(k => k && !cur.some(c => c.id === k.id)))); }
+          extraText = " Recipes, paints and your pile of shame are merged in.";
+        }
+        $("rs-msg").textContent = `Restored ${[plural(r.ledgers, "ledger"), plural(r.units, "unit"), r.lists ? plural(r.lists, "army list") : "", r.games ? plural(r.games, "battle report") : ""].filter(Boolean).join(", ")}.${extraText}`
+          + (r.photosMissed ? ` ${plural(r.photosMissed, "photo")} couldn't be brought back.` : "")
+          + (r.warFailed ? " Army lists and battles couldn't be restored: their database tables may not be set up yet." : "");
+        go.textContent = "Done"; go.disabled = false; go.type = "button"; go.addEventListener("click", () => { d.close(); location.hash = "#/livery"; });
+      } catch(err){ console.error(err); $("rs-msg").textContent = "Couldn't finish restoring: " + errText(err) + " Anything already restored has been kept."; go.disabled = false; d.querySelectorAll("input").forEach(x => x.disabled = false); }
+    });
+  }
   async function viewSettings(){
     view.name = "settings";
     document.title = `Settings · ${isWar() ? "War" : "Livery"} Ledger`;
@@ -2947,8 +3062,9 @@ Redemptor Dreadnought (210 points)</pre>
         </section>
         <section class="panel set-sec">
           <h2>Your data</h2>
-          <p class="hint">Download everything you've saved: ledgers, units, recipes, paints you own, your pile of shame and your settings, as one file.</p>
-          <div class="row-actions"><button type="button" class="btn-sm" id="set-export">Download all my data</button></div>
+          <p class="hint">Download everything you've saved: ledgers, units and photos, army lists, battle reports, recipes, paints you own, your pile of shame and your settings, as one file.</p>
+          <div class="row-actions"><button type="button" class="btn-sm" id="set-export">Download all my data</button>${store.canWrite && (online ? !!me : true) ? `<button type="button" class="btn-sm" id="set-restore">Restore from a file</button><input type="file" id="set-restore-f" accept="application/json,.json" hidden>` : ""}</div>
+          <p class="hint" id="set-rmsg" role="status"></p>
         </section>
         <section class="panel set-sec danger-zone">
           <h2>${online ? "Delete my account" : "Clear everything in this browser"}</h2>
@@ -2986,13 +3102,24 @@ Redemptor Dreadnought (210 points)</pre>
       try {
         const [armies, units, library, paints] = await Promise.all([store.listArmies(), store.listAllUnits(), store.getLibrary().catch(() => []), store.getPaints().catch(() => [])]);
         let shame = []; try { shame = await getShame(); } catch(e){}
-        downloadJSON({app: "livery-ledger", kind: "everything", version: 5, exported: new Date().toISOString(), account: me ? {name: me.name, email: me.email} : null,
+        const war = await warRecords(null);
+        downloadJSON({app: "livery-ledger", kind: "everything", version: 6, exported: new Date().toISOString(), account: me ? {name: me.name, email: me.email} : null,
           settings, goal: getGoal(), paintsOwned: paints, recipeLibrary: library, pileOfShame: shame,
-          ledgers: armies.map(a => ({faction: a.faction, name: a.name, scheme: a.scheme, public: a.public, units: units.filter(u => u.armyId === a.id).map(u => ({...S.cleanUnit(u), image: u.image || "", photos: (u.photos || []).map(p => store.photoUrl(p))}))}))},
+          ledgers: armies.map(a => backupLedger(a, units)), lists: war.lists, games: war.games},
           `livery-ledger-everything-${new Date().toISOString().slice(0, 10)}.json`);
       } catch(err){ alertBanner("Couldn't prepare your data: " + errText(err)); }
       finally { b.disabled = false; b.textContent = "Download all my data"; }
     });
+    if($("set-restore")){
+      $("set-restore").addEventListener("click", () => $("set-restore-f").click());
+      $("set-restore-f").addEventListener("change", async e => {
+        const file = e.target.files && e.target.files[0]; e.target.value = ""; if(!file) return;
+        let b = null;
+        try { b = readBackup(JSON.parse(await file.text())); } catch(err){}
+        if(!b || (!b.ledgers.length && !b.recipes.length && !b.kits.length && !b.paints.length)){ $("set-rmsg").textContent = "That file isn't a Livery Ledger backup."; return; }
+        openRestore(b);
+      });
+    }
     $("del-confirm").addEventListener("input", e => { $("del-go").disabled = e.target.value.trim() !== "DELETE"; });
     $("del-go").addEventListener("click", async () => {
       const b = $("del-go"); if($("del-confirm").value.trim() !== "DELETE") return;
@@ -4509,10 +4636,12 @@ Redemptor Dreadnought (210 points)</pre>
       try { army = await store.saveArmy({faction: army.faction, name: army.name, scheme: {...army.scheme, wonly: false}, public: army.public}, army.id); scheme.wonly = false; $("wonly-banner").remove(); toast("Keeping the official colours. Change them any time with Edit colours."); }
       catch(err){ e.target.disabled = false; msg("Couldn't save: " + errText(err), true); }
     });
-    $("b-export").addEventListener("click", () => {
-      downloadJSON({app: "livery-ledger", version: 4, exported: new Date().toISOString(),
-        army: {faction: army.faction, name: army.name, scheme: army.scheme},
-        units: units.map(u => ({...S.cleanUnit(u), image: u.image || ""}))}, `livery-${slug(army.name)}-${new Date().toISOString().slice(0, 10)}.json`);
+    // One ledger, with its photos and the army's lists and battle reports from War Ledger.
+    $("b-export").addEventListener("click", async () => {
+      const war = canWrite ? await warRecords([army.id]) : {lists: [], games: []};
+      downloadJSON({app: "livery-ledger", kind: "army", version: 6, exported: new Date().toISOString(),
+        army: {id: army.id, faction: army.faction, name: army.name, scheme: army.scheme},
+        units: units.map(backupUnit), lists: war.lists, games: war.games}, `livery-${slug(army.name)}-${new Date().toISOString().slice(0, 10)}.json`);
       msg("Backup downloaded.");
     });
     if(canWrite){
@@ -4521,13 +4650,13 @@ Redemptor Dreadnought (210 points)</pre>
         const file = e.target.files && e.target.files[0]; e.target.value = "";
         if(!file) return;
         try {
-          const d = JSON.parse(await file.text());
-          const rows = (Array.isArray(d) ? d : d.units || []).filter(r => r && typeof r === "object" && (r.name || r.datasheet));
-          if(!rows.length) throw new Error("empty");
+          const b = readBackup(JSON.parse(await file.text()));
+          if(!b || !b.single || !b.ledgers[0].units.length) throw new Error("empty");
           msg("Importing…");
-          const n = await store.importUnits(army.id, rows);
-          units = await store.listUnits(army.id); newUnit(false); msg(`Imported ${plural(n, "unit")}.`);
-        } catch(err){ console.error(err); msg("That file isn't a Livery Ledger backup.", true); }
+          const r = await restoreBackup(b, {into: army.id, progress: (i, n) => msg(`Importing ${i} of ${n} units…`)});
+          units = await store.listUnits(army.id); newUnit(false);
+          msg(`Imported ${plural(r.units, "unit")}${r.lists || r.games ? `, ${[r.lists ? plural(r.lists, "army list") : "", r.games ? plural(r.games, "battle report") : ""].filter(Boolean).join(" and ")}` : ""}.${r.photosMissed ? ` ${plural(r.photosMissed, "photo")} couldn't be brought back.` : ""}`);
+        } catch(err){ console.error(err); msg(err instanceof SyntaxError ? "That file isn't a Livery Ledger backup." : err && err.message === "empty" ? "That file isn't a backup of a single ledger. To restore everything, use Restore from a file in Settings." : "Couldn't import that file: " + errText(err), true); }
       });
     }
     if(canWrite){

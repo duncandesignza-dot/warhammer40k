@@ -1573,3 +1573,22 @@ header.top .wh-id h1{margin:0}
   .tc-list li>span{flex-basis:100%}
   .tc-list .btn-sm{margin-left:auto}
 }
+/* Restore from a file: pick the ledgers to bring back. */
+.rs-list{display:flex;flex-direction:column;gap:10px}
+.rs-list .chk small,.wd-body>.chk small{display:block;color:var(--muted);font-size:.82rem;margin-top:2px}
+/* War unit tables become cards on phones: name, army or role, then the numbers with their labels. */
+@media (max-width:640px){
+  .wtable.cards{min-width:0;display:block}
+  .wtable.cards thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
+  .wtable.cards tbody,.wtable.cards tfoot{display:block}
+  .wtable.cards tr{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px 8px;padding:12px 14px;border-bottom:1px solid var(--line)}
+  .wtable.cards tbody tr:last-child{border-bottom:0}
+  .wtable.cards tfoot tr{border-top:1px solid var(--line-strong);border-bottom:0;background:rgba(255,255,255,.03)}
+  .wtable.cards th,.wtable.cards td{padding:0;border:0}
+  .wtable.cards tbody th,.wtable.cards tfoot th{grid-column:1/-1}
+  .wtable.cards .wt-sub{grid-column:1/-1;color:var(--muted);font-size:.84rem;margin-top:-4px}
+  .wtable.cards .wt-sub:empty{display:none}
+  .wtable.cards .wt-sub a{color:var(--muted)}
+  .wtable.cards td.n{text-align:left;display:flex;flex-direction:column;align-items:flex-start;gap:2px;font-weight:600}
+  .wtable.cards td.n::before{content:attr(data-label);font-family:var(--mono);font-size:.58rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700}
+}
