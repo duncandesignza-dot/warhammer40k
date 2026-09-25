@@ -223,7 +223,7 @@
   const clearOfflineData = () => { try { navigator.serviceWorker && navigator.serviceWorker.controller && navigator.serviceWorker.controller.postMessage({type: "clear-data"}); } catch(e){} };
   function setTop(){
     const nav = $("topnav"), a = store.kind === "supabase" ? acct() : null, war = isWar();
-    const sw = `<div class="mode-switch" role="group" aria-label="Switch between Livery Ledger and War Ledger"><a href="#/profile"${war ? "" : ` aria-current="true"`}><span class="ms-long">Livery</span><span class="ms-short" aria-hidden="true">L</span><span class="sr-only"> Ledger: painting</span></a><a href="#/war"${war ? ` aria-current="true"` : ""}><span class="ms-long">War</span><span class="ms-short" aria-hidden="true">W</span><span class="sr-only"> Ledger: your fighting force</span></a></div>`;
+    const sw = `<div class="mode-switch" role="group" aria-label="Switch between Livery Ledger and War Ledger"><a href="#/livery"${war ? "" : ` aria-current="true"`}><span class="ms-long">Livery</span><span class="ms-short" aria-hidden="true">L</span><span class="sr-only"> Ledger: painting</span></a><a href="#/war"${war ? ` aria-current="true"` : ""}><span class="ms-long">War</span><span class="ms-short" aria-hidden="true">W</span><span class="sr-only"> Ledger: your fighting force</span></a></div>`;
     if(store.kind !== "supabase"){ nav.innerHTML = sw; return; }
     if(!a){
       nav.innerHTML = `<button type="button" class="btn-sm ghost" data-auth-open="in">Log in</button><button type="button" class="btn-sm primary" data-auth-open="up">Sign up</button>`;
@@ -234,13 +234,15 @@
       <div class="acct-menu" id="acct-menu" role="menu" hidden>
         <div class="acct-head">${avatarHtml(a, "lg")}<span><strong>${esc(a.name)}</strong><small>${esc(a.email)}</small></span></div>
         <a role="menuitem" href="#/">Home</a>
-        ${war ? `<a role="menuitem" href="#/war">Command centre</a>
+        ${war ? `<a role="menuitem" href="#/war">Overview</a>
         <a role="menuitem" href="#/war/armies">My armies</a>
         <a role="menuitem" href="#/war/collection">My collection</a>
         <a role="menuitem" href="#/war/lists">Army lists</a>
         <a role="menuitem" href="#/war/battles">Battle reports</a>`
-        : `<a role="menuitem" href="#/profile">My profile and ledgers</a>
-        <button type="button" role="menuitem" data-roster>Your roster</button>`}
+        : `<a role="menuitem" href="#/livery">Overview</a>
+        <a role="menuitem" href="#/livery/ledgers">My ledgers</a>
+        <a role="menuitem" href="#/livery/roster">Your roster</a>
+        <a role="menuitem" href="#/livery/activity">Painting activity</a>`}
         <a role="menuitem" href="#/shame">Pile of shame</a>
         <a role="menuitem" href="#/shared">Shared armies</a>
         <a role="menuitem" href="#/settings">Settings</a>
@@ -351,7 +353,7 @@
   function openAuth(mode, note){
     if(store.kind !== "supabase") return;
     const d = $("authdlg");
-    if(!dlgAuth) dlgAuth = authForm($("auth-host"), "in", {onDone: () => { if(view.name === "landing" && !/^#\/(shared|profile|settings|shame)\b/.test(location.hash)) location.hash = "#/profile"; setTimeout(() => { if(d.open) d.close(); }, 700); }});
+    if(!dlgAuth) dlgAuth = authForm($("auth-host"), "in", {onDone: () => { if(view.name === "landing" && !/^#\/(shared|livery|war|settings|shame)\b/.test(location.hash)) location.hash = "#/livery"; setTimeout(() => { if(d.open) d.close(); }, 700); }});
     dlgAuth.set(typeof mode === "string" ? mode : "in", note);
     if(!d.open) d.showModal();
     dlgAuth.focus();
@@ -397,12 +399,16 @@
     if(view.cleanup){ try { view.cleanup(); } catch(e){} view.cleanup = null; }
     const parts = (location.hash.replace(/^#\/?/, "") || "").split("/").filter(Boolean);
     // War Ledger pages are red, Livery Ledger's own pages green; shared pages keep the last one used.
-    setMode(parts[0] === "war" ? "war" : ["profile", "army", "new"].includes(parts[0]) ? "livery" : savedMode());
+    // Old links to the profile page now open Livery Ledger's overview.
+    if(parts[0] === "profile"){ history.replaceState(null, "", "#/livery"); lastHash = location.hash; parts.splice(0, parts.length, "livery"); }
+    setMode(parts[0] === "war" ? "war" : ["livery", "army", "new"].includes(parts[0]) ? "livery" : savedMode());
     document.querySelectorAll("dialog.wdlg[open]").forEach(d => d.close());
     setTop();
     try {
       if(parts[0] === "war"){
         if(store.kind === "supabase" && !store.session){ await viewLanding(); setTimeout(() => openAuth("in", "Log in to open War Ledger."), 0); }
+        else if(parts[1] === "new" && FBY[parts[2]]) await viewWarNewFaction(parts[2]);
+        else if(parts[1] === "new") await viewWarNew();
         else if(parts[1] === "army" && parts[2]) await viewWarArmy(parts[2]);
         else if(parts[1] === "armies") await viewWarArmies();
         else if(parts[1] === "collection") await viewWarCollection();
@@ -429,16 +435,21 @@
         if(store.kind === "supabase" && !store.session){ await viewLanding(); setTimeout(() => openAuth("in", "Log in to browse shared armies."), 0); }
         else await viewShared();
       }
-      else if(parts[0] === "profile"){
-        // Your profile and ledgers; logged out, the homepage with the log in form open.
-        if(store.kind === "supabase" && !store.session){ await viewLanding(); setTimeout(() => openAuth("in", "Log in to see your profile and ledgers."), 0); }
-        else await viewHome();
+      else if(parts[0] === "livery"){
+        // Livery Ledger: your profile, ledgers, roster and painting activity; logged out, the homepage with the log in form open.
+        if(store.kind === "supabase" && !store.session){ await viewLanding(); setTimeout(() => openAuth("in", "Log in to see your ledgers."), 0); }
+        else if(parts[1] === "new" && FBY[parts[2]]) await viewSetup({factionId: parts[2]});
+        else if(parts[1] === "new") await viewLiveryNew();
+        else if(parts[1] === "ledgers") await viewLiveryLedgers();
+        else if(parts[1] === "roster") await viewLiveryRoster();
+        else if(parts[1] === "activity") await viewLiveryActivity();
+        else await viewLivery();
       }
       // "#/" (and the old "#/welcome"): the homepage.
       else await viewLanding();
     } catch(err){
       console.error(err);
-      app.innerHTML = `<div class="banner"><span class="dot warn"></span>Couldn't load this page: ${esc(errText(err))}</div><p><a class="btn" href="${isWar() ? "#/war" : "#/profile"}">Back to your ${isWar() ? "armies" : "ledgers"}</a></p>`;
+      app.innerHTML = `<div class="banner"><span class="dot warn"></span>Couldn't load this page: ${esc(errText(err))}</div><p><a class="btn" href="${isWar() ? "#/war" : "#/livery"}">Back to your ${isWar() ? "armies" : "ledgers"}</a></p>`;
     }
     window.scrollTo(0, 0);
   }
@@ -493,7 +504,7 @@
   const byNewest = (a, b) => (b.date || "").localeCompare(a.date || "") || (b.createdAt || "").localeCompare(a.createdAt || "");
   const dayText = d => { const t = new Date(d + "T12:00:00"); return isNaN(t) ? d : t.toLocaleDateString("en-GB", {day: "numeric", month: "short", year: "numeric"}); };
 
-  const WAR_TABS = [["", "Dashboard"], ["armies", "Armies"], ["collection", "Collection"], ["lists", "Army lists"], ["battles", "Battles"]];
+  const WAR_TABS = [["", "Overview"], ["armies", "Armies"], ["collection", "Collection"], ["lists", "Army lists"], ["battles", "Battles"]];
   const warTabs = on => `<nav class="war-tabs" aria-label="War Ledger">${WAR_TABS.map(([k, l]) => `<a href="#/war${k ? "/" + k : ""}"${k === on ? ` aria-current="page"` : ""}>${l}</a>`).join("")}</nav>`;
   const missingBanner = D => D.warMissing ? `<div class="banner"><span class="dot warn"></span><span>Army lists and battle reports need a quick database update. Run <strong>supabase/features.sql</strong> in Supabase to turn them on.</span></div>` : "";
 
@@ -559,7 +570,7 @@
       <span class="we-mark" aria-hidden="true">${SWORDS}</span>
       <h2>Muster your first army</h2>
       <p class="sub">Pick a faction and name your force. Then add the units you own, or paste an army list to add them all at once.</p>
-      <button type="button" class="primary" data-new-army>+ New army</button>
+      <a class="btn primary" href="#/war/new">+ New army</a>
       <p class="hint">Already painting in Livery Ledger? Those armies show up here automatically.</p>
     </section>`;
   const SWORDS = `<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 3l10.5 12.5M20 3 9.5 15.5"/><path d="M12.5 17.5l3.5-3M11.5 17.5 8 14.5"/><path d="M15.5 16l3.5 4.5M8.5 16 5 20.5"/></svg>`;
@@ -578,7 +589,7 @@
 
   /* ---------- dashboard ---------- */
   async function viewWarDash(){
-    view.name = "war"; document.title = "War Ledger";
+    view.name = "war"; document.title = "Overview · War Ledger";
     let D = null;
     const render = async () => { D = await warData(true); drawWarDash(D); };
     await render();
@@ -586,39 +597,30 @@
   }
   function drawWarDash(D){
     const all = sumUp(D.units), bk = buckets(D.units, D.kits), total = Object.values(bk).reduce((a, b) => a + b, 0);
-    const rec = recordOf(D.games), facs = [...new Set(D.armies.map(a => factionName(a.faction)))];
-    const kitModels = D.kits.reduce((n, k) => n + k.models, 0);
+    const rec = recordOf(D.games), shown = D.armies.slice(0, 6);
     app.innerHTML = `
-      <section class="page-head war-head">
-        <div><p class="eyebrow">War Ledger</p><h1>Command centre</h1>
-        <p class="sub">What you own, what you can field, and how your armies fare on the tabletop.</p></div>
-        <div class="war-actions"><button type="button" class="primary" data-new-army>+ New army</button>${D.armies.length && !D.warMissing ? `<button type="button" data-log>Log a battle</button>` : ""}</div>
-      </section>
+      ${profileHead({war: true,
+        stats: [[D.armies.length, D.armies.length === 1 ? "Army" : "Armies"], [num(total), "Models"], [num(all.points), "Points"], [`${pctOf(bk.ready, total)}%`, "Battle ready"]],
+        actions: D.armies.length ? `<a class="btn btn-sm" href="#/war/collection">${LIST_ICON}Your collection<span class="count">${num(D.units.filter(u => D.armies.some(a => a.id === u.armyId)).length)}</span></a>${shameBtn()}${settingsBtn}` : ""})}
       ${warTabs("")}
       ${missingBanner(D)}
       ${D.armies.length ? `
-      <section class="war-stats" aria-label="Your forces">
-        <div class="wstat"><b>${D.armies.length}</b><span>${D.armies.length === 1 ? "Army" : "Armies"}</span><small>${esc(facs.slice(0, 3).join(", "))}${facs.length > 3 ? ` and ${facs.length - 3} more` : ""}</small></div>
-        <div class="wstat"><b>${num(total)}</b><span>Models</span><small>${kitModels ? `Including ${num(kitModels)} on your pile of shame` : "Across all your armies"}</small></div>
-        <div class="wstat"><b>${num(all.points)}</b><span>Points</span><small>From the units you've recorded</small></div>
-        <div class="wstat ready"><b>${num(bk.ready)}<small> / ${num(total)}</small></b><span>Battle ready</span><div class="wbar" aria-hidden="true"><i style="width:${pctOf(bk.ready, total)}%"></i></div><small>${pctOf(bk.ready, total)}% · ${esc(readyRuleText())}</small></div>
-      </section>
       <section class="panel war-status" aria-labelledby="ws-h">
-        <h2 class="ph" id="ws-h">Collection status</h2>
+        <h2 class="ph" id="ws-h">Collection status <small class="ws-rule">${esc(readyRuleText())}</small></h2>
         <div class="stack" role="img" aria-label="${esc(BUCKETS.map(([k, l]) => `${l}: ${bk[k]}`).join(", "))}">${BUCKETS.map(([k]) => bk[k] ? `<i class="b-${k}" style="flex:${bk[k]}"></i>` : "").join("")}</div>
         <ul class="stack-key">${BUCKETS.map(([k, l]) => `<li><span class="sw b-${k}"></span><span><b>${num(bk[k])}</b><small>${l}</small></span></li>`).join("")}</ul>
       </section>
-      <section class="war-sec" aria-labelledby="wa-h"><div class="sec-h"><h2 id="wa-h">Your armies</h2><a href="#/war/armies">All armies</a></div>
-        <div class="ledgers">${D.armies.map(a => armyCard(a, D)).join("")}</div></section>
-      <section class="war-sec" aria-labelledby="wb-h"><div class="sec-h"><h2 id="wb-h">Recent battles</h2>${D.games.length ? `<a href="#/war/battles">All battles · ${recText(rec)}</a>` : ""}</div>
+      <section class="war-sec" aria-labelledby="wa-h"><div class="sec-h"><h2 id="wa-h">Your armies</h2><div class="sec-acts">${D.armies.length > shown.length ? `<a href="#/war/armies">All ${D.armies.length} armies</a>` : ""}<a class="btn primary btn-sm" href="#/war/new">+ New army</a></div></div>
+        <div class="ledgers">${shown.map(a => armyCard(a, D)).join("")}</div></section>
+      <section class="war-sec" aria-labelledby="wb-h"><div class="sec-h"><h2 id="wb-h">Recent battles</h2><div class="sec-acts">${D.games.length ? `<a href="#/war/battles">All battles · ${recText(rec)}</a>` : ""}${D.warMissing ? "" : `<button type="button" class="btn-sm" data-log="">Log a battle</button>`}</div></div>
         ${D.games.length ? gameRows(D.games.slice(0, 5), D) : `<p class="hint">No battles logged yet. After your next game, log it here to start your record.</p>`}</section>
       ` : warEmpty()}`;
+    wireProfileHead();
   }
   // Buttons that appear on several War Ledger pages.
   function warClicks(e, D, again){
     const t = e.target.closest("button"); if(!t) return;
-    if(t.matches("[data-new-army]")) openNewArmy();
-    else if(t.matches("[data-log]")) openGame(D, {armyId: t.dataset.log || "", listId: t.dataset.list || ""}, again);
+    if(t.matches("[data-log]")) openGame(D, {armyId: t.dataset.log || "", listId: t.dataset.list || ""}, again);
     else if(t.matches("[data-game]")) openGame(D, D.games.find(g => g.id === t.dataset.game), again);
   }
 
@@ -629,7 +631,7 @@
     const render = async () => { D = await warData(false); app.innerHTML = `
       <section class="page-head war-head">
         <div><p class="eyebrow">War Ledger</p><h1>My armies</h1><p class="sub">Every force you own, how ready it is and how it has fared.</p></div>
-        <div class="war-actions"><button type="button" class="primary" data-new-army>+ New army</button></div>
+        <div class="war-actions"><a class="btn primary" href="#/war/new">+ New army</a></div>
       </section>
       ${warTabs("armies")}
       ${D.armies.length ? `<h2 class="sr-only">Your armies</h2><div class="ledgers">${D.armies.map(a => armyCard(a, D)).join("")}</div>` : warEmpty()}`; };
@@ -641,27 +643,6 @@
     FACTIONS.forEach(f => { (groups[f.group || "Other"] = groups[f.group || "Other"] || []).push(f); });
     return `<select id="${id}">${blank ? `<option value="">${esc(blank)}</option>` : ""}${Object.entries(groups).map(([g, fs]) => `<optgroup label="${esc(g)}">${fs.map(f => `<option value="${esc(f.id)}"${f.id === value ? " selected" : ""}>${esc(f.name)}</option>`).join("")}</optgroup>`).join("")}</select>`;
   }
-  function openNewArmy(){
-    const d = modal("New army", `
-      <label>Faction${factionSelect("w-fac", "", "Choose a faction…")}</label>
-      <label>Army name<input id="w-name" maxlength="80" placeholder="e.g. 2nd Company Strike Force"></label>
-      <label><span>Points you're building to <span class="opt">(optional)</span></span><input id="w-lim" type="number" min="0" max="20000" step="250" inputmode="numeric" placeholder="e.g. 2000"></label>
-      <p class="hint">War Ledger uses the faction's official colours behind the scenes. If you start painting, you can choose your own in Livery Ledger.</p>
-      <div class="row-actions"><button type="submit" class="primary">Create army</button><span class="msg" id="w-msg" role="status"></span></div>`);
-    d.querySelector("form").addEventListener("submit", async e => {
-      e.preventDefault();
-      const fid = $("w-fac").value;
-      if(!FBY[fid]){ $("w-msg").textContent = "Choose a faction."; $("w-fac").focus(); return; }
-      const b = e.submitter || d.querySelector("[type=submit]"); b.disabled = true; $("w-msg").textContent = "Creating…";
-      try {
-        const scheme = {...P.presetFor(fid), wonly: true, limit: Math.max(0, parseInt($("w-lim").value, 10) || 0)};
-        const a = await store.saveArmy({faction: fid, name: $("w-name").value.trim() || FBY[fid].name, scheme, public: false});
-        d.close(); location.hash = `#/war/army/${a.id}`;
-      } catch(err){ console.error(err); $("w-msg").textContent = "Couldn't create the army: " + errText(err); b.disabled = false; }
-    });
-    $("w-fac").focus();
-  }
-
   // A new unit, coloured from the army's scheme so it also looks right in Livery Ledger.
   function unitRow(army, sh, extra){
     const scheme = army.scheme, c = scheme.colors, role = sh ? sh.r : ((extra && extra.role) || "Infantry");
@@ -1231,26 +1212,16 @@
   /* ============================================================
      Home: your ledgers + faction picker
      ============================================================ */
-  async function viewHome(){
-    view.name = "home";
-    document.title = "Livery Ledger";
-    let armies = [], sum = {};
-    if(store.canWrite || store.kind === "supabase"){
-      try { [armies, sum] = await Promise.all([store.listArmies(), store.summary()]); }
-      catch(err){ console.error(err); armies = []; }
-    }
-    const groups = [
-      ["Imperium", FACTIONS.filter(f => f.group === "Imperium" && !f.parent)],
-      ["Space Marine chapters", FACTIONS.filter(f => f.parent === "space-marines")],
-      ["Chaos", FACTIONS.filter(f => f.group === "Chaos")],
-      ["Xenos", FACTIONS.filter(f => f.group === "Xenos")]
-    ];
-    const signedOut = store.kind === "supabase" && !store.session;
-    const me = acct();
-    const tot = armies.reduce((t, x) => { const s = sum[x.id] || {}; t.units += s.units || 0; t.models += s.models || 0; t.done += s.done || 0; return t; }, {units: 0, models: 0, done: 0});
-    const since = me ? monthYear(me.since) : "";
-    app.innerHTML = `
-      <section class="profile-head">
+  /* ============================================================
+     Livery Ledger and War Ledger share one layout: the same profile header
+     on each overview, a tab bar on every page, and the same way to start
+     something new (a faction page, then a name).
+     ============================================================ */
+  const LIST_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11"/><path d="M9 12h11"/><path d="M9 18h11"/><path d="M4 6h.01"/><path d="M4 12h.01"/><path d="M4 18h.01"/></svg>`;
+  // Your picture, name and join date, a row of buttons, and the numbers that matter on this side.
+  function profileHead({war, stats, actions}){
+    const me = acct(), since = me ? monthYear(me.since) : "";
+    return `<section class="profile-head">
         ${me ? `<div class="ph-avatar">
           <button type="button" class="avatar xl avatar-btn${me.avatar ? " has-img" : ""}" id="b-avatar" aria-label="${me.avatar ? "Change or remove your profile picture" : "Add a profile picture"}" title="${me.avatar ? "Change your picture" : "Add a picture"}">${avatarInner(me)}</button>
           <span class="avatar-cam" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z"/><circle cx="12" cy="13.5" r="3.5"/></svg></span>
@@ -1261,61 +1232,181 @@
           <input type="file" id="f-avatar" accept="image/*" hidden>
         </div>` : ""}
         <div class="ph-text">
-          <p class="eyebrow">${me ? "Your profile" : "Livery Ledger"}</p>
+          <p class="eyebrow">${me ? "Your profile" : war ? "War Ledger" : "Livery Ledger"}</p>
           ${me ? `<div class="ph-name" id="ph-name"><h1 id="ph-h">${esc(me.name)}</h1><button type="button" class="icon-btn edit-name" id="b-name" aria-label="Change your display name" title="Change your display name"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16Z"/><path d="m13.5 6.5 4 4"/></svg></button></div>
           <form class="name-edit" id="name-form" hidden>
             <input id="name-in" maxlength="40" autocomplete="nickname" aria-label="Display name" placeholder="${esc(me.email.split("@")[0])}">
             <button type="submit" class="primary btn-sm">Save</button>
             <button type="button" class="btn-sm" id="name-cancel">Cancel</button>
-          </form>` : `<h1>Your ledgers</h1>`}
-          ${me ? `<p class="sub">${esc(me.email)}${since ? ` · Painting with us since ${esc(since)}` : ""}</p>` : `<p class="sub">Plan how you'll paint your army. Pick your faction, choose your colours, then track every unit with photos, weapons and paint recipes.</p>`}
+          </form>` : `<h1>${war ? "Your armies" : "Your ledgers"}</h1>`}
+          ${me ? `<p class="sub">${esc(me.email)}${since ? ` · ${war ? "Commanding" : "Painting"} with us since ${esc(since)}` : ""}</p>`
+            : `<p class="sub">${war ? "Track what you own, build lists from it, check it's ready for the table and log how every game went." : "Plan how you'll paint your army. Pick your faction, choose your colours, then track every unit with photos, weapons and paint recipes."}</p>`}
           ${me ? `<p class="msg" id="ph-msg" role="status" aria-live="polite"></p>` : `<div class="ph-note">${noteHtml()}</div>`}
-          ${armies.length ? `<div class="ph-actions"><button type="button" class="btn-sm" data-roster><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11"/><path d="M9 12h11"/><path d="M9 18h11"/><path d="M4 6h.01"/><path d="M4 12h.01"/><path d="M4 18h.01"/></svg>Your roster<span class="count">${num(tot.units)}</span></button><a class="btn btn-sm" href="#/shame">Pile of shame${shameCount() ? `<span class="count">${shameCount()}</span>` : ""}</a><a class="btn btn-sm" href="#/settings">Settings</a></div>` : ""}
+          ${actions ? `<div class="ph-actions">${actions}</div>` : ""}
         </div>
-        <div class="stats" aria-label="Your painting so far">
-          <div class="stat"><b>${armies.length}</b><span>${armies.length === 1 ? "Ledger" : "Ledgers"}</span></div>
-          <div class="stat"><b>${num(tot.units)}</b><span>Units</span></div>
-          <div class="stat"><b>${num(tot.done)}/${num(tot.models)}</b><span>Models painted</span></div>
-          <div class="stat"><b>${tot.models ? Math.round(tot.done / tot.models * 100) : 0}%</b><span>Complete</span></div>
-        </div>
-      </section>
+        <div class="stats" aria-label="${war ? "Your forces" : "Your painting so far"}">${stats.map(([b, l]) => `<div class="stat"><b>${b}</b><span>${l}</span></div>`).join("")}</div>
+      </section>`;
+  }
+  // After a profile header is on the page: picture and name editing, and the pile of shame count.
+  function wireProfileHead(){
+    const me = acct();
+    app.querySelectorAll("[data-signin]").forEach(b => b.addEventListener("click", () => openAuth("in")));
+    if(me && store.updateProfile) profileEdits();
+    if(me) getShame().then(l => { const a = app.querySelector('.ph-actions a[href="#/shame"]'); if(a) a.innerHTML = "Pile of shame" + (l.length ? `<span class="count">${l.length}</span>` : ""); }).catch(() => {});
+  }
+  const shameBtn = () => `<a class="btn btn-sm" href="#/shame">Pile of shame${shameCount() ? `<span class="count">${shameCount()}</span>` : ""}</a>`;
+  const settingsBtn = `<a class="btn btn-sm" href="#/settings">Settings</a>`;
+
+  const LIV_TABS = [["", "Overview"], ["ledgers", "Ledgers"], ["roster", "Roster"], ["activity", "Painting activity"]];
+  const livTabs = on => `<nav class="war-tabs" aria-label="Livery Ledger">${LIV_TABS.map(([k, l]) => `<a href="#/livery${k ? "/" + k : ""}"${k === on ? ` aria-current="page"` : ""}>${l}</a>`).join("")}</nav>`;
+  // A page's heading on the tab pages (the overview has the profile header instead).
+  const tabHead = (eyebrow, title, sub, actions) => `<section class="page-head war-head">
+      <div><p class="eyebrow">${eyebrow}</p><h1>${title}</h1>${sub ? `<p class="sub">${sub}</p>` : ""}</div>
+      ${actions ? `<div class="war-actions">${actions}</div>` : ""}
+    </section>`;
+
+  async function liveryData(){
+    let armies = [], sum = {};
+    if(store.canWrite || store.kind === "supabase"){
+      try { [armies, sum] = await Promise.all([store.listArmies(), store.summary()]); }
+      catch(err){ console.error(err); armies = []; }
+    }
+    const mine = store.session ? store.session.user.id : null;
+    armies = armies.filter(a => !mine || !a.owner || a.owner === mine);
+    const tot = armies.reduce((t, x) => { const s = sum[x.id] || {}; t.units += s.units || 0; t.models += s.models || 0; t.done += s.done || 0; return t; }, {units: 0, models: 0, done: 0});
+    return {armies, sum, tot};
+  }
+  function ledgerCard(a, sum){
+    const s = sum[a.id] || {units: 0, models: 0, done: 0}, f = FBY[a.faction];
+    const pct = s.models ? Math.round(s.done / s.models * 100) : 0;
+    return `<a class="lcard" href="#/army/${esc(a.id)}">
+      <div class="card-top">${armyBadge(a, 56)}<div><h3>${esc(a.name)}</h3><div class="meta">${esc(f ? f.name : a.faction)}</div></div></div>
+      <div class="prog" aria-hidden="true"><i style="width:${pct}%"></i></div>
+      <div class="foot"><span>${plural(s.units, "unit")} · ${plural(s.models, "model")}</span><span>${pct}% painted</span></div>
+    </a>`;
+  }
+  const newLedgerBtn = (cls) => store.canWrite || store.session ? `<a class="btn ${cls || "primary"}" href="#/livery/new">+ New ledger</a>` : "";
+  const livEmpty = () => `<section class="panel war-empty">
+      <span class="we-mark" aria-hidden="true">${LOGO_DROP}</span>
+      <h2>Start your first ledger</h2>
+      <p class="sub">Pick your faction, choose your colours, then add your units one at a time or paste your army list.</p>
+      ${newLedgerBtn()}
+      <p class="hint">Already using War Ledger? Those armies show up here too, ready to paint.</p>
+    </section>`;
+
+  /* ---------- Livery overview ---------- */
+  async function viewLivery(){
+    view.name = "home"; document.title = "Livery Ledger";
+    const {armies, sum, tot} = await liveryData();
+    const signedOut = store.kind === "supabase" && !store.session;
+    const shown = armies.slice(0, 6);
+    app.innerHTML = `
+      ${profileHead({war: false,
+        stats: [[armies.length, armies.length === 1 ? "Ledger" : "Ledgers"], [num(tot.units), "Units"], [`${num(tot.done)}/${num(tot.models)}`, "Models painted"], [`${tot.models ? Math.round(tot.done / tot.models * 100) : 0}%`, "Complete"]],
+        actions: armies.length ? `<a class="btn btn-sm" href="#/livery/roster">${LIST_ICON}Your roster<span class="count">${num(tot.units)}</span></a>${shameBtn()}${settingsBtn}` : ""})}
+      ${livTabs("")}
       ${signedOut ? `<div class="banner"><span class="dot"></span>Log in to create a ledger and see the ones you've made. <button type="button" class="btn-sm" data-signin>Log in</button></div>` : ""}
-      ${!armies.length && !signedOut ? `<div class="first-run panel"><span class="fr-num" aria-hidden="true">1</span><div><strong>Start your first ledger</strong><p>Pick your faction below. You'll choose your colours next, then add your units.</p></div></div>` : ""}
-      ${armies.length ? `<h2 class="section">Your ledgers <small>${plural(armies.length, "ledger")}</small></h2>
-        <div class="ledgers">${armies.map(a => {
-          const s = sum[a.id] || {units:0, models:0, done:0}, f = FBY[a.faction];
-          const pct = s.models ? Math.round(s.done / s.models * 100) : 0;
-          const t0 = a.scheme.tiers[0];
-          return `<a class="lcard" href="#/army/${esc(a.id)}">
-            <div class="card-top">${tierBadge(a.scheme, t0, 56)}<div><h3>${esc(a.name)}</h3><div class="meta">${esc(f ? f.name : a.faction)}</div></div></div>
-            <div class="prog" aria-hidden="true"><i style="width:${pct}%"></i></div>
-            <div class="foot"><span>${plural(s.units, "unit")} · ${plural(s.models, "model")}</span><span>${pct}% painted</span></div>
-          </a>`;}).join("")}</div>
-        <section class="activity panel" id="activity" aria-labelledby="act-h"><h2 class="act-title" id="act-h">Painting activity</h2><p class="loading">Adding up your painting…</p></section>` : ""}
-      <h2 class="section">Start a new ledger <small>Choose your faction</small></h2>
-      <div class="row-actions">
+      ${armies.length ? `
+      <section class="war-sec" aria-labelledby="yl-h"><div class="sec-h"><h2 id="yl-h">Your ledgers</h2><div class="sec-acts">${armies.length > shown.length ? `<a href="#/livery/ledgers">All ${armies.length} ledgers</a>` : ""}${newLedgerBtn("primary btn-sm")}</div></div>
+        <div class="ledgers">${shown.map(a => ledgerCard(a, sum)).join("")}</div></section>
+      <section class="war-sec" aria-labelledby="pa-h"><div class="sec-h"><h2 id="pa-h">Painting activity</h2><a href="#/livery/activity">See your painting activity</a></div>
+        <div id="act-sum" class="act-sum"><p class="hint">Adding up your painting…</p></div></section>`
+      : signedOut ? "" : livEmpty()}`;
+    wireProfileHead();
+    if(armies.length) store.listAllUnits().then(us => {
+      const box = $("act-sum"); if(!box) return;
+      const A = activityOf(us), goal = getGoal();
+      box.innerHTML = `<div class="war-stats" aria-label="Painting activity">
+          <div class="wstat"><b>${A.thisMonth}</b><span>This month</span><small>${A.lastMonth.n ? `${A.lastMonth.n} last month` : "Models painted"}</small></div>
+          <div class="wstat"><b>${A.thisYear}</b><span>This year</span></div>
+          <div class="wstat"><b>${A.streak}</b><span>Week streak</span><small>${A.streak ? `${plural(A.streak, "week")} in a row` : "Paint this week to start one"}</small></div>
+          <div class="wstat ready"><b>${goal ? `${A.thisMonth}<small> / ${goal}</small>` : "–"}</b><span>Monthly goal</span>${goal ? `<div class="wbar" aria-hidden="true"><i style="width:${Math.min(100, Math.round(A.thisMonth / goal * 100))}%"></i></div>` : `<small><a href="#/livery/activity">Set a goal</a></small>`}</div>
+        </div>`;
+    }).catch(err => { console.error(err); if($("act-sum")) $("act-sum").innerHTML = `<p class="hint">Couldn't load your painting history.</p>`; });
+  }
+
+  /* ---------- Livery tab pages ---------- */
+  async function viewLiveryLedgers(){
+    view.name = "liv-ledgers"; document.title = "Ledgers · Livery Ledger";
+    const {armies, sum} = await liveryData();
+    app.innerHTML = `${tabHead("Livery Ledger", "Your ledgers", "Every army you're painting, and how far along it is.", newLedgerBtn())}
+      ${livTabs("ledgers")}
+      ${armies.length ? `<h2 class="sr-only">Ledgers</h2><div class="ledgers">${armies.map(a => ledgerCard(a, sum)).join("")}</div>` : livEmpty()}`;
+  }
+  async function viewLiveryRoster(){
+    view.name = "liv-roster"; document.title = "Roster · Livery Ledger";
+    app.innerHTML = `${tabHead("Livery Ledger", "Your roster", `<span id="ro-sum">Every unit across all your ledgers.</span>`, "")}
+      ${livTabs("roster")}
+      <div class="ro-tools war-filters">
+        <input type="search" id="ro-q" placeholder="Search your units" aria-label="Search your roster">
+        <div class="filters" id="ro-f" role="group" aria-label="Filter by status">
+          ${[["all", "All"], ["todo", "To paint"], ["progress", "In progress"], ["done", "Painted"], ["fav", "Starred"]].map(([k, l]) => `<button type="button" data-rf="${k}" aria-pressed="${rosterFilter === k}">${l}</button>`).join("")}
+        </div>
+        <label class="ro-by">Group by<select id="ro-g"><option value="army">Ledger</option><option value="role">Role</option><option value="status">Status</option></select></label>
+      </div>
+      <h2 class="sr-only">Units</h2>
+      <div class="ro-page" id="ro-body"><p class="hint">Loading your units…</p></div>`;
+    try { $("ro-g").value = localStorage.getItem("ll-roster-group") || "army"; } catch(e){}
+    if(!$("ro-g").value) $("ro-g").value = "army";
+    $("ro-q").addEventListener("input", drawRoster);
+    $("ro-g").addEventListener("change", () => { try { localStorage.setItem("ll-roster-group", $("ro-g").value); } catch(e){} drawRoster(); });
+    $("ro-f").addEventListener("click", e => {
+      const b = e.target.closest("[data-rf]"); if(!b) return;
+      rosterFilter = b.dataset.rf;
+      $("ro-f").querySelectorAll("[data-rf]").forEach(x => x.setAttribute("aria-pressed", x === b));
+      drawRoster();
+    });
+    try {
+      const {armies} = await liveryData(), units = await store.listAllUnits();
+      const byId = Object.fromEntries(armies.map(a => [a.id, a]));
+      roster = {armies, byId, units: units.filter(u => byId[u.armyId])};
+      if($("ro-body")) drawRoster();
+    } catch(err){ console.error(err); if($("ro-body")) $("ro-body").innerHTML = `<p class="hint">Couldn't load your roster: ${esc(errText(err))}</p>`; }
+  }
+  async function viewLiveryActivity(){
+    view.name = "liv-activity"; document.title = "Painting activity · Livery Ledger";
+    app.innerHTML = `${tabHead("Livery Ledger", "Painting activity", "Models you've marked painted across all your ledgers, month by month.", "")}
+      ${livTabs("activity")}
+      <section class="activity panel" id="activity" aria-labelledby="act-h"><h2 class="act-title" id="act-h">Painting activity</h2><p class="loading">Adding up your painting…</p></section>`;
+    try { const us = await store.listAllUnits(); if($("activity")) drawActivity(us); }
+    catch(err){ console.error(err); if($("activity")) $("activity").querySelector(".loading").textContent = "Couldn't load your painting history."; }
+  }
+
+  /* ---------- starting something new: pick a faction ---------- */
+  function factionPage({war, crumbs, title, sub, href, extra}){
+    const groups = [
+      ["Imperium", FACTIONS.filter(f => f.group === "Imperium" && !f.parent)],
+      ["Space Marine chapters", FACTIONS.filter(f => f.parent === "space-marines")],
+      ["Chaos", FACTIONS.filter(f => f.group === "Chaos")],
+      ["Xenos", FACTIONS.filter(f => f.group === "Xenos")]
+    ];
+    app.innerHTML = `
+      <div class="crumbs">${crumbs}</div>
+      ${tabHead(war ? "War Ledger" : "Livery Ledger", title, sub, "")}
+      <div class="row-actions fpick-tools">
         <input type="search" class="fsearch" id="fq" placeholder="Search factions" aria-label="Search factions">
-        ${store.canWrite ? `<button type="button" class="btn-sm" id="b-import-army">Import a ledger backup</button><input type="file" id="f-import-army" accept="application/json,.json" hidden>` : ""}
+        ${extra || ""}
       </div>
       <div id="fgroups">${groups.map(([g, list]) => `
         <div class="fgroup" data-group>
-          <h3>${esc(g)}</h3>
-          <div class="fgrid">${list.map(f => `<a class="fcard" href="#/new/${esc(f.id)}" data-fname="${esc(f.name.toLowerCase())}">
+          <h2 class="fg-h">${esc(g)}</h2>
+          <div class="fgrid">${list.map(f => `<a class="fcard" href="${href(f.id)}" data-fname="${esc(f.name.toLowerCase())}">
             ${factionBadge(f.id, 34)}<span><strong>${esc(f.name)}</strong><small>${f.units.filter(u => !u.t).length} datasheets</small></span></a>`).join("")}</div>
         </div>`).join("")}</div>
-      <p class="source">Unit and weapon names come from the community BattleScribe data for Warhammer 40,000 11th edition (${esc(DATA.source || "BSData")}${DATA.commit ? ", " + esc(DATA.commit) : ""}). Emblem icons from <a href="https://github.com/Certseeds/wh40k-icon" target="_blank" rel="noopener">wh40k-icon</a> by shitake, farvig, 夜行漫记 and Certseeds (<a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a>), recoloured for this site. Paint names and colours from <a href="https://github.com/Arcturus5404/miniature-paints" target="_blank" rel="noopener">miniature-paints</a> by Rick Fleuren (MIT). Starting colours are suggestions you can change.</p>
-    `;
+      <p class="source">Unit and weapon names come from the community BattleScribe data for Warhammer 40,000 11th edition (${esc(DATA.source || "BSData")}${DATA.commit ? ", " + esc(DATA.commit) : ""}). Emblem icons from <a href="https://github.com/Certseeds/wh40k-icon" target="_blank" rel="noopener">wh40k-icon</a> by shitake, farvig, 夜行漫记 and Certseeds (<a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a>), recoloured for this site. Paint names and colours from <a href="https://github.com/Arcturus5404/miniature-paints" target="_blank" rel="noopener">miniature-paints</a> by Rick Fleuren (MIT). Starting colours are suggestions you can change.</p>`;
     const fq = $("fq");
     fq.addEventListener("input", () => {
       const q = fq.value.trim().toLowerCase();
       app.querySelectorAll(".fcard").forEach(c => c.hidden = q && !c.dataset.fname.includes(q));
       app.querySelectorAll("[data-group]").forEach(g => g.hidden = !g.querySelector(".fcard:not([hidden])"));
     });
-    app.querySelectorAll("[data-signin]").forEach(b => b.addEventListener("click", openAuth));
-    if(me && store.updateProfile) profileEdits();
-    // The pile of shame count comes from the kits table online.
-    if(me) getShame().then(l => { const a = app.querySelector('.ph-actions a[href="#/shame"]'); if(a) a.innerHTML = "Pile of shame" + (l.length ? `<span class="count">${l.length}</span>` : ""); }).catch(() => {});
-    if(armies.length) store.listAllUnits().then(us => { if($("activity")) drawActivity(us); }).catch(err => { console.error(err); if($("activity")) $("activity").querySelector(".loading").textContent = "Couldn't load your painting history."; });
+    fq.focus({preventScroll: true});
+  }
+  async function viewLiveryNew(){
+    view.name = "liv-new"; document.title = "New ledger · Livery Ledger";
+    factionPage({war: false, crumbs: `<a href="#/livery">Livery Ledger</a> / New ledger`, title: "Start a new ledger",
+      sub: "Choose your faction. You'll pick your colours next, then add your units.", href: id => `#/livery/new/${id}`,
+      extra: store.canWrite ? `<button type="button" class="btn-sm" id="b-import-army">Import a ledger backup</button><input type="file" id="f-import-army" accept="application/json,.json" hidden>` : ""});
     if(store.canWrite){
       $("b-import-army").addEventListener("click", () => $("f-import-army").click());
       $("f-import-army").addEventListener("change", async e => {
@@ -1330,6 +1421,35 @@
         } catch(err){ console.error(err); alertBanner("That file isn't a Livery Ledger backup."); }
       });
     }
+  }
+  async function viewWarNew(){
+    view.name = "war-new"; document.title = "New army · War Ledger";
+    factionPage({war: true, crumbs: `<a href="#/war">War Ledger</a> / New army`, title: "Muster a new army",
+      sub: "Choose your faction. You'll name your army next, then add your units.", href: id => `#/war/new/${id}`});
+  }
+  // Second step of a new army: its name and the points you're building to.
+  async function viewWarNewFaction(fid){
+    const f = FBY[fid];
+    view.name = "war-new"; document.title = `New ${f.name} army · War Ledger`;
+    app.innerHTML = `
+      <div class="crumbs"><a href="#/war">War Ledger</a> / <a href="#/war/new">New army</a> / ${esc(f.name)}</div>
+      <section class="page-head war-head"><div class="wh-id">${factionBadge(fid, 64)}<div><p class="eyebrow">War Ledger · ${esc(f.group || "")}</p><h1>New ${esc(f.name)} army</h1><p class="sub">Name your force. You can add units straight after.</p></div></div></section>
+      <form class="panel war-newform" id="wn-form" novalidate>
+        <label>Army name<input id="w-name" maxlength="80" placeholder="e.g. ${esc(f.name)} Strike Force" autocomplete="off"></label>
+        <label><span>Points you're building to <span class="opt">(optional)</span></span><input id="w-lim" type="number" min="0" max="20000" step="250" inputmode="numeric" placeholder="e.g. 2000"></label>
+        <p class="hint">War Ledger uses the faction's official colours behind the scenes. If you start painting, you can choose your own in Livery Ledger.</p>
+        <div class="row-actions"><button type="submit" class="primary">Create army</button><a class="btn" href="#/war/new">Back</a><span class="msg" id="w-msg" role="status"></span></div>
+      </form>`;
+    $("w-name").focus();
+    $("wn-form").addEventListener("submit", async e => {
+      e.preventDefault();
+      const b = e.submitter || $("wn-form").querySelector("[type=submit]"); b.disabled = true; $("w-msg").textContent = "Creating…";
+      try {
+        const scheme = {...P.presetFor(fid), wonly: true, limit: Math.max(0, parseInt($("w-lim").value, 10) || 0)};
+        const a = await store.saveArmy({faction: fid, name: $("w-name").value.trim() || `${f.name} army`, scheme, public: false});
+        location.hash = `#/war/army/${a.id}`;
+      } catch(err){ console.error(err); $("w-msg").textContent = "Couldn't create the army: " + errText(err); b.disabled = false; }
+    });
   }
   /* ============================================================
      Homepage: what Livery Ledger does, with log in / sign up in the hero
@@ -1542,7 +1662,7 @@
     };
     const icon = k => `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[k]}</svg>`;
     const tick = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg>';
-    const cta = me ? `<a class="btn primary lg" href="${isWar() ? "#/war" : "#/profile"}">${isWar() ? "Go to your armies" : "Go to your ledgers"}</a>` : online ? `<button type="button" class="primary lg" data-cta="up">Create your free account</button>` : `<a class="btn primary lg" href="${war ? "#/war" : "#/profile"}">${war ? "Open War Ledger" : "Start a ledger"}</a>`;
+    const cta = me ? `<a class="btn primary lg" href="${isWar() ? "#/war" : "#/livery"}">${isWar() ? "Go to your armies" : "Go to your ledgers"}</a>` : online ? `<button type="button" class="primary lg" data-cta="up">Create your free account</button>` : `<a class="btn primary lg" href="${war ? "#/war" : "#/livery"}">${war ? "Open War Ledger" : "Start a ledger"}</a>`;
 
     const liveryBody = () => `
       <section class="lp-features" id="features" aria-labelledby="lp-feat-h">
@@ -1812,7 +1932,7 @@ Redemptor Dreadnought (210 points)</pre>
             <div><h3>War Ledger · the fighting force</h3><ul class="lp-list"><li>${tick}Collection, points and battle readiness</li><li>${tick}Army lists checked against what you own</li><li>${tick}Battle reports and win–loss records</li></ul></div>
             <div><h3>Livery Ledger · the hobby</h3><ul class="lp-list"><li>${tick}Colour schemes and paint recipes</li><li>${tick}Painting stages and progress</li><li>${tick}Photos of every unit</li></ul></div>
           </div>
-          <div class="lp-cta-btns"><button type="button" class="primary" data-lp-mode="livery">See Livery Ledger</button>${me || !online ? `<a class="btn" href="#/profile">Open Livery Ledger</a>` : ""}</div>
+          <div class="lp-cta-btns"><button type="button" class="primary" data-lp-mode="livery">See Livery Ledger</button>${me || !online ? `<a class="btn" href="#/livery">Open Livery Ledger</a>` : ""}</div>
         </div>
         <div class="lpw-art" aria-hidden="true">
           <div class="ill-card"><div class="ill-badges">${demo.tiers.map(t => `<div>${b(t.color, 72)}<small>${esc(t.name)}</small></div>`).join("")}</div></div>
@@ -1894,13 +2014,13 @@ Redemptor Dreadnought (210 points)</pre>
               ${avatarHtml(me, "xl")}
               <h2>Welcome back, ${esc(me.name)}</h2>
               <p class="sub">Your ledgers are waiting.</p>
-              <a class="btn primary" href="${isWar() ? "#/war" : "#/profile"}">${isWar() ? "Go to your armies" : "Go to your ledgers"}</a>
+              <a class="btn primary" href="${isWar() ? "#/war" : "#/livery"}">${isWar() ? "Go to your armies" : "Go to your ledgers"}</a>
             </div>`
           : online ? `<div class="panel lp-card auth" id="lp-auth"></div>`
           : `<div class="panel lp-card lp-welcome">
               <h2>${war ? "Take command" : "Start painting smarter"}</h2>
               <p class="sub">This copy saves everything in your browser, with no account needed.</p>
-              <a class="btn primary" href="${war ? "#/war" : "#/profile"}">${war ? "Open War Ledger" : "Open your ledgers"}</a>
+              <a class="btn primary" href="${war ? "#/war" : "#/livery"}">${war ? "Open War Ledger" : "Open your ledgers"}</a>
             </div>`}
         </div>
       </section>
@@ -1921,7 +2041,7 @@ Redemptor Dreadnought (210 points)</pre>
       img.addEventListener("error", () => img.remove());
     });
     let heroAuth = null;
-    if($("lp-auth")) heroAuth = authForm($("lp-auth"), "in", {onDone: () => { location.hash = isWar() ? "#/war" : "#/profile"; }});
+    if($("lp-auth")) heroAuth = authForm($("lp-auth"), "in", {onDone: () => { location.hash = isWar() ? "#/war" : "#/livery"; }});
     // Switch the homepage between Livery Ledger and War Ledger without leaving it.
     app.querySelectorAll("[data-lp-mode]").forEach(btn => btn.addEventListener("click", async () => {
       const to = btn.dataset.lpMode, inHero = !!btn.closest(".lp-switch");
@@ -1944,7 +2064,7 @@ Redemptor Dreadnought (210 points)</pre>
   async function viewGuide(armyId){
     view.name = "guide";
     const army = await store.getArmy(armyId);
-    if(!army){ location.hash = "#/profile"; return; }
+    if(!army){ location.hash = "#/livery"; return; }
     const f = FBY[army.faction] || {name: army.faction};
     PROF = P.profileFor(army.faction);
     const scheme = army.scheme; fillSkin(scheme, army.faction);
@@ -2191,7 +2311,7 @@ Redemptor Dreadnought (210 points)</pre>
     try { armies = await store.listArmies(); } catch(e){}
     const allNames = [...new Set(FACTIONS.flatMap(f => f.units.filter(u => !u.t).map(u => u.n)))].sort();
     app.innerHTML = `
-      <div class="crumbs"><a href="#/profile">My ledgers</a> / Pile of shame</div>
+      <div class="crumbs">${isWar() ? `<a href="#/war">War Ledger</a>` : `<a href="#/livery">Livery Ledger</a>`} / Pile of shame</div>
       <section class="page-head shame-head">
         <div><p class="eyebrow">No judgement</p><h1>Pile of shame</h1>
         <p class="sub">Kits you've bought but haven't started yet. When you start one, move it into a ledger.</p></div>
@@ -2253,7 +2373,7 @@ Redemptor Dreadnought (210 points)</pre>
       const st = e.target.closest("[data-start]");
       if(st){
         const k = list.find(x => x.id === st.dataset.start), box = st.closest(".kit").querySelector(".kit-start");
-        if(!armies.length){ box.innerHTML = `<p class="hint">Start a ledger first, then move this kit into it. <a href="#/profile">Go to your ledgers</a></p>`; box.hidden = false; return; }
+        if(!armies.length){ box.innerHTML = `<p class="hint">Start a ledger first, then move this kit into it. <a href="#/livery/new">Start a ledger</a></p>`; box.hidden = false; return; }
         const pick = armies.find(a => a.faction === k.faction) || armies[0];
         box.innerHTML = `<label>Add to ledger<select data-to>${armies.map(a => `<option value="${esc(a.id)}"${a === pick ? " selected" : ""}>${esc(a.name)} (${esc((FBY[a.faction] || {name: a.faction}).name)})</option>`).join("")}</select></label>
           <div class="row-actions"><button type="button" class="btn-sm primary" data-move="${esc(k.id)}">Add as a unit</button><button type="button" class="btn-sm" data-cancel>Cancel</button></div>`;
@@ -2289,12 +2409,12 @@ Redemptor Dreadnought (210 points)</pre>
     const iOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
     const opt = (v, cur, label) => `<option value="${esc(v)}"${String(v) === String(cur) ? " selected" : ""}>${esc(label)}</option>`;
     app.innerHTML = `
-      <div class="crumbs">${isWar() ? `<a href="#/war">War Ledger</a>` : `<a href="#/profile">My ledgers</a>`} / Settings</div>
+      <div class="crumbs">${isWar() ? `<a href="#/war">War Ledger</a>` : `<a href="#/livery">Livery Ledger</a>`} / Settings</div>
       <section class="page-head"><p class="eyebrow">${me ? esc(me.email) : "This browser"}</p><h1>Settings</h1></section>
       <div class="settings">
         ${me ? `<section class="panel set-sec">
           <h2>Profile</h2>
-          <div class="set-row">${avatarHtml(me, "lg")}<div><strong>${esc(me.name)}</strong><small>${esc(me.email)}</small></div><a class="btn btn-sm" href="#/profile">Change name or picture</a></div>
+          <div class="set-row">${avatarHtml(me, "lg")}<div><strong>${esc(me.name)}</strong><small>${esc(me.email)}</small></div><a class="btn btn-sm" href="#/livery">Change name or picture</a></div>
         </section>
         <section class="panel set-sec">
           <h2>Password</h2>
@@ -2384,7 +2504,7 @@ Redemptor Dreadnought (210 points)</pre>
       try {
         await store.deleteAccount(); clearOfflineData();
         if(online){ location.hash = "#/"; setTimeout(() => alertBanner("Your account has been deleted."), 300); }
-        else { location.hash = "#/profile"; }
+        else { location.hash = "#/livery"; }
       } catch(err){ say("del-msg", errText(err), true); b.disabled = false; }
     });
   }
@@ -2554,7 +2674,7 @@ Redemptor Dreadnought (210 points)</pre>
   async function viewSetup({factionId, armyId}){
     view.name = "setup";
     let army = null;
-    if(armyId){ army = await store.getArmy(armyId); if(!army){ location.hash = "#/profile"; return; } factionId = army.faction; }
+    if(armyId){ army = await store.getArmy(armyId); if(!army){ location.hash = "#/livery"; return; } factionId = army.faction; }
     const f = FBY[factionId] || FBY["space-marines"];
     PROF = P.profileFor(f.id);
     const draft = army ? {name: army.name, scheme: JSON.parse(JSON.stringify(army.scheme))} : {name: "", scheme: P.presetFor(f.id)};
@@ -2568,7 +2688,7 @@ Redemptor Dreadnought (210 points)</pre>
     const locked = !store.canWrite;
 
     app.innerHTML = `
-      <div class="crumbs"><a href="#/profile">My ledgers</a> / ${editing ? `<a href="#/army/${esc(army.id)}">${esc(army.name)}</a> / Colours` : esc(f.name)}</div>
+      <div class="crumbs"><a href="#/livery">Livery Ledger</a> / ${editing ? `<a href="#/livery/ledgers">Ledgers</a> / <a href="#/army/${esc(army.id)}">${esc(army.name)}</a> / Colours` : `<a href="#/livery/new">New ledger</a> / ${esc(f.name)}`}</div>
       <div class="hero">
         <div><h1>${editing ? "Your colours" : esc(f.name)}</h1>
         <p class="sub">${editing ? "Change your army's colours. Units that use the scheme colours update to match." : "Name your army and choose its colours. These become the starting colours for every unit you add."}</p></div>
@@ -2632,7 +2752,7 @@ Redemptor Dreadnought (210 points)</pre>
           <div class="panel">
             <div class="row-actions">
               <button type="button" class="primary" id="s-save" ${locked ? "disabled" : ""}>${editing ? "Save colours" : "Create ledger"}</button>
-              <a class="btn" href="${editing ? "#/army/" + esc(army.id) : "#/profile"}">Cancel</a>
+              <a class="btn" href="${editing ? "#/army/" + esc(army.id) : "#/livery/new"}">Cancel</a>
               ${editing ? `<button type="button" class="danger" id="s-del" style="margin-left:auto">Delete ledger</button>` : ""}
             </div>
             ${!editing ? `<label style="margin-top:12px;flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="s-reset" style="width:auto"> Reset to ${esc(f.name)} starting colours</label>` : ""}
@@ -2790,7 +2910,7 @@ Redemptor Dreadnought (210 points)</pre>
       if(t.id === "s-del"){
         if(!armed){ armed = true; t.classList.add("armed"); t.textContent = "Click again to delete ledger and all its units"; return; }
         t.disabled = true;
-        try { await store.removeArmy(army); setupDirty = false; location.hash = "#/profile"; }
+        try { await store.removeArmy(army); setupDirty = false; location.hash = "#/livery"; }
         catch(err){ $("s-msg").textContent = "Couldn't delete: " + errText(err); t.disabled = false; }
       }
     }
@@ -2803,7 +2923,7 @@ Redemptor Dreadnought (210 points)</pre>
     view.name = "ledger";
     let army = await store.getArmy(armyId);
     if(!army){
-      app.innerHTML = `<div class="banner"><span class="dot warn"></span>${store.kind === "supabase" && !store.session ? "Sign in to open this ledger." : "This ledger doesn't exist any more."}</div><p class="row-actions"><a class="btn" href="#/profile">Back to your ledgers</a>${store.kind === "supabase" && !store.session ? `<button type="button" class="primary" data-signin>Sign in</button>` : ""}</p>`;
+      app.innerHTML = `<div class="banner"><span class="dot warn"></span>${store.kind === "supabase" && !store.session ? "Sign in to open this ledger." : "This ledger doesn't exist any more."}</div><p class="row-actions"><a class="btn" href="#/livery">Back to your ledgers</a>${store.kind === "supabase" && !store.session ? `<button type="button" class="primary" data-signin>Sign in</button>` : ""}</p>`;
       app.querySelectorAll("[data-signin]").forEach(b => b.addEventListener("click", openAuth));
       return;
     }
@@ -2853,7 +2973,7 @@ Redemptor Dreadnought (210 points)</pre>
     try { prefs = {...prefs, ...JSON.parse(localStorage.getItem(PREF_KEY) || "{}")}; } catch(e){}
 
     app.innerHTML = `
-      <div class="crumbs">${canWrite ? `<a href="#/profile">My ledgers</a>` : store.session ? `<a href="#/shared">Shared armies</a>` : `<a href="#/">Livery Ledger</a>`} / ${esc(f.name)}</div>
+      <div class="crumbs">${canWrite ? `<a href="#/livery">Livery Ledger</a> / <a href="#/livery/ledgers">Ledgers</a>` : store.session ? `<a href="#/shared">Shared armies</a>` : `<a href="#/">Livery Ledger</a>`} / ${esc(f.name)}</div>
       <header class="top">
         <div>
           ${!canWrite ? ownerLine(army, "big") : ""}
@@ -3905,7 +4025,7 @@ Redemptor Dreadnought (210 points)</pre>
         const b = $("dl-go"); b.disabled = true; b.textContent = "Deleting…";
         try {
           await store.removeArmy(army);
-          setDirty(false); view.guard = null; dd.close(); location.hash = "#/profile";
+          setDirty(false); view.guard = null; dd.close(); location.hash = "#/livery";
         } catch(err){
           $("dl-msg").textContent = "Couldn't delete: " + errText(err); $("dl-msg").classList.add("err");
           b.disabled = false; b.textContent = "Delete ledger";
@@ -4303,19 +4423,6 @@ Redemptor Dreadnought (210 points)</pre>
      ============================================================ */
   let roster = null, rosterFilter = "all";
   const unitDone = u => { const c = +u.count || 0; return Math.min(c, +u.painted || (u.status === "done" ? c : 0)); };
-  async function openRoster(){
-    const d = $("rosterdlg");
-    try { $("ro-g").value = localStorage.getItem("ll-roster-group") || "army"; } catch(e){}
-    if(!$("ro-g").value) $("ro-g").value = "army";
-    $("ro-body").innerHTML = `<p class="hint">Loading your units…</p>`; $("ro-sum").textContent = "";
-    if(!d.open) d.showModal();
-    try {
-      const [armies, units] = await Promise.all([store.listArmies(), store.listAllUnits()]);
-      const byId = Object.fromEntries(armies.map(a => [a.id, a]));
-      roster = {armies, byId, units: units.filter(u => byId[u.armyId])};
-      drawRoster();
-    } catch(err){ console.error(err); $("ro-body").innerHTML = `<p class="hint">Couldn't load your roster: ${esc(errText(err))}</p>`; }
-  }
   function drawRoster(){
     if(!roster) return;
     const {armies, byId, units} = roster;
@@ -4364,17 +4471,6 @@ Redemptor Dreadnought (210 points)</pre>
     }).join("");
     PROF = keep;
   }
-  $("ro-q").addEventListener("input", drawRoster);
-  $("ro-g").addEventListener("change", () => { try { localStorage.setItem("ll-roster-group", $("ro-g").value); } catch(e){} drawRoster(); });
-  $("ro-f").addEventListener("click", e => {
-    const b = e.target.closest("[data-rf]"); if(!b) return;
-    rosterFilter = b.dataset.rf;
-    $("ro-f").querySelectorAll("[data-rf]").forEach(x => x.setAttribute("aria-pressed", x === b));
-    drawRoster();
-  });
-  // Opening a unit or ledger from the roster closes it on the way.
-  $("ro-body").addEventListener("click", e => { if(e.target.closest("a[href]")) $("rosterdlg").close(); });
-  document.addEventListener("click", e => { if(e.target.closest("[data-roster]")){ acctOpen(false); openRoster(); } });
 
   /* ============================================================
      Dialogs, auth, start
