@@ -482,6 +482,7 @@
   // Owned, built, painted and battle-ready models for one unit.
   function readiness(u){
     const owned = Math.max(1, +u.count || 1), st = u.stages || [];
+    if(u.own === "planned") return {owned, built: 0, painted: 0, ready: 0, auto: 0, points: +u.points || 0, planned: true};
     const painted = Math.min(owned, Math.max(0, +u.painted || 0));
     const built = Math.min(owned, Math.max(u.built != null ? +u.built : (st.includes("built") ? owned : 0), painted));
     const rule = readyRule();
@@ -493,7 +494,7 @@
   const BUCKETS = [["sprue", "On sprue"], ["built", "Built"], ["primed", "Primed"], ["painting", "Painting"], ["painted", "Painted"], ["ready", "Battle ready"]];
   function buckets(units, kits){
     const b = {sprue: 0, built: 0, primed: 0, painting: 0, painted: 0, ready: 0};
-    units.forEach(u => {
+    units.filter(u => u.own !== "planned").forEach(u => {
       const r = readiness(u), st = u.stages || [], made = Math.max(r.built, r.ready);
       b.ready += r.ready; b.sprue += r.owned - made;
       let rest = made - r.ready;
@@ -503,7 +504,8 @@
     (kits || []).forEach(k => { b.sprue += k.models; });
     return b;
   }
-  const sumUp = units => units.reduce((t, u) => { const r = readiness(u); t.models += r.owned; t.ready += r.ready; t.points += r.points; t.built += r.built; t.painted += r.painted; return t; }, {models: 0, ready: 0, points: 0, built: 0, painted: 0});
+  // Totals of what you own; planned units are only counted in "planned".
+  const sumUp = units => units.reduce((t, u) => { if(u.own === "planned"){ t.planned++; return t; } const r = readiness(u); t.models += r.owned; t.ready += r.ready; t.points += r.points; t.built += r.built; t.painted += r.painted; return t; }, {models: 0, ready: 0, points: 0, built: 0, painted: 0, planned: 0});
   const pctOf = (a, b) => b ? Math.round(a / b * 100) : 0;
   const recordOf = games => games.reduce((r, g) => { r[g.result]++; return r; }, {w: 0, l: 0, d: 0});
   const recText = r => `${r.w}–${r.l}${r.d ? "–" + r.d : ""}`;
@@ -572,6 +574,16 @@
     D.byArmy = id => D.units.filter(u => u.armyId === id);   // reads the current units, so edits show straight away
     return D;
   }
+  // Every unit of a faction you own or plan to: all its armies plus the ones not in an army.
+  // Army lists draw from this, so a faction split across several ledgers still makes one pool.
+  const armyById = (D, id) => D.armies.find(a => a.id === id) || D.pools.find(a => a.id === id);
+  function factionUnits(D, armyId){
+    const a = armyById(D, armyId); if(!a) return [];
+    const ids = new Set(D.armies.concat(D.pools).filter(x => x.faction === a.faction).map(x => x.id));
+    return D.units.filter(u => ids.has(u.armyId));
+  }
+  // Where a unit lives, for list builder rows from another army.
+  const homeOf = (D, u, listArmyId) => { if(u.armyId === listArmyId) return ""; const a = armyById(D, u.armyId); return !a ? "" : isPool(a) ? "Not in an army" : "From " + a.name; };
   function armyBadge(a, size){
     const keep = PROF; PROF = P.profileFor(a.faction);
     const html = a.scheme && a.scheme.tiers ? tierBadge(a.scheme, a.scheme.tiers[0], size) : factionBadge(a.faction, size);
@@ -698,6 +710,7 @@
         <label>Models<input id="w-count" type="number" min="1" max="99" inputmode="numeric" value="${r.owned}"></label>
         <label>Points<input id="w-pts" type="number" min="0" max="9999" inputmode="numeric" value="${u ? u.points : 0}"></label>
         ${choices ? `<label class="span3">Army<select id="w-army"><option value="">Not in an army (just in your collection)</option>${choices.map(a => `<option value="${esc(a.id)}"${a.id === curArmy ? " selected" : ""}>${esc(a.name)}${a.faction !== army.faction ? ` (${esc(factionName(a.faction))})` : ""}</option>`).join("")}</select></label>` : ""}
+        <label class="span3">Ownership<select id="w-own"><option value="owned"${!u || u.own !== "planned" ? " selected" : ""}>I own it</option><option value="planned"${u && u.own === "planned" ? " selected" : ""}>Planned: not bought yet</option></select></label>
         <label class="chk span3"><input type="checkbox" id="w-fav"${u && u.fav ? " checked" : ""}><span>Starred <small>(shows with a star here and in Livery Ledger)</small></span></label>
       </div>
       <fieldset class="wfs"><legend>Readiness</legend>
@@ -751,7 +764,7 @@
       const base = u ? {...u} : unitRow(army, sh, {});
       const row = {...base, datasheet: sh ? sh.n : (u ? u.datasheet : ""), role: v("w-role"), name, count, points: n("w-pts", 9999), painted, built,
         ready: $("w-auto").checked ? null : Math.min(count, n("w-ready", 99)), ranged: v("w-ranged").trim(), melee: v("w-melee").trim(),
-        bought: v("w-bought"), price: v("w-price"), shop: v("w-shop").trim(), assembly: v("w-asm").trim(), notes: v("w-notes").trim(), fav: $("w-fav").checked};
+        bought: v("w-bought"), price: v("w-price"), shop: v("w-shop").trim(), assembly: v("w-asm").trim(), notes: v("w-notes").trim(), fav: $("w-fav").checked, own: v("w-own")};
       // Keep Livery Ledger's Built stage in step with a fully built unit.
       const st = (row.stages || []).slice();
       if(built >= count && !st.includes("built")) st.unshift("built");
@@ -818,7 +831,7 @@
     function draw(){
       const units = D.byArmy(id).slice().sort((a, b) => (ROLE_ORDER.indexOf(a.role) + 99) % 99 - (ROLE_ORDER.indexOf(b.role) + 99) % 99 || a.name.localeCompare(b.name));
       const t = sumUp(units), gs = D.games.filter(g => g.armyId === id), rec = recordOf(gs), ls = D.lists.filter(l => l.armyId === id);
-      const roles = ROLE_ORDER.map(r => [r, units.filter(u => (ROLE_ORDER.includes(u.role) ? u.role : "Other") === r)]).filter(x => x[1].length);
+      const roles = ROLE_ORDER.map(r => [r, units.filter(u => u.own !== "planned" && (ROLE_ORDER.includes(u.role) ? u.role : "Other") === r)]).filter(x => x[1].length);
       const shown = filter === "notready" ? units.filter(u => { const r = readiness(u); return r.ready < r.owned; }) : filter === "fav" ? units.filter(u => u.fav) : units;
       app.innerHTML = `
         <div class="crumbs"><a href="#/war">War Ledger</a> / <a href="#/war/armies">Armies</a> / ${esc(army.name)}</div>
@@ -831,7 +844,7 @@
         ${missingBanner(D)}
         <section class="war-stats five" aria-label="Army overview">
           <div class="wstat"><b>${num(t.points)}</b><span>Points</span><small>${army.scheme.limit ? `Building to ${ptsText(army.scheme.limit)}` : "Total of all units"}</small></div>
-          <div class="wstat"><b>${num(t.models)}</b><span>Models</span><small>${plural(units.length, "unit")}</small></div>
+          <div class="wstat"><b>${num(t.models)}</b><span>Models</span><small>${plural(units.length - t.planned, "unit")}${t.planned ? ` · ${t.planned} planned` : ""}</small></div>
           <div class="wstat ready"><b>${num(t.ready)}<small> / ${num(t.models)}</small></b><span>Battle ready</span><div class="wbar" aria-hidden="true"><i style="width:${pctOf(t.ready, t.models)}%"></i></div></div>
           <div class="wstat"><b>${gs.length}</b><span>${gs.length === 1 ? "Game" : "Games"}</span><small>${gs[0] ? "Last on " + esc(dayText(gs[0].date)) : "None logged yet"}</small></div>
           <div class="wstat"><b>${recText(rec)}</b><span>Record</span><small>${gs.length ? `${pctOf(rec.w, gs.length)}% won` : "Wins – losses"}</small></div>
@@ -845,8 +858,8 @@
             <div class="seg" role="group" aria-label="Show"><button type="button" data-filter="all" aria-pressed="${filter === "all"}">All units</button><button type="button" data-filter="notready" aria-pressed="${filter === "notready"}">Not battle ready</button><button type="button" data-filter="fav" aria-pressed="${filter === "fav"}">${STAR(true)} Starred</button></div></div>
           ${shown.length ? `<div class="wt-scroll"><table class="wtable">
             <thead><tr><th scope="col">Unit</th><th scope="col">Role</th><th scope="col" class="n">Owned</th><th scope="col" class="n">Built</th><th scope="col" class="n">Painted</th><th scope="col" class="n">Ready</th><th scope="col" class="n">Points</th></tr></thead>
-            <tbody>${shown.map(u => { const r = readiness(u); return `<tr><th scope="row"><span class="wt-unit">${warStar(u)}<span><button type="button" class="linkish" data-unit="${esc(u.id)}">${esc(u.name)}</button>${u.datasheet && u.datasheet !== u.name ? `<small>${esc(u.datasheet)}</small>` : ""}</span></span></th>
-              <td>${esc(u.role || "—")}</td><td class="n">${r.owned}</td><td class="n">${r.built}</td><td class="n">${r.painted}</td>
+            <tbody>${shown.map(u => { const r = readiness(u); return `<tr><th scope="row"><span class="wt-unit">${warStar(u)}<span><button type="button" class="linkish" data-unit="${esc(u.id)}">${esc(u.name)}</button>${u.own === "planned" ? PLANNED_TAG : ""}${u.datasheet && u.datasheet !== u.name ? `<small>${esc(u.datasheet)}</small>` : ""}</span></span></th>
+              <td>${esc(u.role || "—")}</td><td class="n">${r.planned ? `<span title="Planned: not bought yet">–</span>` : r.owned}</td><td class="n">${r.built}</td><td class="n">${r.painted}</td>
               <td class="n"><span class="rdy ${r.ready >= r.owned ? "ok" : r.ready ? "part" : "no"}">${r.ready}</span></td><td class="n">${num(r.points)}</td></tr>`; }).join("")}</tbody>
             ${filter === "all" ? `<tfoot><tr><th scope="row">Total</th><td></td><td class="n">${t.models}</td><td class="n">${t.built}</td><td class="n">${t.painted}</td><td class="n">${t.ready}</td><td class="n">${num(t.points)}</td></tr></tfoot>` : ""}
           </table></div>` : `<p class="hint">${filter === "fav" ? "No starred units yet. Tap the star beside a unit to keep it handy." : "Every unit is battle ready."}</p>`}
@@ -856,8 +869,9 @@
         <section class="war-sec" aria-labelledby="ab-h"><div class="sec-h"><h2 id="ab-h">Battles</h2>${D.warMissing ? "" : `<button type="button" class="btn-sm" data-log="${esc(id)}">Log a battle</button>`}</div>
           ${gs.length ? gameRows(gs.slice(0, 8), D) : `<p class="hint">No battles with this army yet.</p>`}</section>
         <section class="war-sec danger-zone" aria-labelledby="dz-h"><h2 id="dz-h" class="sr-only">Manage army</h2>
+          <p class="hint dz-note">Deleting removes this army from War Ledger and Livery Ledger: its ${plural(units.length, "unit")} and their photos, colours and recipes${ls.length ? `, ${plural(ls.length, "army list")}` : ""}${gs.length ? `, ${plural(gs.length, "battle report")}` : ""}. It can't be undone.</p>
           <div class="row-actions"><button type="button" class="btn-sm" data-rename>Rename army</button><button type="button" class="btn-sm danger" id="w-delarmy">Delete army</button><span class="msg" id="w-amsg" role="status"></span></div></section>`;
-      armButton($("w-delarmy"), "Tap again: deletes the army, its units, lists and battles", async () => {
+      armButton($("w-delarmy"), "Tap again to delete it everywhere", async () => {
         try { await store.removeArmy(army); flash(`Deleted ${army.name}`); location.hash = "#/war/armies"; }
         catch(err){ $("w-amsg").textContent = "Couldn't delete: " + errText(err); }
       });
@@ -932,11 +946,11 @@
       const t = sumUp(list), kits = D.kits.filter(k => !armyF || (armyOf(armyF) && k.faction === armyOf(armyF).faction));
       const armyCell = a => isPool(a) ? `<span class="wc-loose">Not in an army</span><small>${esc(factionName(a.faction))}</small>` : `<a href="#/war/army/${esc(a.id)}">${esc(a.name)}</a>`;
       $("wc-out").innerHTML = `
-        <p class="wc-sum">${plural(list.length, "unit")} · ${plural(t.models, "model")} · ${ptsText(t.points)} · ${pctOf(t.ready, t.models)}% battle ready</p>
+        <p class="wc-sum">${plural(list.length - t.planned, "unit")} · ${plural(t.models, "model")} · ${ptsText(t.points)} · ${pctOf(t.ready, t.models)}% battle ready${t.planned ? ` · ${t.planned} planned` : ""}</p>
         ${list.length ? `<div class="wt-scroll"><table class="wtable">
           <thead><tr><th scope="col">Unit</th><th scope="col">Army</th><th scope="col" class="n">Owned</th><th scope="col" class="n">Built</th><th scope="col" class="n">Painted</th><th scope="col" class="n">Ready</th><th scope="col" class="n">Points</th></tr></thead>
-          <tbody>${list.map(u => { const r = readiness(u), a = armyOf(u.armyId); return `<tr><th scope="row"><span class="wt-unit">${warStar(u)}<span><button type="button" class="linkish" data-unit="${esc(u.id)}">${esc(u.name)}</button><small>${esc(u.role || "")}</small></span></span></th>
-            <td>${armyCell(a)}</td><td class="n">${r.owned}</td><td class="n">${r.built}</td><td class="n">${r.painted}</td>
+          <tbody>${list.map(u => { const r = readiness(u), a = armyOf(u.armyId); return `<tr><th scope="row"><span class="wt-unit">${warStar(u)}<span><button type="button" class="linkish" data-unit="${esc(u.id)}">${esc(u.name)}</button>${u.own === "planned" ? PLANNED_TAG : ""}<small>${esc(u.role || "")}</small></span></span></th>
+            <td>${armyCell(a)}</td><td class="n">${r.planned ? `<span title="Planned: not bought yet">–</span>` : r.owned}</td><td class="n">${r.built}</td><td class="n">${r.painted}</td>
             <td class="n"><span class="rdy ${r.ready >= r.owned ? "ok" : r.ready ? "part" : "no"}">${r.ready}</span></td><td class="n">${num(r.points)}</td></tr>`; }).join("")}</tbody>
         </table></div>` : `<p class="hint">${D.units.length ? "No units match." : "No units yet. Add one here, or add them to one of your armies."}</p>`}
         ${kits.length ? `<p class="hint wc-kits"><a href="#/shame">Pile of shame</a>: ${plural(kits.length, "kit")} and ${plural(kits.reduce((a, k) => a + k.models, 0), "model")} still on the sprue.</p>` : ""}`;
@@ -958,7 +972,7 @@
   /* ---------- army lists ---------- */
   // What a list holds, set against the collection: what's owned, what's ready, what's missing.
   function listState(l, D){
-    const armyUnits = D.byArmy(l.armyId);
+    const armyUnits = factionUnits(D, l.armyId);
     const rows = l.units.map((e, i) => {
       if(e.u){
         const u = armyUnits.find(x => x.id === e.u);
@@ -966,10 +980,11 @@
       }
       return {i, missing: true, name: e.n, sheet: e.sheet, role: e.role || "Other", count: e.count, points: e.points};
     });
-    const live = rows.filter(x => !x.gone), owned = rows.filter(x => x.u);
+    const live = rows.filter(x => !x.gone), owned = rows.filter(x => x.u && x.u.own !== "planned");
     const models = live.reduce((a, x) => a + x.count, 0), have = owned.reduce((a, x) => a + x.count, 0), ready = owned.reduce((a, x) => a + x.r.ready, 0);
     return {rows, models, have, ready, points: live.reduce((a, x) => a + x.points, 0), avail: pctOf(have, models), readyPct: pctOf(ready, models),
-      notReady: owned.filter(x => x.r.ready < x.r.owned), missing: rows.filter(x => x.missing), gone: rows.filter(x => x.gone)};
+      notReady: owned.filter(x => x.r.ready < x.r.owned), missing: rows.filter(x => x.missing), gone: rows.filter(x => x.gone),
+      planned: rows.filter(x => x.u && x.u.own === "planned")};
   }
   function listCard(l, D){
     const s = listState(l, D), a = D.armies.find(x => x.id === l.armyId), gs = D.games.filter(g => g.listId === l.id), r = recordOf(gs);
@@ -1043,7 +1058,8 @@
     const byRole = rows => ROLE_ORDER.map(role => [role, rows.filter(x => (ROLE_ORDER.includes(x.role) ? x.role : "Other") === role)]).filter(x => x[1].length);
     function draw(){
       const s = listState(list, D), used = new Set(list.units.filter(e => e.u).map(e => e.u));
-      const coll = D.byArmy(army.id).filter(u => !used.has(u.id) && (!q || [u.name, u.datasheet, u.role].join(" ").toLowerCase().includes(q)));
+      const pool = factionUnits(D, army.id), coll = pool.filter(u => !used.has(u.id) && (!q || [u.name, u.datasheet, u.role].join(" ").toLowerCase().includes(q)))
+        .sort((a, b) => (a.armyId === army.id ? 0 : 1) - (b.armyId === army.id ? 0 : 1) || a.name.localeCompare(b.name));
       const over = list.limit && s.points > list.limit, gs = D.games.filter(g => g.listId === list.id), rec = recordOf(gs);
       const verdict = !s.rows.length ? ["", "Add units to see whether this list is ready for the table."]
         : s.avail >= 100 && s.readyPct >= 100 && !s.gone.length ? ["ok", "Yes. Every model in this list is in your collection and battle ready."]
@@ -1066,22 +1082,24 @@
         <section class="panel lr" aria-labelledby="lr-h"><h2 class="ph" id="lr-h">Ready for the table?</h2>
           <p class="verdict ${verdict[0]}">${verdict[1]}</p>
           ${s.notReady.length ? `<h3 class="lr-sub">Not battle ready</h3><ul class="lr-list">${s.notReady.map(x => `<li><button type="button" class="linkish" data-unit="${esc(x.u.id)}">${esc(x.name)}</button> <small>${x.r.ready} of ${x.r.owned} ready · ${why(x.r)}</small></li>`).join("")}</ul>` : ""}
-          ${s.missing.length ? `<h3 class="lr-sub">Not in your collection</h3><ul class="lr-list">${s.missing.map(x => `<li>${esc(x.name)} <small>${plural(x.count, "model")} · ${x.points} pts</small> <button type="button" class="btn-sm" data-own="${x.i}">I own this</button></li>`).join("")}</ul>` : ""}
+          ${s.planned.length ? `<h3 class="lr-sub">Planned, not bought yet</h3><ul class="lr-list">${s.planned.map(x => `<li><button type="button" class="linkish" data-unit="${esc(x.u.id)}">${esc(x.name)}</button> <small>${plural(x.count, "model")} · ${x.points} pts</small> <button type="button" class="btn-sm" data-bought="${esc(x.u.id)}">I bought it</button></li>`).join("")}</ul>` : ""}
+          ${s.missing.length ? `<h3 class="lr-sub">Not in your collection</h3><ul class="lr-list">${s.missing.map(x => `<li>${esc(x.name)} <small>${plural(x.count, "model")} · ${x.points} pts</small> <button type="button" class="btn-sm" data-own="${x.i}">I own this</button><button type="button" class="btn-sm" data-own="${x.i}" data-planned="1">I plan to get this</button></li>`).join("")}</ul>` : ""}
           ${s.gone.length ? `<p class="hint">${plural(s.gone.length, "unit")} in this list ${s.gone.length === 1 ? "was" : "were"} deleted from the army. <button type="button" class="btn-sm" data-prune>Remove from list</button></p>` : ""}
         </section>
         <div class="lb">
           <section class="panel lb-in" aria-labelledby="lb-in-h"><h2 class="ph" id="lb-in-h">In this list</h2>
             ${s.rows.length ? byRole(s.rows.filter(x => !x.gone)).map(([role, rows]) => `<h3 class="lb-role">${esc(role)} <small>${ptsText(rows.reduce((a, x) => a + x.points, 0))}</small></h3>
-              <ul class="lb-rows">${rows.map(x => `<li class="${x.missing ? "missing" : x.r.ready >= x.r.owned ? "ready" : "notready"}">
-                <span class="lb-name">${x.u ? `<button type="button" class="linkish" data-unit="${esc(x.u.id)}">${x.u.fav ? `<span class="star on" aria-label="Starred">${STAR(true)}</span> ` : ""}${esc(x.name)}</button>` : esc(x.name)}<small>${x.missing ? "Not owned" : `${x.r.ready}/${x.r.owned} ready`}${x.count > 1 ? ` · ${x.count} models` : ""}</small></span>
+              <ul class="lb-rows">${rows.map(x => `<li class="${x.missing ? "missing" : x.r.planned ? "missing planned" : x.r.ready >= x.r.owned ? "ready" : "notready"}">
+                <span class="lb-name">${x.u ? `<button type="button" class="linkish" data-unit="${esc(x.u.id)}">${x.u.fav ? `<span class="star on" aria-label="Starred">${STAR(true)}</span> ` : ""}${esc(x.name)}</button>` : esc(x.name)}<small>${x.missing ? "Not owned" : x.r.planned ? "Planned" : `${x.r.ready}/${x.r.owned} ready`}${x.count > 1 ? ` · ${x.count} models` : ""}</small></span>
                 <span class="lb-pts">${num(x.points)}</span>
                 <button type="button" class="btn-sm icon-x" data-rm="${x.i}" aria-label="Remove ${esc(x.name)} from the list">×</button></li>`).join("")}</ul>`).join("")
               : `<p class="hint">Add units from your collection, or paste a list you've built elsewhere.</p>`}
           </section>
           <section class="panel lb-coll" aria-labelledby="lb-c-h"><h2 class="ph" id="lb-c-h">Your collection</h2>
-            <input type="search" id="lb-q" placeholder="Search ${esc(army.name)}" aria-label="Search your collection" value="${esc(q)}">
-            ${coll.length ? `<ul class="lb-rows">${coll.map(u => { const r = readiness(u); return `<li><span class="lb-name">${esc(u.name)}<small>${esc(u.role || "")} · ${r.ready}/${r.owned} ready</small></span><span class="lb-pts">${num(u.points)}</span><button type="button" class="btn-sm" data-add="${esc(u.id)}" aria-label="Add ${esc(u.name)} to the list">Add</button></li>`; }).join("")}</ul>`
-              : `<p class="hint">${D.byArmy(army.id).length ? (q ? "No units match." : "Every unit in this army is already in the list.") : "This army has no units yet."}</p>`}
+            <p class="hint lb-note">Every ${esc(factionName(army.faction))} unit you have: this army's first, then your other ${esc(factionName(army.faction))} armies and units not in an army.</p>
+            <input type="search" id="lb-q" placeholder="Search your ${esc(factionName(army.faction))} units" aria-label="Search your collection" value="${esc(q)}">
+            ${coll.length ? `<ul class="lb-rows">${coll.map(u => { const r = readiness(u), home = homeOf(D, u, army.id); return `<li><span class="lb-name">${esc(u.name)}${u.own === "planned" ? PLANNED_TAG : ""}<small>${esc(u.role || "")} · ${r.planned ? "not bought yet" : `${r.ready}/${r.owned} ready`}${home ? ` · ${esc(home)}` : ""}</small></span><span class="lb-pts">${num(u.points)}</span><button type="button" class="btn-sm" data-add="${esc(u.id)}" aria-label="Add ${esc(u.name)} to the list">Add</button></li>`; }).join("")}</ul>`
+              : `<p class="hint">${pool.length ? (q ? "No units match." : "Every unit you have is already in the list.") : "No units of this faction yet."}</p>`}
             <button type="button" class="btn-sm" data-add-unit>+ Add a new unit to the army</button>
           </section>
         </div>
@@ -1098,8 +1116,14 @@
       const b = e.target.closest("button"); if(!b) return;
       if(b.dataset.add) save({units: list.units.concat({u: b.dataset.add})});
       else if(b.dataset.rm != null) save({units: list.units.filter((x, i) => i !== +b.dataset.rm)});
-      else if(b.matches("[data-prune]")) { const ids = new Set(D.byArmy(army.id).map(u => u.id)); save({units: list.units.filter(x => !x.u || ids.has(x.u))}); }
-      else if(b.dataset.unit) { const u = D.units.find(x => x.id === b.dataset.unit); if(u) openUnit(army, u, reload); }
+      else if(b.matches("[data-prune]")) { const ids = new Set(factionUnits(D, army.id).map(u => u.id)); save({units: list.units.filter(x => !x.u || ids.has(x.u))}); }
+      else if(b.dataset.unit) { const u = D.units.find(x => x.id === b.dataset.unit); if(u) openUnit(armyById(D, u.armyId) || army, u, reload, {armies: D.armies, pools: D.pools}); }
+      else if(b.dataset.bought) {
+        const u = D.units.find(x => x.id === b.dataset.bought); if(!u) return;
+        b.disabled = true;
+        try { await store.saveUnit(u.armyId, {...u, own: "owned"}, u.id, null, false, u); await reload(); flash(`${u.name} is now in your collection`); }
+        catch(err){ flash("Couldn't update: " + errText(err)); b.disabled = false; }
+      }
       else if(b.matches("[data-add-unit]")) openUnit(army, null, reload);
       else if(b.dataset.own != null) {
         // A unit from the list you do own after all: add it to the collection and link it.
@@ -1107,10 +1131,11 @@
         b.disabled = true;
         try {
           const sh = sheetsOf(army.faction).find(s => s.n === e2.sheet);
-          const row = await store.saveUnit(army.id, unitRow(army, sh, {name: e2.n, role: e2.role || (sh ? sh.r : "Other"), count: e2.count, points: e2.points}), null, null, false, null);
+          const planned = b.dataset.planned === "1";
+          const row = await store.saveUnit(army.id, unitRow(army, sh, {name: e2.n, role: e2.role || (sh ? sh.r : "Other"), count: e2.count, points: e2.points, own: planned ? "planned" : "owned"}), null, null, false, null);
           D = await warData(false);
           await save({units: list.units.map((x, i) => i === +b.dataset.own ? {u: row.id} : x)});
-          flash(`Added ${e2.n} to ${army.name}`);
+          flash(planned ? `${e2.n} added to ${army.name} as planned. Plan its colours in Livery Ledger.` : `Added ${e2.n} to ${army.name}`);
         } catch(err){ flash("Couldn't add it: " + errText(err)); b.disabled = false; }
       }
       else if(b.matches("[data-details]")) {
@@ -1153,7 +1178,8 @@
     const read = () => {
       const t = $("w-list").value, parsed = t.trim() ? (reader.parseCode(t) || reader.parseList(t)) : null;
       if(!parsed || !parsed.units.length){ plan = null; $("w-found").innerHTML = parsed ? `<p class="hint">No units found yet. Paste the whole list, including the points.</p>` : ""; $("w-add").disabled = true; return; }
-      const taken = new Set($("w-repl").checked ? [] : list.units.filter(x => x.u).map(x => x.u)), pool = D.byArmy(army.id);
+      // This army's units are matched first, then the rest of the faction's collection.
+      const taken = new Set($("w-repl").checked ? [] : list.units.filter(x => x.u).map(x => x.u)), pool = factionUnits(D, army.id).sort((a, b) => (a.armyId === army.id ? 0 : 1) - (b.armyId === army.id ? 0 : 1));
       const entries = parsed.units.map(x => {
         const cands = pool.filter(u => !taken.has(u.id) && u.datasheet === x.sheet.n);
         const hit = cands.find(u => u.count === x.count) || cands[0];
@@ -1212,7 +1238,7 @@
       <label>Notes<textarea id="w-gn" rows="3" maxlength="1000" placeholder="What worked, what didn't, what to try next time">${esc(seed.notes || "")}</textarea></label>
       <div class="row-actions"><button type="submit" class="primary">${edit ? "Save battle" : "Log battle"}</button>${edit ? `<button type="button" class="danger" id="w-gdel">Delete</button>` : ""}<span class="msg" id="w-msg" role="status"></span></div>`, "wide");
     const fill = () => {
-      const a = $("w-ga").value, ls = D.lists.filter(l => l.armyId === a), us = D.byArmy(a);
+      const a = $("w-ga").value, ls = D.lists.filter(l => l.armyId === a), us = factionUnits(D, a);
       $("w-gl").innerHTML = `<option value="">No list / not recorded</option>${ls.map(l => `<option value="${esc(l.id)}"${l.id === seed.listId ? " selected" : ""}>${esc(l.name)}</option>`).join("")}`;
       $("w-gv").innerHTML = `<option value="">None</option>${us.map(u => `<option value="${esc(u.id)}"${u.id === seed.mvp ? " selected" : ""}>${esc(u.name)}</option>`).join("")}`;
     };
@@ -1674,7 +1700,8 @@
      Homepage: what Livery Ledger does, with log in / sign up in the hero
      ============================================================ */
   // A feature's picture: img/shots/<name>.webp when it's been added, otherwise a drawing made from the app's own parts.
-  const WAR_FIELDS = ["built", "ready", "bought", "price", "shop", "assembly"];
+  const WAR_FIELDS = ["built", "ready", "bought", "price", "shop", "assembly", "own"];
+  const PLANNED_TAG = `<span class="tag plan" title="Planned: not bought yet">Planned</span>`;
   const singleRole = r => ["Epic Hero","Character","Vehicle","Monster","Dedicated Transport","Fortification"].includes(r);
   /* ---------- army list import: reads pasted lists and list-builder share codes for one faction ---------- */
   function makeListReader(factionId){
@@ -3055,7 +3082,8 @@ Redemptor Dreadnought (210 points)</pre>
       const name = $("s-name").value.trim() || (f.name + " army");
       const b = $("s-save"); b.disabled = true; $("s-msg").textContent = "Saving…"; $("s-msg").classList.remove("err");
       try {
-        const saved = await store.saveArmy({faction: f.id, name, scheme: sch, public: editing ? army.public : false}, editing ? army.id : null);
+        // Choosing colours here settles them, so a War-made army stops asking.
+        const saved = await store.saveArmy({faction: f.id, name, scheme: {...sch, wonly: false}, public: editing ? army.public : false}, editing ? army.id : null);
         const moved = editing ? await followColours(army.scheme, sch) : 0;
         setupDirty = false; $("s-msg").textContent = moved ? `Saved. ${plural(moved, "unit")} updated to the new colours.` : "Saved.";
         return saved;
@@ -3236,6 +3264,7 @@ Redemptor Dreadnought (210 points)</pre>
         </div>
       </div>
 
+      ${canWrite && scheme.wonly ? `<div class="banner colours-prompt" id="wonly-banner"><span class="dot"></span><span><strong>This army was set up in War Ledger</strong>, so it's using the official ${esc(f.name)} colours. Choose your own scheme before you start painting, or keep these.</span><span class="cp-acts"><a class="btn btn-sm primary" href="#/army/${esc(army.id)}/colours">Choose your colours</a><button type="button" class="btn-sm" id="b-keepcol">Keep these colours</button></span></div>` : ""}
       ${!canWrite ? `<div class="banner viewonly"><span class="dot on"></span><span>You're viewing a shared ledger. You can look but not change anything.</span>${store.kind === "supabase" && !store.session ? `<button type="button" class="btn-sm" data-signin>Sign in</button>` : `<span class="vo-social" id="vo-social"></span>`}</div>` : ""}
       <section class="key" id="key" aria-label="Rank colours">${scheme.tiers.map(t => `<div>${tierBadge(scheme, t, 44)}<span><strong>${esc(t.name)}</strong><small>${esc(t.note || cname(t.color) + " " + PROF.head)}</small></span></div>`).join("")}</section>
 
@@ -3714,6 +3743,19 @@ Redemptor Dreadnought (210 points)</pre>
     const starBtn = (u, big) => canWrite
       ? `<button type="button" class="star${u.fav ? " on" : ""}${big ? " big" : ""}" data-star="${esc(u.id)}" aria-pressed="${!!u.fav}" ${big ? "" : `aria-label="${u.fav ? "Unstar" : "Star"} ${esc(u.name)}" `}title="${u.fav ? "Starred. Click to unstar" : "Star this unit"}">${STAR(u.fav)}${big ? `<span>${u.fav ? "Starred" : "Star"}</span>` : ""}</button>`
       : u.fav ? `<span class="star on${big ? " big" : ""}" title="Starred">${STAR(true)}${big ? "<span>Starred</span>" : ""}</span>` : "";
+    // A planned unit has been bought: it now counts as owned (and starts on the sprue until it's built).
+    async function markBought(id){
+      const u = units.find(x => x.id === id); if(!u || busy || !canWrite) return;
+      busy = true;
+      try {
+        const row = await store.saveUnit(army.id, {...u, own: "owned"}, u.id, null, false, u);
+        units = units.map(x => x.id === row.id ? row : x);
+        render();
+        if($("detail").open && $("detail").dataset.unit === row.id) openDetail(row.id);
+        toast(`${row.name} is now in your collection`);
+      } catch(err){ msg("Couldn't update: " + errText(err), true); }
+      finally { busy = false; }
+    }
     async function toggleStar(id){
       const u = units.find(x => x.id === id); if(!u || busy || !canWrite) return;
       busy = true;
@@ -3737,7 +3779,7 @@ Redemptor Dreadnought (210 points)</pre>
         ${selecting ? `<span class="pick" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg></span>` : ""}
         ${img ? `<div class="photo"><img src="${esc(img)}" alt="" loading="lazy" decoding="async"></div>` : ""}
         <div class="body">
-          <div class="card-top">${unitBadge(u, scheme, 60)}<div><h3><button type="button" class="card-open" ${selecting ? `aria-pressed="${pk}" aria-label="Select ${esc(u.name)}"` : `aria-label="View ${esc(u.name)}"`}>${esc(u.name)}</button></h3><div class="type">${esc([u.datasheet && u.datasheet !== u.name ? u.datasheet : "", u.role].filter(Boolean).join(" · ") || "Unit")}</div></div>${u.points ? `<span class="pts">${fmt(u.points)}<small>pts</small></span>` : ""}${starBtn(u)}</div>
+          <div class="card-top">${unitBadge(u, scheme, 60)}<div><h3><button type="button" class="card-open" ${selecting ? `aria-pressed="${pk}" aria-label="Select ${esc(u.name)}"` : `aria-label="View ${esc(u.name)}"`}>${esc(u.name)}</button>${u.own === "planned" ? PLANNED_TAG : ""}</h3><div class="type">${esc([u.datasheet && u.datasheet !== u.name ? u.datasheet : "", u.role].filter(Boolean).join(" · ") || "Unit")}</div></div>${u.points ? `<span class="pts">${fmt(u.points)}<small>pts</small></span>` : ""}${starBtn(u)}</div>
           <dl>
             <dt>Rank</dt><dd>${esc(tier.name || "—")}</dd>
             ${u.head === "none" ? "" : `<dt>${u.head === "bare" ? "Face" : esc(LB.helmet)}</dt><dd>${u.head === "bare" ? chip(u.skin) + "Bare head" : chip(u.helmet) + esc(nameOf(u, "helmet"))}${u.hdetail ? ", " + esc(u.hdetail) : ""}</dd>`}
@@ -3769,8 +3811,9 @@ Redemptor Dreadnought (210 points)</pre>
             <div class="grp-cards">${us.map(cardHtml).join("")}</div></section>`).join("")
           : list.map(cardHtml).join("");
       }
-      const models = units.reduce((a, u) => a + (+u.count || 0), 0);
-      const done = units.reduce((a, u) => a + (+u.painted || 0), 0);
+      const ownedUnits = units.filter(u => u.own !== "planned");   // planned units aren't counted until they're bought
+      const models = ownedUnits.reduce((a, u) => a + (+u.count || 0), 0);
+      const done = ownedUnits.reduce((a, u) => a + (+u.painted || 0), 0);
       const pts = units.reduce((a, u) => a + (+u.points || 0), 0);
       const pct = models ? Math.round(done / models * 100) : 0;
       $("st-units").textContent = units.length; $("st-done").textContent = `${done}/${models}`; $("st-pct").textContent = pct + "%";
@@ -3818,7 +3861,8 @@ Redemptor Dreadnought (210 points)</pre>
         })()}</div>
         <div class="info">
           <div><h2 id="dt-name">${esc(u.name)}</h2>
-            <div class="meta">${esc(u.datasheet || "Unit")}${u.role ? " · " + esc(u.role) : ""} · ${plural(u.count, "model")}${u.points ? " · " + fmt(u.points) + "\u00a0pts" : ""}</div></div>
+            <div class="meta">${esc(u.datasheet || "Unit")}${u.role ? " · " + esc(u.role) : ""} · ${plural(u.count, "model")}${u.points ? " · " + fmt(u.points) + "\u00a0pts" : ""}</div>
+            ${u.own === "planned" ? `<p class="plan-note">${PLANNED_TAG}<span>Not bought yet. Plan its colours now; it counts towards your totals once you buy it.</span>${canWrite ? `<button type="button" class="btn-sm" data-bought="${esc(u.id)}">I bought it</button>` : ""}</p>` : ""}</div>
           <div class="row">${img ? unitBadge(u, scheme, 64) : ""}<span class="row-end">${starBtn(u, true)}<span class="pill s-${esc(u.status)}">${esc(u.status === "done" ? "Painted" : stageLabel(u))}</span></span></div>
           ${box("painting", "Painting", `<div class="stage-list">${STAGES.map(([k, l]) => `<span class="${(u.stages || []).includes(k) ? "on" : ""}">${l}</span>`).join("")}</div>
             <p class="prose" style="margin-top:10px">${u.painted} of ${plural(u.count, "model")} painted</p>`)}
@@ -4081,6 +4125,8 @@ Redemptor Dreadnought (210 points)</pre>
       const ed = e.target.closest("[data-edit]"), dup = e.target.closest("[data-dup]"), del = e.target.closest("[data-del]");
       const sr = e.target.closest("[data-star]");
       if(sr){ toggleStar(sr.dataset.star); return; }
+      const bo = e.target.closest("[data-bought]");
+      if(bo){ markBought(bo.dataset.bought); return; }
       const sh = e.target.closest("[data-show]");
       if(sh){
         $("dt-main").innerHTML = `<img src="${esc(sh.dataset.show)}" alt="">`;
@@ -4207,6 +4253,11 @@ Redemptor Dreadnought (210 points)</pre>
       });
     }
 
+    if($("b-keepcol")) $("b-keepcol").addEventListener("click", async e => {
+      e.target.disabled = true;
+      try { army = await store.saveArmy({faction: army.faction, name: army.name, scheme: {...army.scheme, wonly: false}, public: army.public}, army.id); scheme.wonly = false; $("wonly-banner").remove(); toast("Keeping the official colours. Change them any time with Edit colours."); }
+      catch(err){ e.target.disabled = false; msg("Couldn't save: " + errText(err), true); }
+    });
     $("b-export").addEventListener("click", () => {
       downloadJSON({app: "livery-ledger", version: 4, exported: new Date().toISOString(),
         army: {faction: army.faction, name: army.name, scheme: army.scheme},
@@ -4233,9 +4284,14 @@ Redemptor Dreadnought (210 points)</pre>
       const dd = $("deldlg");
       $("b-delarmy").addEventListener("click", () => {
         const n = units.length, photos = units.filter(u => u.image).length;
-        $("dl-text").textContent = `This permanently deletes ${army.name}` +
-          (n ? ` and its ${plural(n, "unit")}${photos ? `, including ${plural(photos, "photo")}` : ""}` : "") +
-          ". It can't be undone.";
+        const base = `This permanently deletes ${army.name}` +
+          (n ? ` and its ${plural(n, "unit")}${photos ? `, including ${plural(photos, "photo")}` : ""}` : "");
+        $("dl-text").textContent = base + ". It can't be undone.";
+        // The same army is in War Ledger, so its army lists and battle reports go with it.
+        Promise.all([store.listLists().catch(() => []), store.listGames().catch(() => [])]).then(([ls, gs]) => {
+          const nl = ls.filter(l => l.armyId === army.id).length, ng = gs.filter(g => g.armyId === army.id).length;
+          if(dd.open) $("dl-text").textContent = base + `. It's the same army in War Ledger, so it goes from there too${nl || ng ? `, along with its ${[nl ? plural(nl, "army list") : "", ng ? plural(ng, "battle report") : ""].filter(Boolean).join(" and ")}` : ""}. It can't be undone.`;
+        });
         $("dl-msg").textContent = ""; $("dl-go").disabled = false;
         dd.showModal(); $("dl-cancel").focus();
       });
@@ -4674,7 +4730,7 @@ Redemptor Dreadnought (210 points)</pre>
       const sub = [u.datasheet && u.datasheet !== u.name ? u.datasheet : "", by === "role" ? "" : u.role, by === "army" ? "" : a.name].filter(Boolean).join(" · ");
       return `<a class="ro-row" href="#/army/${esc(a.id)}/unit/${esc(u.id)}">
         <span class="ro-badge">${unitBadge(u, a.scheme, 44)}</span>
-        <span class="ro-name"><strong>${u.fav ? `<span class="star on" title="Starred">${STAR(true)}</span>` : ""}${esc(u.name || u.datasheet || "Unit")}</strong><small>${esc(sub || "Unit")}</small></span>
+        <span class="ro-name"><strong>${u.fav ? `<span class="star on" title="Starred">${STAR(true)}</span>` : ""}${esc(u.name || u.datasheet || "Unit")}${u.own === "planned" ? " " + PLANNED_TAG : ""}</strong><small>${esc(sub || "Unit")}</small></span>
         <span class="ro-prog"><span class="ro-bar"><i style="width:${pct}%"></i></span><small>${dn}/${c} painted</small></span>
         <span class="ro-pts">${u.points ? num(u.points) + "\u00a0pts" : "—"}</span>
         <span class="ro-st st-${esc(st)}">${esc(STATUS[st] || st)}</span>

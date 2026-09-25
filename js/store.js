@@ -97,6 +97,8 @@
     o.price = Math.min(1e6, Math.max(0, Math.round((parseFloat(r.price) || 0) * 100) / 100));
     o.shop = String(r.shop || "").slice(0, 80);
     o.assembly = String(r.assembly || "").slice(0, 600);
+    // Planned: in your plans but not bought yet. It's never battle ready and isn't counted as owned.
+    o.own = r.own === "planned" ? "planned" : "owned";
     if(!o.name) o.name = o.datasheet || "Unnamed unit";
     return o;
   }
@@ -248,7 +250,7 @@
       async getArmy(id){ const a = db.armies.find(x => x.id === id); return a ? {...a} : null; },
       async summary(){
         const m = {};
-        db.units.forEach(u => { const s = m[u.armyId] || (m[u.armyId] = {units:0, models:0, done:0, points:0}); s.units++; s.models += +u.count || 0; s.done += Math.min(+u.count || 0, +u.painted || (u.status === "done" ? +u.count || 0 : 0)); s.points += +u.points || 0; });
+        db.units.forEach(u => { const s = m[u.armyId] || (m[u.armyId] = {units:0, models:0, done:0, points:0}); if(u.own === "planned"){ s.units++; s.planned = (s.planned || 0) + 1; return; } s.units++; s.models += +u.count || 0; s.done += Math.min(+u.count || 0, +u.painted || (u.status === "done" ? +u.count || 0 : 0)); s.points += +u.points || 0; });
         return m;
       },
       async saveArmy(a, id){
@@ -329,10 +331,10 @@
       return path;
     }
     const mustOk = ({data, error}) => { if(error) throw error; return data; };
-    const SUM_COLS = "army_id,data->>status,data->>count,data->>painted,data->>points";
+    const SUM_COLS = "army_id,data->>status,data->>count,data->>painted,data->>points,data->>own";
     function totals(rows){
       const m = {};
-      rows.forEach(r => { const s = m[r.army_id] || (m[r.army_id] = {units:0, models:0, done:0, points:0}); const c = parseInt(r.count, 10) || 1; const p = parseInt(r.painted, 10); s.units++; s.models += c; s.done += Math.min(c, Number.isFinite(p) ? p : (r.status === "done" ? c : 0)); s.points += parseInt(r.points, 10) || 0; });
+      rows.forEach(r => { const s = m[r.army_id] || (m[r.army_id] = {units:0, models:0, done:0, points:0}); if(r.own === "planned"){ s.units++; s.planned = (s.planned || 0) + 1; return; } const c = parseInt(r.count, 10) || 1; const p = parseInt(r.painted, 10); s.units++; s.models += c; s.done += Math.min(c, Number.isFinite(p) ? p : (r.status === "done" ? c : 0)); s.points += parseInt(r.points, 10) || 0; });
       return m;
     }
     // War Ledger's tables are added by supabase/features.sql; say so plainly if they're not there yet.
