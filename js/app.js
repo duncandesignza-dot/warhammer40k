@@ -999,6 +999,51 @@
     });
     return out;
   }
+  // "Things to check": friendly notes about a list. They're suggestions only and never stop you using it,
+  // because house rules, missions and new rules all change what's allowed.
+  const listChecksOn = () => settings.listChecks !== false;
+  const DAY_MS = 864e5;
+  function listChecks(l, s, faction){
+    const out = [], add = (id, text, more) => out.push({id, text, more});
+    const rows = s.rows.filter(x => !x.gone), sheets = sheetsOf(faction);
+    const sheetName = x => x.u ? x.u.datasheet || x.name : x.sheet || x.name;
+    const sheetOf = x => sheets.find(z => z.n === sheetName(x));
+    const epic = x => x.role === "Epic Hero" || !!(sheetOf(x) || {}).eh;
+    if(!rows.length) return out;
+    if(l.limit && s.points > l.limit) add("over", `${num(s.points - l.limit)} pts over the limit.`, `The list comes to ${ptsText(s.points)} against a limit of ${ptsText(l.limit)}.`);
+    if(!rows.some(x => x.warlord)) add("warlord", "No warlord chosen.", rows.some(x => isCharRole(x.role)) ? "Choose one with the ⋯ button on a character." : "There are no characters in this list to lead it.");
+    if(!(l.detachments || []).length) add("detachment", "No detachment chosen.", "Add one in Edit details.");
+    const bySheet = {};
+    rows.forEach(x => { const n = sheetName(x); (bySheet[n] = bySheet[n] || []).push(x); });
+    Object.entries(bySheet).forEach(([n, xs]) => {
+      if(xs.length < 2) return;
+      if(xs.some(epic)) add("epic:" + n, `${n} is in the list ${xs.length} times.`, "Epic Heroes are usually limited to one each.");
+      else { const cap = ["Battleline", "Dedicated Transport"].includes(xs[0].role) ? 6 : 3;
+        if(xs.length > cap) add("copies:" + n, `${xs.length} units of ${n}.`, `Most games allow up to ${cap} of each datasheet${cap === 3 ? " (6 for Battleline and Dedicated Transports)" : ""}.`); }
+    });
+    const enh = rows.filter(x => x.enh);
+    if(enh.length > 3) add("enh-count", `${enh.length} enhancements.`, "Most games allow up to 3 in an army.");
+    const byEnh = {};
+    enh.forEach(x => { const n = x.enh.n.toLowerCase(); (byEnh[n] = byEnh[n] || []).push(x); });
+    Object.values(byEnh).forEach(xs => { if(xs.length > 1) add("enh-dup:" + xs[0].enh.n.toLowerCase(), `${xs[0].enh.n} is on ${xs.length} units.`, "Each enhancement can usually only be taken once."); });
+    enh.filter(epic).forEach(x => add("enh-epic:" + x.k, `${x.name} has an enhancement.`, "Epic Heroes usually can't take enhancements."));
+    enh.filter(x => !isCharRole(x.role)).forEach(x => add("enh-role:" + x.k, `${x.name} has an enhancement but isn't a character.`, "Enhancements usually go on characters."));
+    rows.forEach(x => {
+      const leaders = rows.filter(r => r.lead === x.k);
+      if(leaders.length > 1) add("lead:" + x.k, `${x.name} is led by ${leaders.map(r => r.name).join(" and ")}.`, "A unit usually has one leader, unless a datasheet says it can have more.");
+    });
+    // Single-model units only: bigger units cost different amounts at different sizes.
+    rows.forEach(x => {
+      const sh = sheetOf(x);
+      if(!sh || !sh.p || x.count !== 1 || (x.u && x.e.pts != null) || x.base === sh.p) return;
+      add("pts:" + x.k + ":" + sh.p, `${x.name} is ${ptsText(x.base)} here but ${ptsText(sh.p)} in the latest datasheet points.`, x.u ? "If the points have changed, update the unit." : "If the points have changed, update them with the ⋯ button.");
+    });
+    if(l.ptsAsOf){
+      const days = Math.floor((Date.now() - new Date(l.ptsAsOf + "T12:00:00")) / DAY_MS);
+      if(days > 90) add("date:" + l.ptsAsOf, `Points last checked ${niceDay(l.ptsAsOf)}.`, "Points change a few times a year, so check they're still current.");
+    } else if(l.status === "tournament") add("date", "No points date set.", "Note when you checked the points in Edit details, so you know they're current.");
+    return out;
+  }
   // What a list holds, set against the collection: what's owned, what's ready, what's missing.
   // A row's points are the unit's (or the list's override for it) plus any enhancement.
   function listState(l, D){
@@ -1021,7 +1066,8 @@
   }
   function listCard(l, D){
     const s = listState(l, D), a = D.armies.find(x => x.id === l.armyId), gs = D.games.filter(g => g.listId === l.id), r = recordOf(gs);
-    const note = !s.rows.length ? "No units yet" : l.limit && s.points > l.limit ? "Over the points limit" : s.avail < 100 ? `${s.avail}% in your collection` : "All in your collection";
+    const hidden = new Set(l.ignored || []), checks = listChecksOn() && a ? listChecks(l, s, a.faction).filter(c => !hidden.has(c.id)).length : 0;
+    const note = !s.rows.length ? "No units yet" : checks ? `<span class="tc-chip">${plural(checks, "thing")} to check</span>` : s.avail < 100 ? `${s.avail}% in your collection` : "All in your collection";
     return `<a class="lcard war-card${l.status === "archived" ? " archived" : ""}" href="#/war/list/${esc(l.id)}">
       <div class="card-top">${a ? armyBadge(a, 44) : ""}<div><h3>${esc(l.name)}</h3><div class="meta">${esc([a ? a.name : "Deleted army", sizeName(l), detText(l)].filter(Boolean).join(" · "))}</div></div>${statusTag(l)}</div>
       <div class="wc-nums"><span><b>${num(s.points)}</b>${l.limit ? ` / ${num(l.limit)}` : ""} pts</span><span><b>${s.rows.length}</b> ${s.rows.length === 1 ? "unit" : "units"}</span>${gs.length ? `<span><b>${recText(r)}</b> record</span>` : ""}</div>
@@ -1131,6 +1177,17 @@
     async function reload(){ D = await warData(false); list = D.lists.find(l => l.id === id) || list; army = D.armies.find(a => a.id === list.armyId) || army; draw(); }
     const why = r => r.built < r.owned ? "not all built" : readyRule() === "based" && r.painted >= r.owned ? "needs basing" : readyRule() === "built" ? "not ready" : `${r.owned - r.painted} to paint`;
     const byRole = rows => ROLE_ORDER.map(role => [role, rows.filter(x => (ROLE_ORDER.includes(x.role) ? x.role : "Other") === role)]).filter(x => x[1].length);
+    function checksPanel(s){
+      if(!listChecksOn()) return "";
+      const hidden = new Set(list.ignored || []), all = listChecks(list, s, army.faction), shown = all.filter(c => !hidden.has(c.id)), nHid = all.length - shown.length;
+      if(!all.length) return "";
+      return `<section class="panel tc" aria-labelledby="tc-h"><h2 class="ph" id="tc-h">Things to check${shown.length ? ` <span class="tc-n">${shown.length}</span>` : ""}</h2>
+        ${shown.length ? `<p class="hint">Suggestions only. Nothing here stops you using this list.</p>
+        <ul class="tc-list">${shown.map(c => `<li><span><strong>${esc(c.text)}</strong>${c.more ? ` <small>${esc(c.more)}</small>` : ""}</span><button type="button" class="btn-sm" data-hide-check="${esc(c.id)}" aria-label="Hide: ${esc(c.text)}">Hide</button></li>`).join("")}</ul>`
+          : `<p class="hint">Nothing new to check.</p>`}
+        ${nHid ? `<p class="hint tc-hid">${plural(nHid, "check")} hidden. <button type="button" class="linkish" data-unhide-checks>Show ${nHid === 1 ? "it" : "them"} again</button></p>` : ""}
+      </section>`;
+    }
     function draw(){
       const s = listState(list, D), used = new Set(list.units.filter(e => e.u).map(e => e.u));
       const pool = factionUnits(D, army.id), coll = pool.filter(u => !used.has(u.id) && (!q || [u.name, u.datasheet, u.role].join(" ").toLowerCase().includes(q)))
@@ -1155,6 +1212,7 @@
           <div class="wstat"><b>${s.avail}%</b><span>Models available</span><small>${num(s.have)} of ${num(s.models)} in your collection</small></div>
           <div class="wstat ready"><b>${s.readyPct}%</b><span>Battle ready</span><div class="wbar" aria-hidden="true"><i style="width:${s.readyPct}%"></i></div><small>${num(s.ready)} of ${num(s.models)} models</small></div>
         </section>
+        ${checksPanel(s)}
         <section class="panel lr" aria-labelledby="lr-h"><h2 class="ph" id="lr-h">Ready for the table?</h2>
           <p class="verdict ${verdict[0]}">${verdict[1]}</p>
           ${s.notReady.length ? `<h3 class="lr-sub">Not battle ready</h3><ul class="lr-list">${s.notReady.map(x => `<li><button type="button" class="linkish" data-unit="${esc(x.u.id)}">${esc(x.name)}</button> <small>${x.r.ready} of ${x.r.owned} ready · ${why(x.r)}</small></li>`).join("")}</ul>` : ""}
@@ -1233,6 +1291,12 @@
         save({units: list.units.filter((x, i) => i !== +b.dataset.rm).map(x => gone && x.lead === gone.k ? (({lead, ...r}) => r)(x) : x)});
       }
       else if(b.dataset.opts != null) openEntryOptions(+b.dataset.opts);
+      else if(b.dataset.hideCheck){
+        // Keep focus in the panel after the redraw.
+        await save({ignored: [...new Set((list.ignored || []).concat(b.dataset.hideCheck))]});
+        const next = app.querySelector("[data-hide-check]") || app.querySelector("[data-unhide-checks]"); if(next) next.focus();
+      }
+      else if(b.matches("[data-unhide-checks]")) { await save({ignored: []}); const f = app.querySelector("[data-hide-check]"); if(f) f.focus(); }
       else if(b.matches("[data-prune]")) { const ids = new Set(factionUnits(D, army.id).map(u => u.id)); save({units: list.units.filter(x => !x.u || ids.has(x.u))}); }
       else if(b.dataset.unit) { const u = D.units.find(x => x.id === b.dataset.unit); if(u) openUnit(armyById(D, u.armyId) || army, u, reload, {armies: D.armies, pools: D.pools}); }
       else if(b.dataset.bought) {
@@ -2813,6 +2877,7 @@ Redemptor Dreadnought (210 points)</pre>
             <label>A model is battle ready when it's<select id="set-ready">${READY_RULES.map(([v, l]) => opt(v, readyRule(), l)).join("")}</select></label>
           </div>
           <p class="hint">Used for battle readiness across War Ledger. You can still set any unit by hand.</p>
+          <label class="switch"><input type="checkbox" id="set-checks" ${listChecksOn() ? "checked" : ""}><span class="track" aria-hidden="true"><i></i></span><span>Things to check on army lists<small>Friendly notes such as going over the points limit or having no warlord. They never stop you using a list.</small></span></label>
           <div class="msg" id="set-wmsg" role="status"></div>
         </section>
         <section class="panel set-sec">
@@ -2839,6 +2904,9 @@ Redemptor Dreadnought (210 points)</pre>
     const saved = async patch => { try { await saveSettings(patch); say("set-msg", "Saved."); } catch(err){ say("set-msg", "Saved on this device, but not to your account: " + errText(err), true); } };
     $("set-points").addEventListener("change", e => saved({hidePoints: e.target.checked}));
     $("set-cur").addEventListener("change", e => saved({currency: e.target.value}));
+    $("set-checks").addEventListener("change", async e => {
+      try { await saveSettings({listChecks: e.target.checked}); $("set-wmsg").textContent = "Saved."; } catch(err){ $("set-wmsg").textContent = "Couldn't save: " + errText(err); }
+    });
     $("set-ready").addEventListener("change", async e => {
       try { await saveSettings({ready: e.target.value}); $("set-wmsg").textContent = "Saved."; } catch(err){ $("set-wmsg").textContent = "Couldn't save: " + errText(err); }
     });

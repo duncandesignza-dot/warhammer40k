@@ -1555,3 +1555,21 @@ header.top .wh-id h1{margin:0}
   .lb-in .lb-name{flex-basis:100%}
   .lb-in .lb-pts{margin-left:auto}
 }
+/* "Things to check" on army lists: amber, and never blocking. */
+.tc{border-color:rgba(251,191,36,.35);border-left:3px solid var(--warn)}
+.panel.tc h2.ph{color:var(--warn);display:flex;align-items:center;gap:8px}
+.tc-n{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 6px;border-radius:99px;background:var(--warn);color:#1a1405;font-family:var(--mono);font-size:.7rem;letter-spacing:0}
+.tc>.hint{margin:0 0 10px}
+.tc-list{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:8px}
+.tc-list li{display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid rgba(251,191,36,.25);border-radius:12px;background:rgba(251,191,36,.06)}
+.tc-list li>span{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.tc-list strong{font-weight:600}
+.tc-list small{color:var(--muted);font-size:.84rem}
+.tc-list .btn-sm{flex:none}
+.tc .tc-hid{margin:10px 0 0}
+.tc-chip{color:var(--warn)}
+@media (max-width:420px){
+  .tc-list li{flex-wrap:wrap;row-gap:8px}
+  .tc-list li>span{flex-basis:100%}
+  .tc-list .btn-sm{margin-left:auto}
+}

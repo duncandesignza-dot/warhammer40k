@@ -178,7 +178,9 @@
     return {armyId: String(l.armyId || "").slice(0, 60), name: String(l.name || "Army list").trim().slice(0, 80) || "Army list",
       limit: int(l.limit, 0, 20000), size: slug(l.size), detachments: dets, detachment: dets.join(" + "),
       status: LIST_STATUS.includes(l.status) ? l.status : "draft", ptsAsOf: /^\d{4}-\d{2}-\d{2}$/.test(l.ptsAsOf || "") ? l.ptsAsOf : "",
-      notes: String(l.notes || "").slice(0, 600), units};
+      notes: String(l.notes || "").slice(0, 600), units,
+      // "Things to check" the player has looked at and hidden for this list.
+      ignored: [...new Set((Array.isArray(l.ignored) ? l.ignored : []).map(x => String(x).slice(0, 120)).filter(Boolean))].slice(0, 60)};
   }
   // A battle: when, with which list, against whom, and how it went.
   function cleanGame(g){
