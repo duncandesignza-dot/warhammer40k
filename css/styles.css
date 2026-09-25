@@ -1509,3 +1509,13 @@ dialog.wdlg.wide{max-width:min(760px,calc(100vw - 24px))}
 header.top .wh-id{min-width:0}
 header.top .wh-id .eyebrow{margin-bottom:6px}
 header.top .wh-id h1{margin:0}
+/* Livery: Paints & recipes page */
+.pp-tabs{display:inline-flex;margin:0 0 16px}
+.pp-body{display:flex;flex-direction:column;gap:14px}
+.pp-body>.hint,.pp-head .hint{margin:0;color:var(--muted);font-size:.88rem;max-width:70ch}
+.pp-head{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap}
+.pp-head .row-actions input[type=search]{width:220px}
+.r-used{margin:0;font-size:.8rem;color:var(--muted)}
+.r-used a{color:var(--brand)}
+.r-notes{margin:0;font-size:.84rem;color:var(--muted)}
+.pp-body .r-edit.panel{padding:20px}
