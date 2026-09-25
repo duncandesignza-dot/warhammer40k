@@ -1506,11 +1506,14 @@
     }
     return {parseCode, parseList, matchSheet};
   }
+  const LOGO_DROP = `<svg viewBox="0 0 64 64" width="34" height="34" aria-hidden="true"><path d="M32 3.5 55 10.5V29c0 14.6-9.6 25.5-23 31.5C18.6 54.5 9 43.6 9 29V10.5Z" fill="#3ddc84"/><path d="M32 17.5s-9 10.4-9 17.2a9 9 0 0 0 18 0c0-6.8-9-17.2-9-17.2Z" fill="#f2f6f3" stroke="#06080a" stroke-width="3" stroke-linejoin="round"/></svg>`;
+  const LOGO_SWORDS = `<svg viewBox="0 0 64 64" width="34" height="34" aria-hidden="true"><path d="M32 3.5 55 10.5V29c0 14.6-9.6 25.5-23 31.5C18.6 54.5 9 43.6 9 29V10.5Z" fill="#ec5a5f"/><g stroke-linecap="round" stroke-linejoin="round"><g stroke="#06080a"><path d="M22 17.5 38 39M42 17.5 26 39" stroke-width="7"/><path d="M33.5 42.5 42.5 35.5M30.5 42.5 21.5 35.5" stroke-width="6"/></g><path d="M22 17.5 38 39M42 17.5 26 39" stroke="#f2f6f3" stroke-width="3.4"/><path d="M33.5 42.5 42.5 35.5M30.5 42.5 21.5 35.5" stroke="#cdd5d1" stroke-width="2.6"/></g></svg>`;
   const shot = (name, alt, art) => `<figure class="shot" data-shot="${name}"><div class="shot-art" aria-hidden="true">${art}</div><img src="img/shots/${name}.webp" alt="${esc(alt)}" loading="lazy" decoding="async"></figure>`;
   const paintName = l => String(l || "").replace(/^Citadel\s+/, "").replace(/\s*\([^)]*\)\s*$/, "");
   async function viewLanding(){
     view.name = "landing";
-    document.title = "Livery Ledger · Plan and track your Warhammer 40,000 painting";
+    const war = isWar();
+    document.title = war ? "War Ledger · Track your Warhammer 40,000 armies, lists and battles" : "Livery Ledger · Plan and track your Warhammer 40,000 painting";
     PROF = P.profileFor("ultramarines");
     const me = acct(), online = store.kind === "supabase";
     const nSheets = FACTIONS.reduce((n, f) => n + f.units.filter(u => !u.t).length, 0);
@@ -1531,46 +1534,17 @@
       print: '<path d="M7 9V3h10v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 14h10v7H7z"/>',
       star: '<path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9Z"/>',
       layers: '<path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/>',
-      list: '<path d="M9 6h12"/><path d="M9 12h12"/><path d="M9 18h12"/><circle cx="4.5" cy="6" r="1.2"/><circle cx="4.5" cy="12" r="1.2"/><circle cx="4.5" cy="18" r="1.2"/>'
+      list: '<path d="M9 6h12"/><path d="M9 12h12"/><path d="M9 18h12"/><circle cx="4.5" cy="6" r="1.2"/><circle cx="4.5" cy="12" r="1.2"/><circle cx="4.5" cy="18" r="1.2"/>',
+      check: '<path d="M12 3 4 6v6c0 4.6 3.4 8 8 9 4.6-1 8-4.4 8-9V6Z"/><path d="m8.5 12 2.5 2.5 4.5-5"/>',
+      copy: '<rect x="8" y="8" width="13" height="13" rx="2.5"/><path d="M16 8V5.5A2.5 2.5 0 0 0 13.5 3h-8A2.5 2.5 0 0 0 3 5.5v8A2.5 2.5 0 0 0 5.5 16H8"/>',
+      trophy: '<path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0Z"/><path d="M7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4"/>',
+      brush: '<path d="M14.5 4.5 19.5 9.5 11 18l-5-5Z"/><path d="M6 13c-2 0-3 1.5-3 3.5S2 20 2 20s3.5.5 5.5-1 1.5-3.5 1.5-3.5"/><path d="m17 2 5 5"/>'
     };
     const icon = k => `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[k]}</svg>`;
     const tick = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg>';
-    const cta = me ? `<a class="btn primary lg" href="${isWar() ? "#/war" : "#/profile"}">${isWar() ? "Go to your armies" : "Go to your ledgers"}</a>` : online ? `<button type="button" class="primary lg" data-cta="up">Create your free account</button>` : `<a class="btn primary lg" href="#/profile">Start a ledger</a>`;
+    const cta = me ? `<a class="btn primary lg" href="${isWar() ? "#/war" : "#/profile"}">${isWar() ? "Go to your armies" : "Go to your ledgers"}</a>` : online ? `<button type="button" class="primary lg" data-cta="up">Create your free account</button>` : `<a class="btn primary lg" href="${war ? "#/war" : "#/profile"}">${war ? "Open War Ledger" : "Start a ledger"}</a>`;
 
-    app.innerHTML = `
-      <section class="lp-hero">
-        <div class="lp-copy">
-          <p class="eyebrow">For Warhammer 40,000 painters</p>
-          <h1>Plan every army you paint. <span class="grad">Track every brushstroke.</span></h1>
-          <p class="lead">Livery Ledger keeps your colour scheme, paint recipes and painting progress for every unit in one place. It covers all ${FACTIONS.length} factions and chapters, with official Citadel colours ready to go.</p>
-          <ul class="lp-ticks">
-            <li>${tick}Free to use</li><li>${tick}Import your army list</li><li>${tick}Works on your phone</li>
-          </ul>
-          <div class="lp-parade" aria-hidden="true">${show.map(id => `<span title="${esc(FBY[id].name)}">${factionBadge(id, 46)}</span>`).join("")}</div>
-        </div>
-        <div class="lp-side">
-          ${me ? `<div class="panel lp-card lp-welcome">
-              ${avatarHtml(me, "xl")}
-              <h2>Welcome back, ${esc(me.name)}</h2>
-              <p class="sub">Your ledgers are waiting.</p>
-              <a class="btn primary" href="${isWar() ? "#/war" : "#/profile"}">${isWar() ? "Go to your armies" : "Go to your ledgers"}</a>
-            </div>`
-          : online ? `<div class="panel lp-card auth" id="lp-auth"></div>`
-          : `<div class="panel lp-card lp-welcome">
-              <h2>Start painting smarter</h2>
-              <p class="sub">This copy saves everything in your browser, with no account needed.</p>
-              <a class="btn primary" href="#/profile">Open your ledgers</a>
-            </div>`}
-        </div>
-      </section>
-
-      <section class="lp-numbers" aria-label="Livery Ledger in numbers">
-        <div><b>${FACTIONS.length}</b><span>Factions and chapters</span></div>
-        <div><b>${num(nSheets)}</b><span>Datasheets, 11th edition</span></div>
-        <div><b>${num(nSchemes)}</b><span>Official and known colour schemes</span></div>
-        <div><b>3,700+</b><span>Paints from 11 brands</span></div>
-      </section>
-
+    const liveryBody = () => `
       <section class="lp-features" id="features" aria-labelledby="lp-feat-h">
         <div class="lp-head">
           <p class="eyebrow">What you get</p>
@@ -1689,7 +1663,7 @@ Redemptor Dreadnought (210 points)</pre>
             <div><h3>Livery Ledger · the hobby</h3><ul class="lp-list"><li>${tick}Colour schemes and recipes</li><li>${tick}Painting stages and progress</li><li>${tick}Photos of every unit</li></ul></div>
             <div><h3>War Ledger · the fighting force</h3><ul class="lp-list"><li>${tick}Your collection, points and battle readiness</li><li>${tick}Army lists that check what's ready to field</li><li>${tick}Battle reports and win–loss records</li></ul></div>
           </div>
-          <div class="lp-cta-btns">${me || !online ? `<a class="btn primary" href="#/war">Open War Ledger</a>` : `<button type="button" class="primary" data-cta="up">Create your free account</button>`}</div>
+          <div class="lp-cta-btns"><button type="button" class="primary" data-lp-mode="war">See War Ledger</button>${me || !online ? `<a class="btn" href="#/war">Open War Ledger</a>` : ""}</div>
         </div>
         <div class="lpw-art" aria-hidden="true">
           <div class="ill-stats">
@@ -1755,13 +1729,208 @@ Redemptor Dreadnought (210 points)</pre>
         <div class="lp-cta-btns">${me ? `<a class="btn lg" href="#/shared">Browse shared armies</a>` : ""}${cta}</div>
       </section>
     `;
+    // The War Ledger homepage: the same shell, with War Ledger's own features.
+    const warBody = () => `
+      <section class="lp-features" id="features" aria-labelledby="lp-feat-h">
+        <div class="lp-head">
+          <p class="eyebrow">What you get</p>
+          <h2 id="lp-feat-h">Your command centre, from sprue to tabletop</h2>
+          <p class="sub">Know what you own, what you can field and how every game went.</p>
+        </div>
+
+        <article class="lp-feat">
+          <div class="lp-text">
+            <p class="eyebrow">Your collection</p>
+            <h3>Everything you own, and what's ready to fight</h3>
+            <p>Add the units you own, or paste an army list to add them all at once. War Ledger counts every model from the sprue to battle ready, so you always know where your collection stands.</p>
+            <ul class="lp-list"><li>${tick}Owned, built, painted and battle ready for every unit</li><li>${tick}You decide what battle ready means</li><li>${tick}Points and models across all your armies</li></ul>
+          </div>
+          ${shot("war-collection", "War Ledger's collection status", `<div class="ill ill-wcoll">
+            <div class="ill-stats"><div><b>247</b><small>Models</small></div><div><b>4,850</b><small>Points</small></div><div class="rdy-tile"><b>66%</b><small>Battle ready</small></div></div>
+            <div class="ill-card">
+              <div class="ill-stack">${[["sprue", 42], ["built", 41], ["primed", 27], ["painting", 36], ["painted", 38], ["ready", 63]].map(([k, v]) => `<i class="b-${k}" style="flex:${v}"></i>`).join("")}</div>
+              <ul class="ill-key">${[["sprue", "On sprue", 42], ["built", "Built", 41], ["primed", "Primed", 27], ["painting", "Painting", 36], ["painted", "Painted", 38], ["ready", "Battle ready", 63]].map(([k, l, v]) => `<li><span class="sw b-${k}"></span><b>${v}</b><small>${l}</small></li>`).join("")}</ul>
+            </div>
+          </div>`)}
+        </article>
+
+        <article class="lp-feat flip">
+          <div class="lp-text">
+            <p class="eyebrow">Army command</p>
+            <h3>Every army at a glance</h3>
+            <p>Each army gets its own command page: points, models, readiness, games played and its win–loss record, with its force broken down by role and a table of every unit.</p>
+            <ul class="lp-list"><li>${tick}Force composition by role</li><li>${tick}Owned, built, painted and ready for each unit</li><li>${tick}One tap to see what isn't battle ready</li></ul>
+          </div>
+          ${shot("war-army", "An army's current force in War Ledger", `<div class="ill ill-wforce">
+            <div class="ill-card">
+              <div class="ill-top">${b(c.armour, 56)}<div><strong>Ultramarines 2nd Company</strong><small>1,980 pts · 34 models · 10–7 record</small></div></div>
+              <div class="ill-force">${[["Captain", "Character", 1, 1, "ok"], ["Intercessor Squad", "Battleline", 10, 6, "part"], ["Terminator Squad", "Infantry", 5, 5, "ok"], ["Redemptor Dreadnought", "Vehicle", 1, 0, "no"]].map(([n, r, o, rd, k]) => `<div class="ill-row"><span>${n}<small>${r}</small></span><em>${o} owned</em><span class="rdy ${k}">${rd}</span></div>`).join("")}</div>
+            </div>
+          </div>`)}
+        </article>
+
+        <article class="lp-feat">
+          <div class="lp-text">
+            <p class="eyebrow">Army lists</p>
+            <h3>Can I take this army to the table?</h3>
+            <p>Build as many lists as you like from the same collection. Each one is checked against what you own, so you can see what's ready, what still needs paint and what you haven't bought yet.</p>
+            <ul class="lp-list"><li>${tick}Paste a list from the app, New Recruit or BattleScribe</li><li>${tick}Points against the limit as you build</li><li>${tick}Copy any list as text to send to your opponent</li></ul>
+          </div>
+          ${shot("war-list", "An army list's readiness check", `<div class="ill ill-wlist">
+            <div class="ill-card lpw-list">
+              <div class="ill-rh"><strong>Club night · 2,000 pts</strong><small>1,990 / 2,000</small></div>
+              <div class="ill-prog"><i style="width:86%"></i></div>
+              <p class="lpw-verdict">Nearly ready: 86% battle ready</p>
+              <div class="ill-row"><span>Redemptor Dreadnought</span><em>Needs paint</em></div>
+              <div class="ill-row"><span>4× Intercessors</span><em>Needs paint</em></div>
+              <div class="ill-row miss"><span>Gladiator Lancer</span><em>Not owned</em></div>
+            </div>
+          </div>`)}
+        </article>
+
+        <article class="lp-feat flip">
+          <div class="lp-text">
+            <p class="eyebrow">Battle reports</p>
+            <h3>Every game, every result</h3>
+            <p>Log each game with the list you took, who you faced, the mission, the score and your most valuable unit. See how each army and list performs, and against which factions.</p>
+            <ul class="lp-list"><li>${tick}A win–loss record for every army and list</li><li>${tick}Results by opponent faction</li><li>${tick}Your record shown when you share an army</li></ul>
+          </div>
+          ${shot("war-battles", "Battle reports and records", `<div class="ill ill-wbattles">
+            <div class="ill-stats"><div><b>17</b><small>Games</small></div><div><b>10–7</b><small>Record</small></div><div class="rdy-tile"><b>59%</b><small>Won</small></div></div>
+            <div class="ill-games">${[["w", "vs Necrons", "Take and Hold", "85–62"], ["l", "vs Orks", "Purge the Foe", "40–70"], ["w", "vs T'au Empire", "Supply Drop", "78–55"]].map(([r, o, m, s]) => `<div class="ill-row"><span class="res r-${r}">${r.toUpperCase()}</span><span>${o}<small>${m}</small></span><em>${s}</em></div>`).join("")}</div>
+            <div class="lpw-games"><span class="r-w">W</span><span class="r-w">W</span><span class="r-l">L</span><span class="r-w">W</span><span class="r-d">D</span><em>Recent form</em></div>
+          </div>`)}
+        </article>
+      </section>
+
+      <section class="lp-war lp-liv panel" aria-labelledby="lp-liv-h">
+        <div class="lpw-copy">
+          <p class="eyebrow">The companion: Livery Ledger</p>
+          <h2 id="lp-liv-h">War Ledger records the war. <span class="grad">Livery Ledger records the hobby.</span></h2>
+          <p>Painting your army too? Switch to Livery Ledger to plan colour schemes, write paint recipes and track every unit from bare plastic to finished. It's the same collection, so every model you paint counts towards battle readiness here.</p>
+          <div class="lpw-cols">
+            <div><h3>War Ledger · the fighting force</h3><ul class="lp-list"><li>${tick}Collection, points and battle readiness</li><li>${tick}Army lists checked against what you own</li><li>${tick}Battle reports and win–loss records</li></ul></div>
+            <div><h3>Livery Ledger · the hobby</h3><ul class="lp-list"><li>${tick}Colour schemes and paint recipes</li><li>${tick}Painting stages and progress</li><li>${tick}Photos of every unit</li></ul></div>
+          </div>
+          <div class="lp-cta-btns"><button type="button" class="primary" data-lp-mode="livery">See Livery Ledger</button>${me || !online ? `<a class="btn" href="#/profile">Open Livery Ledger</a>` : ""}</div>
+        </div>
+        <div class="lpw-art" aria-hidden="true">
+          <div class="ill-card"><div class="ill-badges">${demo.tiers.map(t => `<div>${b(t.color, 72)}<small>${esc(t.name)}</small></div>`).join("")}</div></div>
+          <div class="ill-rows">${swatch("Armour", "armour")}${swatch("Trim", "trim")}${swatch("Lenses", "lens")}</div>
+        </div>
+      </section>
+
+      <section class="lp-grid" aria-labelledby="lp-more-h">
+        <h2 id="lp-more-h" class="lp-grid-h">And the little things that help</h2>
+        <div class="lp-cards">
+          ${[["check", "Battle ready, your way", "Decide whether ready means painted, based or simply built, and set any unit by hand."],
+             ["box", "Pile of shame", "Kits still on the sprue count towards your collection until you start them."],
+             ["cart", "Purchase records", "Keep the date, price and shop for every unit you buy."],
+             ["layers", "Wargear and assembly", "Note each unit's loadout and how it's built, magnets and all."],
+             ["list", "Your whole collection", "Every unit across every army in one list, with a not-battle-ready filter."],
+             ["copy", "Copy a list", "Copy any list as text to send to an opponent or tournament organiser."],
+             ["swap", "Duplicate lists", "Try a variation of a list without touching the original."],
+             ["trophy", "Records by opponent", "See how you fare against each faction you face."],
+             ["share", "Shared armies", "Share an army and its win–loss record shows alongside it."],
+             ["brush", "Works with Livery Ledger", "Paint in Livery Ledger and battle readiness updates by itself."],
+             ["backup", "Backups", "Download an army any time, and bring it back whenever you like."],
+             ["phone", "Install it like an app", "Add it to your home screen and have it ready on game night."]]
+            .map(([k, h, t]) => `<div class="panel lp-mini"><span class="lp-ico">${icon(k)}</span><h3>${h}</h3><p>${t}</p></div>`).join("")}
+        </div>
+      </section>
+
+      <section class="lp-steps" aria-labelledby="lp-steps-h">
+        <div class="lp-head"><p class="eyebrow">How it works</p><h2 id="lp-steps-h">From collection to battlefield in three steps</h2></div>
+        <ol>
+          <li><span class="n">1</span><h3>Muster your army</h3><p>Pick your faction, then add your units or paste an army list.</p></li>
+          <li><span class="n">2</span><h3>Build your lists</h3><p>Make lists from your collection and check they're ready for the table.</p></li>
+          <li><span class="n">3</span><h3>Play and log</h3><p>Record each game and watch every army's record grow.</p></li>
+        </ol>
+      </section>
+
+      <section class="lp-faq" aria-labelledby="lp-faq-h">
+        <div class="lp-head"><p class="eyebrow">Questions</p><h2 id="lp-faq-h">Good to know</h2></div>
+        <div class="lp-faq-list">
+          ${[["Is it free?", "Yes. Every feature is free to use."],
+             ["Do I need to paint my models?", "No. War Ledger works without choosing colours or tracking painting. If you do paint, Livery Ledger shares the same armies and keeps battle readiness up to date."],
+             ["What counts as battle ready?", "You decide in Settings: painted (the default), painted and based, or simply built. You can also set any unit by hand."],
+             online ? ["Do I need an account?", "A free account keeps your armies, lists and battles safe online, so they follow you from your phone to your computer. Sign up with just an email and password."]
+                    : ["Do I need an account?", "Not on this copy. Everything is saved in this browser, so use Backups now and then to keep a copy somewhere safe."],
+             ["Can other people see my lists and battles?", "No. Army lists and battle reports are private. If you share an army, only its win–loss record is shown with it."],
+             ["Which army lists can I paste?", `Lists from the Warhammer 40,000 app, New Recruit and BattleScribe, and list-builder share codes. Units are matched to ${num(nSheets)} datasheets across ${FACTIONS.length} factions and chapters.`],
+             ["Is this made by Games Workshop?", "No. War Ledger and Livery Ledger are an unofficial fan tool and aren't endorsed by Games Workshop."]]
+            .map(([q, a]) => `<details class="lp-q"><summary>${esc(q)}</summary><p>${esc(a)}</p></details>`).join("")}
+        </div>
+      </section>
+
+      <section class="lp-cta panel">
+        <div><h2>Take command of your collection</h2><p class="sub">Free, and ready in under a minute.</p></div>
+        <div class="lp-cta-btns">${me ? `<a class="btn lg" href="#/shared">Browse shared armies</a>` : ""}${cta}</div>
+      </section>
+    `;
+
+    app.innerHTML = `
+      <section class="lp-hero">
+        <div class="lp-copy">
+          <div class="lp-switch" role="group" aria-label="Show the homepage for">
+            <button type="button" data-lp-mode="livery" aria-pressed="${!war}"><span class="lps-ico">${LOGO_DROP}</span><span><strong>Livery Ledger</strong><small>Paint your army</small></span></button>
+            <button type="button" data-lp-mode="war" aria-pressed="${war}"><span class="lps-ico">${LOGO_SWORDS}</span><span><strong>War Ledger</strong><small>Command your army</small></span></button>
+          </div>
+          ${war ? `<p class="eyebrow">For Warhammer 40,000 players</p>
+          <h1>Know what you own. <span class="grad">Field what's ready.</span></h1>
+          <p class="lead">War Ledger keeps track of what you own, what you can field and how every game went. Build army lists from your collection, see what's battle ready, and keep a win–loss record for every army.</p>
+          <ul class="lp-ticks">
+            <li>${tick}Free to use</li><li>${tick}Import your army list</li><li>${tick}No painting required</li>
+          </ul>` : `<p class="eyebrow">For Warhammer 40,000 painters</p>
+          <h1>Plan every army you paint. <span class="grad">Track every brushstroke.</span></h1>
+          <p class="lead">Livery Ledger keeps your colour scheme, paint recipes and painting progress for every unit in one place. It covers all ${FACTIONS.length} factions and chapters, with official Citadel colours ready to go.</p>
+          <ul class="lp-ticks">
+            <li>${tick}Free to use</li><li>${tick}Import your army list</li><li>${tick}Works on your phone</li>
+          </ul>`}
+          <div class="lp-parade" aria-hidden="true">${show.map(id => `<span title="${esc(FBY[id].name)}">${factionBadge(id, 46)}</span>`).join("")}</div>
+        </div>
+        <div class="lp-side">
+          ${me ? `<div class="panel lp-card lp-welcome">
+              ${avatarHtml(me, "xl")}
+              <h2>Welcome back, ${esc(me.name)}</h2>
+              <p class="sub">Your ledgers are waiting.</p>
+              <a class="btn primary" href="${isWar() ? "#/war" : "#/profile"}">${isWar() ? "Go to your armies" : "Go to your ledgers"}</a>
+            </div>`
+          : online ? `<div class="panel lp-card auth" id="lp-auth"></div>`
+          : `<div class="panel lp-card lp-welcome">
+              <h2>${war ? "Take command" : "Start painting smarter"}</h2>
+              <p class="sub">This copy saves everything in your browser, with no account needed.</p>
+              <a class="btn primary" href="${war ? "#/war" : "#/profile"}">${war ? "Open War Ledger" : "Open your ledgers"}</a>
+            </div>`}
+        </div>
+      </section>
+
+      <section class="lp-numbers" aria-label="${war ? "War" : "Livery"} Ledger in numbers">
+        <div><b>${FACTIONS.length}</b><span>Factions and chapters</span></div>
+        <div><b>${num(nSheets)}</b><span>Datasheets${war ? " with points" : ", 11th edition"}</span></div>
+        ${war ? `<div><b>4</b><span>List formats you can paste</span></div>
+        <div><b>0</b><span>Brushes required</span></div>` : `<div><b>${num(nSchemes)}</b><span>Official and known colour schemes</span></div>
+        <div><b>3,700+</b><span>Paints from 11 brands</span></div>`}
+      </section>
+
+      ${war ? warBody() : liveryBody()}
+    `;
     app.querySelectorAll(".shot img").forEach(img => {
       const ok = () => img.closest(".shot").classList.add("has-img");
       if(img.complete && img.naturalWidth) ok(); else img.addEventListener("load", ok);
       img.addEventListener("error", () => img.remove());
     });
     let heroAuth = null;
-    if($("lp-auth")) heroAuth = authForm($("lp-auth"), "up", {onDone: () => { location.hash = "#/profile"; }});
+    if($("lp-auth")) heroAuth = authForm($("lp-auth"), "up", {onDone: () => { location.hash = isWar() ? "#/war" : "#/profile"; }});
+    // Switch the homepage between Livery Ledger and War Ledger without leaving it.
+    app.querySelectorAll("[data-lp-mode]").forEach(btn => btn.addEventListener("click", async () => {
+      const to = btn.dataset.lpMode, inHero = !!btn.closest(".lp-switch");
+      if((to === "war") === isWar()) return;
+      const y = window.scrollY;
+      setMode(to); setTop(); await viewLanding();
+      if(inHero){ window.scrollTo(0, y); const b = app.querySelector(`.lp-switch [data-lp-mode="${to}"]`); if(b) b.focus(); }
+      else { window.scrollTo(0, 0); const b = app.querySelector(`.lp-switch [data-lp-mode="${to}"]`); if(b) b.focus({preventScroll: true}); }
+    }));
     app.querySelectorAll("[data-cta]").forEach(btn => btn.addEventListener("click", () => {
       if(!heroAuth){ openAuth(btn.dataset.cta); return; }
       heroAuth.set(btn.dataset.cta);
