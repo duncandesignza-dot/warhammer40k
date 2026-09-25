@@ -1201,3 +1201,11 @@ dialog.editdlg,dialog.paintdlg{overflow:clip}
 .card:has(.card-open:focus-visible){outline:2px solid var(--focus);outline-offset:2px}
 @media (max-width:640px){.ph-actions>*{flex:1 1 auto;justify-content:center}.toast{font-size:.84rem;gap:10px;padding-left:14px}}
 @media (max-width:370px){.lp-parade{grid-template-columns:repeat(2,minmax(0,1fr))}}
+/* Whose collection a shared ledger is */
+.owner-line{display:flex;align-items:center;gap:10px;min-width:0}
+.owner-line>span:not(.avatar){display:flex;flex-direction:column;min-width:0;line-height:1.2}
+.owner-line small{font-family:var(--mono);font-size:.64rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.owner-line strong{font-size:.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.shcard .owner-line{padding-bottom:12px;border-bottom:1px solid var(--line)}
+.owner-line.big{margin-bottom:14px}
+.owner-line.big strong{font-size:1rem}
