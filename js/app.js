@@ -6,6 +6,10 @@
   const STATUS = S.STATUS;
   const FACTIONS = DATA.factions;
   const FBY = Object.fromEntries(FACTIONS.map(f => [f.id, f]));
+  // Datasheet helpers: the smallest unit size, and the cost for a number of models.
+  const minModels = sh => sh.ms ? sh.ms[0] : ["Epic Hero","Character","Vehicle","Monster","Dedicated Transport","Fortification"].includes(sh.r) ? 1
+    : sh.pb && sh.pb[0] ? (sh.pb[0][0] === sh.pb[0][1] ? sh.pb[0][0] : Math.max(1, sh.pb[0][0] - 1)) : 5;
+  const sheetPts = (sh, count) => { if(!sh || sh.p == null) return null; let p = sh.p; (sh.pb || []).forEach(([lo, hi, v]) => { if(count >= lo && (!hi || count <= hi)) p = v; }); return p; };
   const ROLE_ORDER = ["Epic Hero","Character","Battleline","Infantry","Mounted","Beast","Swarm","Monster","Vehicle","Dedicated Transport","Fortification","Other"];
   // What each colour slot means for the faction on screen (set when a page opens).
   let PROF = P.profileFor("space-marines");
@@ -750,7 +754,7 @@
     $("w-sheet").addEventListener("change", () => {
       const sh = sheetsOf(army.faction).find(s => s.n === v("w-sheet")); if(!sh) return;
       $("w-role").value = ROLE_ORDER.includes(sh.r) ? sh.r : "Other";
-      if(!u){ $("w-pts").value = sh.p || 0; $("w-count").value = singleRole(sh.r) ? 1 : (sh.pb && sh.pb[0] ? (sh.pb[0][0] === sh.pb[0][1] ? sh.pb[0][0] : Math.max(1, sh.pb[0][0] - 1)) : 5);
+      if(!u){ $("w-pts").value = sh.p || 0; $("w-count").value = minModels(sh);
         if(!$("w-ranged").value && sh.wr) $("w-ranged").value = sh.wr.slice(0, 4).join(", ");
         if(!$("w-melee").value && sh.wm) $("w-melee").value = sh.wm.slice(0, 3).join(", "); }
       syncReady();
@@ -971,7 +975,17 @@
 
   /* ---------- army lists ---------- */
   // Battle sizes and list statuses. Sizes only suggest a points limit; the limit can always be changed.
-  const BATTLE_SIZES = [{id: "incursion", name: "Incursion", pts: 1000}, {id: "strike", name: "Strike Force", pts: 2000}, {id: "onslaught", name: "Onslaught", pts: 3000}];
+  // From the datasheet data when it has them: points limit, Detachment Points (dp, or dp3 with a 3 DP detachment) and enhancements allowed.
+  const BATTLE_SIZES = (DATA.sizes || []).length ? DATA.sizes : [{id: "incursion", name: "Incursion", pts: 1000, dp: 2, dp3: 3, enh: 2}, {id: "strike", name: "Strike Force", pts: 2000, dp: 3, enh: 4}, {id: "onslaught", name: "Onslaught", pts: 3000, dp: 4, enh: 4}];
+  // Size rules for a list: its battle size, or Strike Force's when it has none.
+  const sizeRules = l => BATTLE_SIZES.find(z => z.id === sizeOf(l)) || BATTLE_SIZES.find(z => z.id === "strike") || BATTLE_SIZES[0];
+  const factionDets = fid => (FBY[fid] || {}).dets || [];
+  const detByName = (fid, n) => factionDets(fid).find(d => d.n.toLowerCase() === String(n || "").trim().toLowerCase());
+  // Enhancements from the list's detachments, or every one the faction has when none are chosen: [name, pts, only, detachment].
+  function enhOptions(fid, dets){
+    const chosen = (dets || []).map(n => detByName(fid, n)).filter(Boolean);
+    return (chosen.length ? chosen : factionDets(fid)).flatMap(d => (d.e || []).map(e => [e[0], e[1], e[2] || null, d.n]));
+  }
   const LIST_STATUS = [["draft", "Draft"], ["theory", "Theorycraft"], ["tournament", "Tournament"], ["narrative", "Narrative"], ["archived", "Archived"]];
   const statusName = id => (LIST_STATUS.find(x => x[0] === id) || LIST_STATUS[0])[1];
   const sizeOf = l => l.size || (BATTLE_SIZES.find(z => z.pts === l.limit) || {}).id || (l.limit ? "custom" : "");
@@ -1013,30 +1027,52 @@
     if(l.limit && s.points > l.limit) add("over", `${num(s.points - l.limit)} pts over the limit.`, `The list comes to ${ptsText(s.points)} against a limit of ${ptsText(l.limit)}.`);
     if(!rows.some(x => x.warlord)) add("warlord", "No warlord chosen.", rows.some(x => isCharRole(x.role)) ? "Choose one with the ⋯ button on a character." : "There are no characters in this list to lead it.");
     if(!(l.detachments || []).length) add("detachment", "No detachment chosen.", "Add one in Edit details.");
+    const z = sizeRules(l), sizeIdx = Math.max(0, BATTLE_SIZES.indexOf(z)), known = (l.detachments || []).map(n => detByName(faction, n)).filter(Boolean);
+    if(known.length){
+      const used = known.reduce((a, d) => a + d.dp, 0), cap = z.dp3 && known.some(d => d.dp === 3) ? z.dp3 : z.dp;
+      if(cap && used > cap) add(`dp:${used}:${z.id}`, `Detachments cost ${used} Detachment Points.`, `${z.name} usually allows ${cap}.`);
+    }
     const bySheet = {};
     rows.forEach(x => { const n = sheetName(x); (bySheet[n] = bySheet[n] || []).push(x); });
     Object.entries(bySheet).forEach(([n, xs]) => {
       if(xs.length < 2) return;
       if(xs.some(epic)) add("epic:" + n, `${n} is in the list ${xs.length} times.`, "Epic Heroes are usually limited to one each.");
-      else { const cap = ["Battleline", "Dedicated Transport"].includes(xs[0].role) ? 6 : 3;
-        if(xs.length > cap) add("copies:" + n, `${xs.length} units of ${n}.`, `Most games allow up to ${cap} of each datasheet${cap === 3 ? " (6 for Battleline and Dedicated Transports)" : ""}.`); }
+      else {
+        const sh = sheetOf(xs[0]), big = ["Battleline", "Dedicated Transport"].includes(xs[0].role);
+        const cap = sh && sh.mx ? sh.mx[sizeIdx] : (sizeOf(l) === "incursion" ? (big ? 4 : 2) : (big ? 6 : 3));
+        if(xs.length > cap) add(`copies:${n}:${cap}`, `${xs.length} units of ${n}.`, sh && sh.mx ? `This datasheet is usually limited to ${cap} at ${z.name}.` : `Most games allow up to ${cap} of each datasheet at ${z.name}${big ? "" : ` (${sizeOf(l) === "incursion" ? 4 : 6} for Battleline and Dedicated Transports)`}.`);
+      }
     });
     const enh = rows.filter(x => x.enh);
-    if(enh.length > 3) add("enh-count", `${enh.length} enhancements.`, "Most games allow up to 3 in an army.");
+    if(z.enh && enh.length > z.enh) add(`enh-count:${z.id}`, `${enh.length} enhancements.`, `${z.name} usually allows up to ${z.enh}.`);
     const byEnh = {};
     enh.forEach(x => { const n = x.enh.n.toLowerCase(); (byEnh[n] = byEnh[n] || []).push(x); });
     Object.values(byEnh).forEach(xs => { if(xs.length > 1) add("enh-dup:" + xs[0].enh.n.toLowerCase(), `${xs[0].enh.n} is on ${xs.length} units.`, "Each enhancement can usually only be taken once."); });
     enh.filter(epic).forEach(x => add("enh-epic:" + x.k, `${x.name} has an enhancement.`, "Epic Heroes usually can't take enhancements."));
     enh.filter(x => !isCharRole(x.role)).forEach(x => add("enh-role:" + x.k, `${x.name} has an enhancement but isn't a character.`, "Enhancements usually go on characters."));
+    // Against the datasheet data: is it one of this list's detachments' enhancements, for whom, and at what cost.
+    const opts = enhOptions(faction, l.detachments), names = new Set(sheets.map(z => z.n));
+    enh.forEach(x => {
+      const o = opts.find(e => e[0].toLowerCase() === x.enh.n.toLowerCase());
+      if(!o){ if(known.length && known.length === (l.detachments || []).length) add(`enh-det:${x.k}:${x.enh.n}`, `${x.enh.n} isn't one of your detachments' enhancements.`, `Enhancements usually come from the detachment${known.length > 1 ? "s" : ""} you've chosen.`); return; }
+      if(o[2] && o[2].every(n => names.has(n)) && !o[2].includes(sheetName(x))) add(`enh-only:${x.k}:${o[0]}`, `${o[0]} is usually for ${o[2].join(" or ")} only.`, `${x.name} has it in this list.`);
+      if(x.enh.p !== o[1]) add(`enh-pts:${x.k}:${o[1]}`, `${o[0]} is ${ptsText(x.enh.p)} here but ${ptsText(o[1])} in the latest points.`, "Update it with the ⋯ button if the points have changed.");
+    });
     rows.forEach(x => {
       const leaders = rows.filter(r => r.lead === x.k);
       if(leaders.length > 1) add("lead:" + x.k, `${x.name} is led by ${leaders.map(r => r.name).join(" and ")}.`, "A unit usually has one leader, unless a datasheet says it can have more.");
     });
-    // Single-model units only: bigger units cost different amounts at different sizes.
+    // Unit sizes and points from the datasheet: a size outside its range, or points that don't match that size.
     rows.forEach(x => {
-      const sh = sheetOf(x);
-      if(!sh || !sh.p || x.count !== 1 || (x.u && x.e.pts != null) || x.base === sh.p) return;
-      add("pts:" + x.k + ":" + sh.p, `${x.name} is ${ptsText(x.base)} here but ${ptsText(sh.p)} in the latest datasheet points.`, x.u ? "If the points have changed, update the unit." : "If the points have changed, update them with the ⋯ button.");
+      const sh = sheetOf(x); if(!sh) return;
+      if(sh.ms && (x.count < sh.ms[0] || x.count > sh.ms[1])){
+        add(`size:${x.k}:${x.count}`, `${x.name} has ${plural(x.count, "model")}.`, `The datasheet's unit size is ${sh.ms[0] === sh.ms[1] ? sh.ms[0] : `${sh.ms[0]} to ${sh.ms[1]}`} models.`);
+        return;
+      }
+      if(!sh.ms && !sh.pb && x.count !== 1) return;
+      const want = sheetPts(sh, x.count);
+      if(want == null || (x.u && x.e.pts != null) || x.base === want) return;
+      add("pts:" + x.k + ":" + want, `${x.name} is ${ptsText(x.base)} here but ${ptsText(want)} in the latest datasheet points${x.count > 1 ? ` for ${x.count} models` : ""}.`, x.u ? "If the points have changed, update the unit." : "If the points have changed, update them with the ⋯ button.");
     });
     if(l.ptsAsOf){
       const days = Math.floor((Date.now() - new Date(l.ptsAsOf + "T12:00:00")) / DAY_MS);
@@ -1100,7 +1136,8 @@
   // Battle size, points limit, detachments, status and points date: shared by the New list and List details dialogs.
   function listFields(l, D, faction){
     const size = sizeOf(l), dets = l.detachments && l.detachments.length ? l.detachments : [""];
-    const known = [...new Set(D.lists.filter(x => { const a = D.armies.find(y => y.id === x.armyId); return a && a.faction === faction; }).flatMap(x => x.detachments || []))].sort();
+    const data = factionDets(faction), used = D.lists.filter(x => { const a = D.armies.find(y => y.id === x.armyId); return a && a.faction === faction; }).flatMap(x => x.detachments || []);
+    const known = [...data.map(d => [d.n, `${d.dp} DP${d.c ? " · " + d.c : ""}`]), ...[...new Set(used)].filter(n => !detByName(faction, n)).sort().map(n => [n, "Used in your lists"])];
     const built = (window.LEDGER_FACTIONS || {}).built;
     return `
       <div class="wgrid">
@@ -1109,8 +1146,9 @@
       </div>
       <fieldset class="wfs"><legend>Detachments</legend>
         <div id="w-dets">${dets.map((v, i) => detRow(v, i)).join("")}</div>
-        <datalist id="w-det-dl">${known.map(v => `<option value="${esc(v)}">`).join("")}</datalist>
+        <datalist id="w-det-dl">${known.map(([v, l]) => `<option value="${esc(v)}" label="${esc(l)}">`).join("")}</datalist>
         <button type="button" class="btn-sm" id="w-det-add"${dets.length >= 4 ? " hidden" : ""}>+ Add another detachment</button>
+        <p class="hint" id="w-dp" aria-live="polite"></p>
       </fieldset>
       <div class="wgrid">
         <label class="span2">Status<select id="w-lst">${LIST_STATUS.map(([id, n]) => `<option value="${id}"${(l.status || "draft") === id ? " selected" : ""}>${n}</option>`).join("")}</select></label>
@@ -1119,8 +1157,17 @@
       <p class="hint">Points change when Games Workshop updates them, so note when you last checked this list's.${built ? ` Datasheet points in War Ledger were last updated ${esc(niceDay(built))}.` : ""}</p>`;
   }
   const detRow = (v, i) => `<div class="det-row"><input class="w-det" list="w-det-dl" maxlength="80" value="${esc(v)}" aria-label="Detachment ${i + 1}" placeholder="e.g. Gladius Task Force"><button type="button" class="btn-sm icon-x" data-det-rm aria-label="Remove this detachment">×</button></div>`;
-  function wireListFields(d){
+  // Detachment Points against what the battle size allows. Only detachments in the datasheet data count.
+  function dpText(faction, detNames, l){
+    const ds = detNames.map(n => detByName(faction, n)).filter(Boolean);
+    if(!ds.length) return factionDets(faction).length ? "Pick from the list to see each detachment's Detachment Points." : "";
+    const used = ds.reduce((a, x) => a + x.dp, 0), z = sizeRules(l), cap = z.dp3 && ds.some(x => x.dp === 3) ? z.dp3 : z.dp;
+    return `Detachment Points: ${used} used${cap ? ` of ${cap} for ${z.name}` : ""}.${detNames.length > ds.length ? ` ${plural(detNames.length - ds.length, "detachment")} not in the datasheet data, so not counted.` : ""}`;
+  }
+  function wireListFields(d, faction){
     const sz = d.querySelector("#w-lsz"), lim = d.querySelector("#w-ll"), box = d.querySelector("#w-dets"), add = d.querySelector("#w-det-add");
+    const dp = () => { const f = readListFields(d), el = d.querySelector("#w-dp"), t = dpText(typeof faction === "function" ? faction() : faction, f.detachments, f); el.textContent = t; el.hidden = !t; };
+    box.addEventListener("input", dp); sz.addEventListener("change", dp); lim.addEventListener("input", dp); box.addEventListener("click", () => setTimeout(dp)); dp();
     sz.addEventListener("change", () => { const z = BATTLE_SIZES.find(x => x.id === sz.value); if(z) lim.value = z.pts; else if(!sz.value) lim.value = ""; });
     lim.addEventListener("input", () => { const v = parseInt(lim.value, 10) || 0, z = BATTLE_SIZES.find(x => x.pts === v); sz.value = z ? z.id : v ? "custom" : ""; });
     const renum = () => { box.querySelectorAll(".w-det").forEach((x, i) => x.setAttribute("aria-label", `Detachment ${i + 1}`)); add.hidden = box.children.length >= 4; };
@@ -1143,11 +1190,12 @@
       <label>List name<input id="w-ln" maxlength="80" placeholder="e.g. Club night 2,000"></label>
       <div id="w-lf">${listFields({size: "strike", limit: 2000, status: "draft", ptsAsOf: isoDay(new Date())}, D, first.faction)}</div>
       <div class="row-actions"><button type="submit" class="primary">Create list</button><span class="msg" id="w-msg" role="status"></span></div>`, "wide");
-    wireListFields(d);
+    const fac = () => (D.armies.find(x => x.id === $("w-la").value) || first).faction;
+    wireListFields(d, fac);
     // Detachment suggestions follow the army's faction.
     $("w-la").addEventListener("change", () => {
-      const a = D.armies.find(x => x.id === $("w-la").value), keep = readListFields(d);
-      $("w-lf").innerHTML = listFields({...keep, detachments: keep.detachments}, D, a.faction); wireListFields(d);
+      const keep = readListFields(d);
+      $("w-lf").innerHTML = listFields({...keep, detachments: keep.detachments}, D, fac()); wireListFields(d, fac);
     });
     d.querySelector("form").addEventListener("submit", async e => {
       e.preventDefault();
@@ -1250,8 +1298,11 @@
     function openEntryOptions(i){
       const s = listState(list, D), x = s.rows.find(r => r.i === i); if(!x || x.gone) return;
       const e = list.units[i], ch = isCharRole(x.role);
-      const known = {};
+      // Suggestions: the enhancements of this list's detachments (or the whole faction's), then any you've typed in other lists.
+      const known = {}, labels = {};
       D.lists.forEach(l => { const a = D.armies.find(y => y.id === l.armyId); if(a && a.faction === army.faction) l.units.forEach(u => { if(u.enh && u.enh.n) known[u.enh.n] = u.enh.p; }); });
+      const opts = enhOptions(army.faction, list.detachments);
+      opts.forEach(([n, p, only, det]) => { known[n] = p; labels[n] = [`${p} pts`, det, only ? only.join(" or ") + " only" : ""].filter(Boolean).join(" · "); });
       const bodies = s.rows.filter(r => !r.gone && r.i !== i && !isCharRole(r.role));
       const d = modal(`${esc(x.name)} in this list`, `
         <label>Points in this list<input id="w-ep" type="number" min="0" max="9999" inputmode="numeric" value="${x.u ? (e.pts ?? "") : e.points}" placeholder="${x.u ? num(+x.u.points || 0) : ""}"></label>
@@ -1260,12 +1311,17 @@
         <fieldset class="wfs"><legend>Enhancement</legend>
           <div class="wgrid"><label class="span2">Name<input id="w-een" maxlength="80" list="w-een-dl" value="${esc(x.enh ? x.enh.n : "")}" placeholder="None"></label>
           <label>Points<input id="w-eep" type="number" min="0" max="999" inputmode="numeric" value="${x.enh && x.enh.p ? x.enh.p : ""}"></label></div>
-          <datalist id="w-een-dl">${Object.keys(known).sort().map(n => `<option value="${esc(n)}">`).join("")}</datalist>
+          <datalist id="w-een-dl">${[...opts.map(o => o[0]), ...Object.keys(known).filter(n => !labels[n]).sort()].filter((n, j, a) => a.indexOf(n) === j).map(n => `<option value="${esc(n)}"${labels[n] ? ` label="${esc(labels[n])}"` : ""}>`).join("")}</datalist>
         </fieldset>
         <label>Leading<select id="w-eld"><option value="">Not leading a unit</option>${bodies.map(r => { const other = s.rows.find(o => o.lead === r.k && o.i !== i && !o.gone); return `<option value="${esc(r.k)}"${x.lead === r.k ? " selected" : ""}>${esc(r.name)}${other ? ` (led by ${esc(other.name)})` : ""}</option>`; }).join("")}</select></label>`
         : `<p class="hint">Warlord, enhancements and leading a unit are for characters. This unit's role is ${esc(x.role || "not set")}.</p>`}
         <div class="row-actions"><button type="submit" class="primary">Save</button></div>`);
-      if(ch) $("w-een").addEventListener("input", ev => { const p = known[ev.target.value.trim()]; if(p != null && !$("w-eep").value) $("w-eep").value = p || ""; });
+      // Fill in the points for a known enhancement, unless you've typed your own.
+      let autoP = x.enh && known[x.enh.n] === x.enh.p ? String(x.enh.p || "") : null;
+      if(ch) $("w-een").addEventListener("input", ev => {
+        const p = known[ev.target.value.trim()], cur = $("w-eep").value;
+        if(p != null && (!cur || cur === autoP)){ $("w-eep").value = p || ""; autoP = String(p || ""); }
+      });
       d.querySelector("form").addEventListener("submit", ev => {
         ev.preventDefault();
         const pv = $("w-ep").value.trim(), n = {...e};
@@ -1325,7 +1381,7 @@
           ${listFields(list, D, army.faction)}
           <label>Notes<textarea id="w-lnote" rows="3" maxlength="600">${esc(list.notes)}</textarea></label>
           <div class="row-actions"><button type="submit" class="primary">Save</button></div>`, "wide");
-        wireListFields(d);
+        wireListFields(d, army.faction);
         d.querySelector("form").addEventListener("submit", ev => {
           ev.preventDefault();
           save({name: $("w-ln").value.trim() || list.name, ...readListFields(d), notes: $("w-lnote").value.trim()});
@@ -1905,11 +1961,13 @@
       return hit ? sheetIndex.get(hit) : null;
     }
     function guessCount(sh, pts){
-      if(singleRole(sh.r)) return 1;
+      if(sh.ms && sh.ms[0] === sh.ms[1]) return sh.ms[0];
+      if(!sh.ms && singleRole(sh.r)) return 1;
       const br = sh.pb || [];
       const hit = br.filter(b => b[2] === pts).pop();
-      if(hit) return hit[1] || Math.max(hit[0], (hit[0] - 1) * 2);
-      return br.length ? (br[0][0] === br[0][1] ? br[0][0] : Math.max(1, br[0][0] - 1)) : 1;
+      // The price bracket gives the size; open-ended brackets run to the datasheet's largest size.
+      if(hit) return hit[1] || (sh.ms ? sh.ms[1] : Math.max(hit[0], (hit[0] - 1) * 2));
+      return sh.ms ? sh.ms[0] : br.length ? (br[0][0] === br[0][1] ? br[0][0] : Math.max(1, br[0][0] - 1)) : 1;
     }
     // Allied units (e.g. Imperial Knights in a Space Marine list) live in another faction's datasheets.
     function allySheet(text, prefer){
@@ -2772,7 +2830,7 @@ Redemptor Dreadnought (210 points)</pre>
     $("kit-name").addEventListener("change", () => {
       const fid = $("kit-fac").value, name = $("kit-name").value.trim().toLowerCase();
       const sh = (fid ? FBY[fid].units : FACTIONS.flatMap(f => f.units)).find(u => u.n.toLowerCase() === name);
-      if(sh && $("kit-models").value === "1"){ const br = sh.pb || []; const n = br.length ? (br[0][0] === br[0][1] ? br[0][0] : Math.max(1, br[0][0] - 1)) : 1; $("kit-models").value = n; }
+      if(sh && $("kit-models").value === "1") $("kit-models").value = sh.ms ? sh.ms[0] : minModels(sh) === 5 ? 1 : minModels(sh);
       if(sh && !fid){ const f = FACTIONS.find(f => f.units.includes(sh)); if(f) $("kit-fac").value = f.id; }
     });
     function draw(){
@@ -3787,8 +3845,9 @@ Redemptor Dreadnought (210 points)</pre>
       const h = $("pts-hint");
       if(auto == null){ h.innerHTML = sh ? "No points listed for this datasheet." : ""; return; }
       const br = (sh.pb || []).map(([lo, hi, v]) => `${hi && hi !== lo ? lo + "–" + hi : lo + (hi ? "" : "+")} models ${v}`).join(" · ");
-      h.innerHTML = cur === auto ? `Datasheet cost for ${plural(count, "model")}${br ? ` <span>(${esc(sh.p)} base · ${esc(br)})</span>` : ""}`
-        : `Datasheet cost is ${auto} pts. <button type="button" class="linkbtn" id="pts-reset">Use ${auto}</button>`;
+      const size = sh.ms && sh.ms[0] !== sh.ms[1] ? ` Unit size ${sh.ms[0]}–${sh.ms[1]} models.` : "";
+      h.innerHTML = cur === auto ? `Datasheet cost for ${plural(count, "model")}${br ? ` <span>(${esc(sh.p)} base · ${esc(br)})</span>` : ""}.${size}`
+        : `Datasheet cost is ${auto} pts.${size} <button type="button" class="linkbtn" id="pts-reset">Use ${auto}</button>`;
     }
     function preview(){
       const u = readForm();
@@ -4122,7 +4181,7 @@ Redemptor Dreadnought (210 points)</pre>
         $("f-tier").value = String(t); slotApi.helmet.set({hex: scheme.tiers[t].color, paint: scheme.tiers[t].paint || ""});
       }
       if(!headTouched) setHead(sh ? autoHead(sh.r) : PROF.defaultHead);
-      if(sh && !selId) $("f-count").value = singleRole(sh.r) ? 1 : (sh.pb && sh.pb[0] ? (sh.pb[0][0] === sh.pb[0][1] ? sh.pb[0][0] : Math.max(1, sh.pb[0][0] - 1)) : 5);
+      if(sh && !selId) $("f-count").value = minModels(sh);
       if(sh && !pointsTouched){ const p = ptsFor(sh, Math.max(1, parseInt($("f-count").value, 10) || 1)); if(p != null) $("f-points").value = p; }
       fillWeapons(); preview();
     });
