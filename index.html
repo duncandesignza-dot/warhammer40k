@@ -19,7 +19,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap">
-<script>try{document.documentElement.dataset.bg=localStorage.getItem("ll-bg")||"1"}catch(e){}</script>
+<script>try{var d=document.documentElement,h=location.hash;d.dataset.bg=localStorage.getItem("ll-bg")||"1";if(/^#\/war(\/|$)/.test(h)||(!/^#\/(profile|army|new)(\/|$)/.test(h)&&localStorage.getItem("ll-mode")==="war"))d.dataset.mode="war"}catch(e){}</script>
 <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
@@ -28,15 +28,23 @@
       <a class="brand" href="#/" aria-label="Livery Ledger home">
         <svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true">
           <defs>
-            <linearGradient id="bm-g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3ddc84"/><stop offset="1" stop-color="#4dd7cf"/></linearGradient>
+            <linearGradient id="bm-g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:var(--brand)"/><stop offset="1" style="stop-color:var(--brand-2)"/></linearGradient>
             <clipPath id="bm-c"><path d="M32 3.5 55 10.5V29c0 14.6-9.6 25.5-23 31.5C18.6 54.5 9 43.6 9 29V10.5Z"/></clipPath>
           </defs>
-          <g clip-path="url(#bm-c)"><rect width="64" height="64" fill="url(#bm-g)"/><path d="M0 0h32v32H0zM32 32h32v32H32z" fill="#0b2418"/></g>
-          <path d="M32 3.5 55 10.5V29c0 14.6-9.6 25.5-23 31.5C18.6 54.5 9 43.6 9 29V10.5Z" fill="none" stroke="#3ddc84" stroke-width="2.5" stroke-linejoin="round"/>
-          <path d="M32 17.5s-9 10.4-9 17.2a9 9 0 0 0 18 0c0-6.8-9-17.2-9-17.2Z" fill="#f2f6f3" stroke="#06080a" stroke-width="3" stroke-linejoin="round"/>
-          <path d="M27.6 35.5a4.6 4.6 0 0 0 3.2 4.3" fill="none" stroke="#9fb0a7" stroke-width="2" stroke-linecap="round"/>
+          <g clip-path="url(#bm-c)"><rect width="64" height="64" fill="url(#bm-g)"/><path d="M0 0h32v32H0zM32 32h32v32H32z" style="fill:var(--mark-dark)"/></g>
+          <path d="M32 3.5 55 10.5V29c0 14.6-9.6 25.5-23 31.5C18.6 54.5 9 43.6 9 29V10.5Z" fill="none" style="stroke:var(--brand)" stroke-width="2.5" stroke-linejoin="round"/>
+          <g class="mk-livery">
+            <path d="M32 17.5s-9 10.4-9 17.2a9 9 0 0 0 18 0c0-6.8-9-17.2-9-17.2Z" fill="#f2f6f3" stroke="#06080a" stroke-width="3" stroke-linejoin="round"/>
+            <path d="M27.6 35.5a4.6 4.6 0 0 0 3.2 4.3" fill="none" stroke="#9fb0a7" stroke-width="2" stroke-linecap="round"/>
+          </g>
+          <g class="mk-war" stroke-linecap="round" stroke-linejoin="round">
+            <g stroke="#06080a"><path d="M22 17.5 38 39M42 17.5 26 39" stroke-width="7"/><path d="M33.5 42.5 42.5 35.5M30.5 42.5 21.5 35.5" stroke-width="6"/><path d="M38 39l4.2 5.4M26 39l-4.2 5.4" stroke-width="6"/></g>
+            <path d="M22 17.5 38 39M42 17.5 26 39" stroke="#f2f6f3" stroke-width="3.4"/>
+            <path d="M33.5 42.5 42.5 35.5M30.5 42.5 21.5 35.5" stroke="#cdd5d1" stroke-width="2.6"/>
+            <path d="M38 39l4.2 5.4M26 39l-4.2 5.4" stroke="#9fb0a7" stroke-width="2.6"/>
+          </g>
         </svg>
-        <span class="brand-word">Livery <b>Ledger</b></span>
+        <span class="brand-word"><span class="bw-livery">Livery</span><span class="bw-war">War</span> <b>Ledger</b></span>
       </a>
       <div class="top-tools">
         <div class="bgpick">

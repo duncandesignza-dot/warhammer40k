@@ -222,19 +222,25 @@
   }
   const clearOfflineData = () => { try { navigator.serviceWorker && navigator.serviceWorker.controller && navigator.serviceWorker.controller.postMessage({type: "clear-data"}); } catch(e){} };
   function setTop(){
-    const nav = $("topnav"), a = store.kind === "supabase" ? acct() : null;
-    if(store.kind !== "supabase"){ nav.innerHTML = ""; return; }
+    const nav = $("topnav"), a = store.kind === "supabase" ? acct() : null, war = isWar();
+    const sw = `<div class="mode-switch" role="group" aria-label="Switch between Livery Ledger and War Ledger"><a href="#/profile"${war ? "" : ` aria-current="true"`}><span class="ms-long">Livery</span><span class="ms-short" aria-hidden="true">L</span><span class="sr-only"> Ledger: painting</span></a><a href="#/war"${war ? ` aria-current="true"` : ""}><span class="ms-long">War</span><span class="ms-short" aria-hidden="true">W</span><span class="sr-only"> Ledger: your fighting force</span></a></div>`;
+    if(store.kind !== "supabase"){ nav.innerHTML = sw; return; }
     if(!a){
       nav.innerHTML = `<button type="button" class="btn-sm ghost" data-auth-open="in">Log in</button><button type="button" class="btn-sm primary" data-auth-open="up">Sign up</button>`;
       return;
     }
-    nav.innerHTML = `<div class="acct">
+    nav.innerHTML = sw + `<div class="acct">
       <button type="button" class="acct-btn" id="b-acct" aria-haspopup="menu" aria-expanded="false" aria-controls="acct-menu" aria-label="Account menu for ${esc(a.name)}">${avatarHtml(a)}<span class="acct-name">${esc(a.name)}</span>${CARET}</button>
       <div class="acct-menu" id="acct-menu" role="menu" hidden>
         <div class="acct-head">${avatarHtml(a, "lg")}<span><strong>${esc(a.name)}</strong><small>${esc(a.email)}</small></span></div>
         <a role="menuitem" href="#/">Home</a>
-        <a role="menuitem" href="#/profile">My profile and ledgers</a>
-        <button type="button" role="menuitem" data-roster>Your roster</button>
+        ${war ? `<a role="menuitem" href="#/war">Command centre</a>
+        <a role="menuitem" href="#/war/armies">My armies</a>
+        <a role="menuitem" href="#/war/collection">My collection</a>
+        <a role="menuitem" href="#/war/lists">Army lists</a>
+        <a role="menuitem" href="#/war/battles">Battle reports</a>`
+        : `<a role="menuitem" href="#/profile">My profile and ledgers</a>
+        <button type="button" role="menuitem" data-roster>Your roster</button>`}
         <a role="menuitem" href="#/shame">Pile of shame</a>
         <a role="menuitem" href="#/shared">Shared armies</a>
         <a role="menuitem" href="#/settings">Settings</a>
@@ -390,8 +396,21 @@
     lastHash = location.hash;
     if(view.cleanup){ try { view.cleanup(); } catch(e){} view.cleanup = null; }
     const parts = (location.hash.replace(/^#\/?/, "") || "").split("/").filter(Boolean);
+    // War Ledger pages are red, Livery Ledger's own pages green; shared pages keep the last one used.
+    setMode(parts[0] === "war" ? "war" : ["profile", "army", "new"].includes(parts[0]) ? "livery" : savedMode());
+    document.querySelectorAll("dialog.wdlg[open]").forEach(d => d.close());
     setTop();
     try {
+      if(parts[0] === "war"){
+        if(store.kind === "supabase" && !store.session){ await viewLanding(); setTimeout(() => openAuth("in", "Log in to open War Ledger."), 0); }
+        else if(parts[1] === "army" && parts[2]) await viewWarArmy(parts[2]);
+        else if(parts[1] === "armies") await viewWarArmies();
+        else if(parts[1] === "collection") await viewWarCollection();
+        else if(parts[1] === "list" && parts[2]) await viewWarList(parts[2]);
+        else if(parts[1] === "lists") await viewWarLists();
+        else if(parts[1] === "battles") await viewWarBattles();
+        else await viewWarDash();
+      } else
       if(parts[0] === "new" && FBY[parts[1]]) await viewSetup({factionId: parts[1]});
       else if(parts[0] === "army" && parts[1] && parts[2] === "colours") await viewSetup({armyId: parts[1]});
       else if(parts[0] === "army" && parts[1] && parts[2] === "guide") await viewGuide(parts[1]);
@@ -419,9 +438,794 @@
       else await viewLanding();
     } catch(err){
       console.error(err);
-      app.innerHTML = `<div class="banner"><span class="dot warn"></span>Couldn't load this page: ${esc(errText(err))}</div><p><a class="btn" href="#/profile">Back to your ledgers</a></p>`;
+      app.innerHTML = `<div class="banner"><span class="dot warn"></span>Couldn't load this page: ${esc(errText(err))}</div><p><a class="btn" href="${isWar() ? "#/war" : "#/profile"}">Back to your ${isWar() ? "armies" : "ledgers"}</a></p>`;
     }
     window.scrollTo(0, 0);
+  }
+
+  /* ============================================================
+     War Ledger: the same collection, seen as a fighting force.
+     What you own, what you can field, whether it's ready, and how it fared.
+     (Painting stays in Livery Ledger; both read the same armies and units.)
+     ============================================================ */
+  const MODE_KEY = "ll-mode";
+  const isWar = () => document.documentElement.dataset.mode === "war";
+  function setMode(m){
+    if(m === "war") document.documentElement.dataset.mode = "war"; else delete document.documentElement.dataset.mode;
+    try { localStorage.setItem(MODE_KEY, m === "war" ? "war" : "livery"); } catch(e){}
+  }
+  const savedMode = () => { try { return localStorage.getItem(MODE_KEY) === "war" ? "war" : "livery"; } catch(e){ return "livery"; } };
+
+  const READY_RULES = [["painted", "Painted"], ["based", "Painted and based"], ["built", "Built"]];
+  const readyRule = () => READY_RULES.some(r => r[0] === settings.ready) ? settings.ready : "painted";
+  const readyRuleText = () => ({painted: "Ready means painted", based: "Ready means painted and based", built: "Ready means built"})[readyRule()];
+  // Owned, built, painted and battle-ready models for one unit.
+  function readiness(u){
+    const owned = Math.max(1, +u.count || 1), st = u.stages || [];
+    const painted = Math.min(owned, Math.max(0, +u.painted || 0));
+    const built = Math.min(owned, Math.max(u.built != null ? +u.built : (st.includes("built") ? owned : 0), painted));
+    const rule = readyRule();
+    const auto = rule === "built" ? built : rule === "based" ? (st.includes("basing") ? painted : 0) : painted;
+    const ready = u.ready != null ? Math.min(owned, +u.ready) : auto;
+    return {owned, built, painted, ready, auto, points: +u.points || 0};
+  }
+  // Every model in exactly one bucket, for the collection status bar.
+  const BUCKETS = [["sprue", "On sprue"], ["built", "Built"], ["primed", "Primed"], ["painting", "Painting"], ["painted", "Painted"], ["ready", "Battle ready"]];
+  function buckets(units, kits){
+    const b = {sprue: 0, built: 0, primed: 0, painting: 0, painted: 0, ready: 0};
+    units.forEach(u => {
+      const r = readiness(u), st = u.stages || [], made = Math.max(r.built, r.ready);
+      b.ready += r.ready; b.sprue += r.owned - made;
+      let rest = made - r.ready;
+      const p = Math.min(rest, Math.max(0, r.painted - r.ready)); b.painted += p; rest -= p;
+      b[st.some(k => ["base", "shade", "highlight", "basing", "varnish"].includes(k)) ? "painting" : st.includes("primed") ? "primed" : "built"] += rest;
+    });
+    (kits || []).forEach(k => { b.sprue += k.models; });
+    return b;
+  }
+  const sumUp = units => units.reduce((t, u) => { const r = readiness(u); t.models += r.owned; t.ready += r.ready; t.points += r.points; t.built += r.built; t.painted += r.painted; return t; }, {models: 0, ready: 0, points: 0, built: 0, painted: 0});
+  const pctOf = (a, b) => b ? Math.round(a / b * 100) : 0;
+  const recordOf = games => games.reduce((r, g) => { r[g.result]++; return r; }, {w: 0, l: 0, d: 0});
+  const recText = r => `${r.w}–${r.l}${r.d ? "–" + r.d : ""}`;
+  const RES = {w: "Win", l: "Loss", d: "Draw"};
+  const ptsText = n => num(n) + " pts";
+  const factionName = id => (FBY[id] || {}).name || id || "Unknown";
+  const byNewest = (a, b) => (b.date || "").localeCompare(a.date || "") || (b.createdAt || "").localeCompare(a.createdAt || "");
+  const dayText = d => { const t = new Date(d + "T12:00:00"); return isNaN(t) ? d : t.toLocaleDateString("en-GB", {day: "numeric", month: "short", year: "numeric"}); };
+
+  const WAR_TABS = [["", "Dashboard"], ["armies", "Armies"], ["collection", "Collection"], ["lists", "Army lists"], ["battles", "Battles"]];
+  const warTabs = on => `<nav class="war-tabs" aria-label="War Ledger">${WAR_TABS.map(([k, l]) => `<a href="#/war${k ? "/" + k : ""}"${k === on ? ` aria-current="page"` : ""}>${l}</a>`).join("")}</nav>`;
+  const missingBanner = D => D.warMissing ? `<div class="banner"><span class="dot warn"></span><span>Army lists and battle reports need a quick database update. Run <strong>supabase/features.sql</strong> in Supabase to turn them on.</span></div>` : "";
+
+  let flashTimer = 0;
+  function flash(text){
+    const t = $("toast"); t.querySelector("span").textContent = text; t.querySelector("button").hidden = true; t.hidden = false;
+    clearTimeout(flashTimer); flashTimer = setTimeout(() => { t.hidden = true; }, 4000);
+  }
+  // Clicks on the page, removed again when the page changes.
+  function onApp(handler){
+    app.addEventListener("click", handler);
+    const prev = view.cleanup;
+    view.cleanup = () => { app.removeEventListener("click", handler); if(prev) prev(); };
+  }
+  // A dialog built on the fly and removed when it closes.
+  function modal(title, body, cls){
+    const d = document.createElement("dialog");
+    d.className = "wdlg" + (cls ? " " + cls : ""); d.setAttribute("aria-labelledby", "wd-h");
+    d.innerHTML = `<form class="wd-form" novalidate><div class="wd-top"><h2 id="wd-h">${title}</h2><button type="button" class="btn-sm" data-x>Close</button></div><div class="wd-body">${body}</div></form>`;
+    document.body.appendChild(d);
+    d.querySelector("[data-x]").addEventListener("click", () => d.close());
+    d.addEventListener("close", () => d.remove());
+    d.addEventListener("mousedown", e => { if(e.target === d) d.close(); });
+    d.showModal();
+    return d;
+  }
+  // Two taps to delete: the first arms the button, the second does it.
+  function armButton(b, label, go){
+    b.addEventListener("click", async () => {
+      if(b.dataset.armed !== "1"){ b.dataset.armed = "1"; b.textContent = label; setTimeout(() => { if(b.isConnected){ b.dataset.armed = ""; b.textContent = b.dataset.label; } }, 4000); return; }
+      b.disabled = true; try { await go(); } finally { if(b.isConnected) b.disabled = false; }
+    });
+    b.dataset.label = b.textContent;
+  }
+
+  // Everything War Ledger shows: armies, units, lists and battles (and the pile of shame for the dashboard).
+  async function warData(withKits){
+    const [armies, units] = await Promise.all([store.listArmies(), store.listAllUnits()]);
+    let lists = [], games = [], warMissing = false;
+    try { [lists, games] = await Promise.all([store.listLists(), store.listGames()]); }
+    catch(e){ if(e.code === "nowar") warMissing = true; else throw e; }
+    const kits = withKits ? await getShame().catch(() => []) : [];
+    games.sort(byNewest);
+    const mine = store.session ? store.session.user.id : null;
+    const own = armies.filter(a => !mine || !a.owner || a.owner === mine);
+    return {armies: own, units, lists, games, kits, warMissing, byArmy: id => units.filter(u => u.armyId === id)};
+  }
+  function armyBadge(a, size){
+    const keep = PROF; PROF = P.profileFor(a.faction);
+    const html = a.scheme && a.scheme.tiers ? tierBadge(a.scheme, a.scheme.tiers[0], size) : factionBadge(a.faction, size);
+    PROF = keep; return html;
+  }
+  function armyCard(a, D){
+    const t = sumUp(D.byArmy(a.id)), gs = D.games.filter(g => g.armyId === a.id), r = recordOf(gs), p = pctOf(t.ready, t.models);
+    return `<a class="lcard war-card" href="#/war/army/${esc(a.id)}">
+      <div class="card-top">${armyBadge(a, 52)}<div><h3>${esc(a.name)}</h3><div class="meta">${esc(factionName(a.faction))}</div></div></div>
+      <div class="wc-nums"><span><b>${num(t.points)}</b>${a.scheme.limit ? ` / ${num(a.scheme.limit)}` : ""} pts</span><span><b>${num(t.models)}</b> ${t.models === 1 ? "model" : "models"}</span><span><b>${gs.length}</b> ${gs.length === 1 ? "game" : "games"}</span></div>
+      <div class="prog" aria-hidden="true"><i style="width:${p}%"></i></div>
+      <div class="foot"><span>${p}% battle ready</span><span>${gs.length ? `${r.w} W · ${r.l} L${r.d ? ` · ${r.d} D` : ""}` : "No games yet"}</span></div>
+    </a>`;
+  }
+  const warEmpty = () => `<section class="panel war-empty">
+      <span class="we-mark" aria-hidden="true">${SWORDS}</span>
+      <h2>Muster your first army</h2>
+      <p class="sub">Pick a faction and name your force. Then add the units you own, or paste an army list to add them all at once.</p>
+      <button type="button" class="primary" data-new-army>+ New army</button>
+      <p class="hint">Already painting in Livery Ledger? Those armies show up here automatically.</p>
+    </section>`;
+  const SWORDS = `<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 3l10.5 12.5M20 3 9.5 15.5"/><path d="M12.5 17.5l3.5-3M11.5 17.5 8 14.5"/><path d="M15.5 16l3.5 4.5M8.5 16 5 20.5"/></svg>`;
+
+  function gameRows(games, D){
+    const an = id => (D.armies.find(a => a.id === id) || {}).name || "Deleted army";
+    const ln = id => (D.lists.find(l => l.id === id) || {}).name || "";
+    return `<ul class="games">${games.map(g => `<li class="game r-${g.result}">
+        <span class="res" aria-label="${RES[g.result]}">${g.result.toUpperCase()}</span>
+        <div class="g-main"><strong>${esc(an(g.armyId))}${ln(g.listId) ? ` <small>· ${esc(ln(g.listId))}</small>` : ""}</strong>
+          <small>vs ${esc(g.oppName || factionName(g.opp))}${g.mission ? ` · ${esc(g.mission)}` : ""} · ${esc(dayText(g.date))}</small></div>
+        ${g.us != null || g.them != null ? `<span class="score">${g.us ?? "–"}–${g.them ?? "–"}</span>` : ""}
+        <button type="button" class="btn-sm" data-game="${esc(g.id)}" aria-label="Edit battle on ${esc(dayText(g.date))}">Edit</button>
+      </li>`).join("")}</ul>`;
+  }
+
+  /* ---------- dashboard ---------- */
+  async function viewWarDash(){
+    view.name = "war"; document.title = "War Ledger";
+    let D = null;
+    const render = async () => { D = await warData(true); drawWarDash(D); };
+    await render();
+    onApp(e => warClicks(e, D, render));
+  }
+  function drawWarDash(D){
+    const all = sumUp(D.units), bk = buckets(D.units, D.kits), total = Object.values(bk).reduce((a, b) => a + b, 0);
+    const rec = recordOf(D.games), facs = [...new Set(D.armies.map(a => factionName(a.faction)))];
+    const kitModels = D.kits.reduce((n, k) => n + k.models, 0);
+    app.innerHTML = `
+      <section class="page-head war-head">
+        <div><p class="eyebrow">War Ledger</p><h1>Command centre</h1>
+        <p class="sub">What you own, what you can field, and how your armies fare on the tabletop.</p></div>
+        <div class="war-actions"><button type="button" class="primary" data-new-army>+ New army</button>${D.armies.length && !D.warMissing ? `<button type="button" data-log>Log a battle</button>` : ""}</div>
+      </section>
+      ${warTabs("")}
+      ${missingBanner(D)}
+      ${D.armies.length ? `
+      <section class="war-stats" aria-label="Your forces">
+        <div class="wstat"><b>${D.armies.length}</b><span>${D.armies.length === 1 ? "Army" : "Armies"}</span><small>${esc(facs.slice(0, 3).join(", "))}${facs.length > 3 ? ` and ${facs.length - 3} more` : ""}</small></div>
+        <div class="wstat"><b>${num(total)}</b><span>Models</span><small>${kitModels ? `Including ${num(kitModels)} on your pile of shame` : "Across all your armies"}</small></div>
+        <div class="wstat"><b>${num(all.points)}</b><span>Points</span><small>From the units you've recorded</small></div>
+        <div class="wstat ready"><b>${num(bk.ready)}<small> / ${num(total)}</small></b><span>Battle ready</span><div class="wbar" aria-hidden="true"><i style="width:${pctOf(bk.ready, total)}%"></i></div><small>${pctOf(bk.ready, total)}% · ${esc(readyRuleText())}</small></div>
+      </section>
+      <section class="panel war-status" aria-labelledby="ws-h">
+        <h2 class="ph" id="ws-h">Collection status</h2>
+        <div class="stack" role="img" aria-label="${esc(BUCKETS.map(([k, l]) => `${l}: ${bk[k]}`).join(", "))}">${BUCKETS.map(([k]) => bk[k] ? `<i class="b-${k}" style="flex:${bk[k]}"></i>` : "").join("")}</div>
+        <ul class="stack-key">${BUCKETS.map(([k, l]) => `<li><span class="sw b-${k}"></span><span><b>${num(bk[k])}</b><small>${l}</small></span></li>`).join("")}</ul>
+      </section>
+      <section class="war-sec" aria-labelledby="wa-h"><div class="sec-h"><h2 id="wa-h">Your armies</h2><a href="#/war/armies">All armies</a></div>
+        <div class="ledgers">${D.armies.map(a => armyCard(a, D)).join("")}</div></section>
+      <section class="war-sec" aria-labelledby="wb-h"><div class="sec-h"><h2 id="wb-h">Recent battles</h2>${D.games.length ? `<a href="#/war/battles">All battles · ${recText(rec)}</a>` : ""}</div>
+        ${D.games.length ? gameRows(D.games.slice(0, 5), D) : `<p class="hint">No battles logged yet. After your next game, log it here to start your record.</p>`}</section>
+      ` : warEmpty()}`;
+  }
+  // Buttons that appear on several War Ledger pages.
+  function warClicks(e, D, again){
+    const t = e.target.closest("button"); if(!t) return;
+    if(t.matches("[data-new-army]")) openNewArmy();
+    else if(t.matches("[data-log]")) openGame(D, {armyId: t.dataset.log || "", listId: t.dataset.list || ""}, again);
+    else if(t.matches("[data-game]")) openGame(D, D.games.find(g => g.id === t.dataset.game), again);
+  }
+
+  /* ---------- armies ---------- */
+  async function viewWarArmies(){
+    view.name = "war-armies"; document.title = "Armies · War Ledger";
+    let D = null;
+    const render = async () => { D = await warData(false); app.innerHTML = `
+      <section class="page-head war-head">
+        <div><p class="eyebrow">War Ledger</p><h1>My armies</h1><p class="sub">Every force you own, how ready it is and how it has fared.</p></div>
+        <div class="war-actions"><button type="button" class="primary" data-new-army>+ New army</button></div>
+      </section>
+      ${warTabs("armies")}
+      ${D.armies.length ? `<h2 class="sr-only">Your armies</h2><div class="ledgers">${D.armies.map(a => armyCard(a, D)).join("")}</div>` : warEmpty()}`; };
+    await render();
+    onApp(e => warClicks(e, D, render));
+  }
+  function factionSelect(id, value, blank){
+    const groups = {};
+    FACTIONS.forEach(f => { (groups[f.group || "Other"] = groups[f.group || "Other"] || []).push(f); });
+    return `<select id="${id}">${blank ? `<option value="">${esc(blank)}</option>` : ""}${Object.entries(groups).map(([g, fs]) => `<optgroup label="${esc(g)}">${fs.map(f => `<option value="${esc(f.id)}"${f.id === value ? " selected" : ""}>${esc(f.name)}</option>`).join("")}</optgroup>`).join("")}</select>`;
+  }
+  function openNewArmy(){
+    const d = modal("New army", `
+      <label>Faction${factionSelect("w-fac", "", "Choose a faction…")}</label>
+      <label>Army name<input id="w-name" maxlength="80" placeholder="e.g. 2nd Company Strike Force"></label>
+      <label><span>Points you're building to <span class="opt">(optional)</span></span><input id="w-lim" type="number" min="0" max="20000" step="250" inputmode="numeric" placeholder="e.g. 2000"></label>
+      <p class="hint">War Ledger uses the faction's official colours behind the scenes. If you start painting, you can choose your own in Livery Ledger.</p>
+      <div class="row-actions"><button type="submit" class="primary">Create army</button><span class="msg" id="w-msg" role="status"></span></div>`);
+    d.querySelector("form").addEventListener("submit", async e => {
+      e.preventDefault();
+      const fid = $("w-fac").value;
+      if(!FBY[fid]){ $("w-msg").textContent = "Choose a faction."; $("w-fac").focus(); return; }
+      const b = e.submitter || d.querySelector("[type=submit]"); b.disabled = true; $("w-msg").textContent = "Creating…";
+      try {
+        const scheme = {...P.presetFor(fid), wonly: true, limit: Math.max(0, parseInt($("w-lim").value, 10) || 0)};
+        const a = await store.saveArmy({faction: fid, name: $("w-name").value.trim() || FBY[fid].name, scheme, public: false});
+        d.close(); location.hash = `#/war/army/${a.id}`;
+      } catch(err){ console.error(err); $("w-msg").textContent = "Couldn't create the army: " + errText(err); b.disabled = false; }
+    });
+    $("w-fac").focus();
+  }
+
+  // A new unit, coloured from the army's scheme so it also looks right in Livery Ledger.
+  function unitRow(army, sh, extra){
+    const scheme = army.scheme, c = scheme.colors, role = sh ? sh.r : ((extra && extra.role) || "Infantry");
+    const keep = PROF; PROF = P.profileFor(army.faction);
+    const tierIdx = (role === "Epic Hero" || role === "Character") ? Math.min(2, scheme.tiers.length - 1) : 0;
+    const row = {datasheet: sh ? sh.n : "", role, name: sh ? sh.n : "", count: 1, points: sh ? sh.p || 0 : 0, stages: [], painted: 0, tier: tierIdx,
+      helmet: scheme.tiers[tierIdx].color, head: autoHead(role), skin: c.skin, lens: c.lens, armour: c.armour, secondary: c.secondary, trim: c.trim, emblem: c.emblem, shape: "",
+      cloth: c.cloth, metal: c.metal, ...(extra || {})};
+    PROF = keep; return row;
+  }
+  const sheetsOf = fid => ((FBY[fid] || {}).units || []);
+  function sheetSelect(fid, value){
+    const all = sheetsOf(fid), byRole = {};
+    all.forEach(s => { const k = s.t ? "Legends and other" : s.r; (byRole[k] = byRole[k] || []).push(s); });
+    const order = [...ROLE_ORDER, "Legends and other"].filter(r => byRole[r]);
+    return `<select id="w-sheet"><option value="">Custom unit (not in the list)</option>${order.map(r => `<optgroup label="${esc(r)}">${byRole[r].map(s => `<option value="${esc(s.n)}"${s.n === value ? " selected" : ""}>${esc(s.n)}${s.p ? ` · ${s.p} pts` : ""}</option>`).join("")}</optgroup>`).join("")}</select>`;
+  }
+
+  /* ---------- a unit's record ---------- */
+  function openUnit(army, u, done){
+    const r = u ? readiness(u) : {owned: 1, built: 0, painted: 0, ready: 0};
+    const cur = settings.currency;
+    const d = modal(u ? esc(u.name) : "Add a unit", `
+      <div class="wgrid">
+        <label class="span2">Datasheet${sheetSelect(army.faction, u ? u.datasheet : "")}</label>
+        <label class="span2">Name<input id="w-uname" maxlength="80" value="${esc(u ? u.name : "")}" placeholder="Leave blank to use the datasheet name"></label>
+        <label>Role<select id="w-role">${(u && u.role && !ROLE_ORDER.includes(u.role) ? [u.role, ...ROLE_ORDER] : ROLE_ORDER).map(x => `<option${(u ? u.role || "Infantry" : "Infantry") === x ? " selected" : ""}>${esc(x)}</option>`).join("")}</select></label>
+        <label>Models<input id="w-count" type="number" min="1" max="99" inputmode="numeric" value="${r.owned}"></label>
+        <label>Points<input id="w-pts" type="number" min="0" max="9999" inputmode="numeric" value="${u ? u.points : 0}"></label>
+      </div>
+      <fieldset class="wfs"><legend>Readiness</legend>
+        <div class="wgrid">
+          <label>Built<input id="w-built" type="number" min="0" max="99" inputmode="numeric" value="${r.built}"></label>
+          <label>Painted<input id="w-painted" type="number" min="0" max="99" inputmode="numeric" value="${r.painted}"></label>
+          <label>Battle ready<input id="w-ready" type="number" min="0" max="99" inputmode="numeric" value="${r.ready}"></label>
+          <label class="chk span3"><input type="checkbox" id="w-auto"${!u || u.ready == null ? " checked" : ""}><span>Work out battle ready for me <small>(${esc(readyRuleText().toLowerCase())})</small></span></label>
+        </div>
+        <p class="hint">Painted is shared with Livery Ledger, so painting progress there updates this too.</p>
+      </fieldset>
+      <fieldset class="wfs"><legend>Wargear</legend>
+        <div class="wgrid">
+          <label class="span3">Ranged weapons<input id="w-ranged" maxlength="600" value="${esc(u ? u.ranged : "")}" placeholder="e.g. Bolt rifles, Astartes grenade launcher"></label>
+          <label class="span3">Melee weapons<input id="w-melee" maxlength="600" value="${esc(u ? u.melee : "")}" placeholder="e.g. Close combat weapons"></label>
+        </div>
+      </fieldset>
+      <fieldset class="wfs"><legend>Purchase</legend>
+        <div class="wgrid">
+          <label>Bought<input id="w-bought" type="date" value="${esc(u ? u.bought : "")}" max="${isoDay(new Date())}"></label>
+          <label>Price (${esc(cur)})<input id="w-price" type="number" min="0" step="0.01" inputmode="decimal" value="${u && u.price ? u.price : ""}"></label>
+          <label>Bought from<input id="w-shop" maxlength="80" value="${esc(u ? u.shop : "")}" placeholder="e.g. local store"></label>
+        </div>
+      </fieldset>
+      <label>Assembly notes<textarea id="w-asm" rows="2" maxlength="600" placeholder="e.g. magnetised arms, built with the heavy bolter">${esc(u ? u.assembly : "")}</textarea></label>
+      <label>Notes<textarea id="w-notes" rows="2" maxlength="600">${esc(u ? u.notes : "")}</textarea></label>
+      <div class="row-actions"><button type="submit" class="primary">${u ? "Save unit" : "Add unit"}</button>${u ? `<button type="button" class="danger" id="w-del">Delete unit</button>` : ""}<span class="msg" id="w-msg" role="status"></span></div>`, "wide");
+    const v = id => $(id).value, n = (id, max) => Math.min(max, Math.max(0, parseInt(v(id), 10) || 0));
+    const syncReady = () => {
+      const auto = $("w-auto").checked, count = Math.max(1, n("w-count", 99));
+      $("w-ready").disabled = auto;
+      if(auto){ const built = Math.min(count, Math.max(n("w-built", 99), n("w-painted", 99))), painted = Math.min(count, n("w-painted", 99)), st = u ? u.stages || [] : [];
+        const rule = readyRule(); $("w-ready").value = rule === "built" ? built : rule === "based" ? (st.includes("basing") ? painted : 0) : painted; }
+    };
+    ["w-auto", "w-count", "w-built", "w-painted"].forEach(id => $(id).addEventListener("input", syncReady));
+    syncReady();
+    $("w-sheet").addEventListener("change", () => {
+      const sh = sheetsOf(army.faction).find(s => s.n === v("w-sheet")); if(!sh) return;
+      $("w-role").value = ROLE_ORDER.includes(sh.r) ? sh.r : "Other";
+      if(!u){ $("w-pts").value = sh.p || 0; $("w-count").value = singleRole(sh.r) ? 1 : (sh.pb && sh.pb[0] ? (sh.pb[0][0] === sh.pb[0][1] ? sh.pb[0][0] : Math.max(1, sh.pb[0][0] - 1)) : 5);
+        if(!$("w-ranged").value && sh.wr) $("w-ranged").value = sh.wr.slice(0, 4).join(", ");
+        if(!$("w-melee").value && sh.wm) $("w-melee").value = sh.wm.slice(0, 3).join(", "); }
+      syncReady();
+    });
+    d.querySelector("form").addEventListener("submit", async e => {
+      e.preventDefault();
+      const sh = sheetsOf(army.faction).find(s => s.n === v("w-sheet"));
+      const name = v("w-uname").trim() || (sh ? sh.n : "");
+      if(!name){ $("w-msg").textContent = "Choose a datasheet or give the unit a name."; $("w-uname").focus(); return; }
+      const count = Math.max(1, n("w-count", 99)), painted = Math.min(count, n("w-painted", 99)), built = Math.min(count, Math.max(n("w-built", 99), painted));
+      const base = u ? {...u} : unitRow(army, sh, {});
+      const row = {...base, datasheet: sh ? sh.n : (u ? u.datasheet : ""), role: v("w-role"), name, count, points: n("w-pts", 9999), painted, built,
+        ready: $("w-auto").checked ? null : Math.min(count, n("w-ready", 99)), ranged: v("w-ranged").trim(), melee: v("w-melee").trim(),
+        bought: v("w-bought"), price: v("w-price"), shop: v("w-shop").trim(), assembly: v("w-asm").trim(), notes: v("w-notes").trim()};
+      // Keep Livery Ledger's Built stage in step with a fully built unit.
+      const st = (row.stages || []).slice();
+      if(built >= count && !st.includes("built")) st.unshift("built");
+      if(built === 0 && painted === 0) { const i = st.indexOf("built"); if(i >= 0 && st.length === 1) st.splice(i, 1); }
+      row.stages = st;
+      const b = e.submitter || d.querySelector("[type=submit]"); b.disabled = true; $("w-msg").textContent = "Saving…";
+      try { await store.saveUnit(army.id, row, u ? u.id : null, null, false, u || null); d.close(); flash(u ? `Saved ${name}` : `Added ${name}`); done(); }
+      catch(err){ console.error(err); $("w-msg").textContent = "Couldn't save: " + errText(err); b.disabled = false; }
+    });
+    if(u) armButton($("w-del"), "Tap again to delete", async () => {
+      try { await store.removeUnit(u); d.close(); flash(`Deleted ${u.name}`); done(); }
+      catch(err){ $("w-msg").textContent = "Couldn't delete: " + errText(err); }
+    });
+  }
+
+  // Paste an army list or share code to add its units to an army's collection.
+  function openAddFromList(army, done){
+    const d = modal("Add units from a list", `
+      <p class="sub">Paste a list from the Warhammer 40,000 app, New Recruit, BattleScribe or a list-builder share code.</p>
+      <label>Army list<textarea id="w-list" rows="8" placeholder="Captain (80 points)&#10;Intercessor Squad (160 points)&#10;  • 10x Intercessor"></textarea></label>
+      <div id="w-found" class="w-found" aria-live="polite"></div>
+      <div class="row-actions"><button type="submit" class="primary" id="w-add" disabled>Add units</button><span class="msg" id="w-msg" role="status"></span></div>`, "wide");
+    const reader = makeListReader(army.faction);
+    let parsed = null;
+    const read = () => {
+      const t = $("w-list").value; parsed = t.trim() ? (reader.parseCode(t) || reader.parseList(t)) : null;
+      const us = parsed ? parsed.units : [];
+      $("w-found").innerHTML = !parsed ? "" : us.length ? `<p><strong>${plural(us.length, "unit")}</strong> found · ${ptsText(us.reduce((a, x) => a + x.points, 0))}</p><ul>${us.map(x => `<li>${esc(x.name)} <small>${x.count} · ${x.points} pts</small></li>`).join("")}</ul>${parsed.unmatched.length ? `<p class="hint">Not matched: ${esc(parsed.unmatched.join(", "))}</p>` : ""}` : `<p class="hint">No units found yet. Paste the whole list, including the points.</p>`;
+      $("w-add").disabled = !us.length; $("w-add").textContent = us.length ? `Add ${plural(us.length, "unit")}` : "Add units";
+    };
+    $("w-list").addEventListener("input", read);
+    d.querySelector("form").addEventListener("submit", async e => {
+      e.preventDefault(); if(!parsed || !parsed.units.length) return;
+      $("w-add").disabled = true; $("w-msg").textContent = "Adding…";
+      try {
+        const rows = parsed.units.map(x => unitRow(army, x.sheet, {name: x.name, count: x.count, points: x.points, melee: x.melee.join(", "), ranged: x.ranged.join(", "), notes: x.notes.join(". ")}));
+        const n = await store.importUnits(army.id, rows);
+        if(parsed.limit && !army.scheme.limit) await store.saveArmy({faction: army.faction, name: army.name, scheme: {...army.scheme, limit: parsed.limit}, public: army.public}, army.id);
+        d.close(); flash(`Added ${plural(n, "unit")}`); done();
+      } catch(err){ console.error(err); $("w-msg").textContent = "Couldn't add units: " + errText(err); $("w-add").disabled = false; }
+    });
+    $("w-list").focus();
+  }
+
+  /* ---------- an army's command page ---------- */
+  async function viewWarArmy(id){
+    let army = await store.getArmy(id);
+    const mine = store.kind !== "supabase" || (army && store.session && army.owner === store.session.user.id);
+    if(!army || !mine){
+      app.innerHTML = `${warTabs("armies")}<div class="banner"><span class="dot warn"></span><span>${army ? "This army belongs to another painter." : "That army couldn't be found. It may have been deleted."}</span></div><p>${army ? `<a class="btn" href="#/army/${esc(id)}">View their ledger</a> ` : ""}<a class="btn" href="#/war/armies">Your armies</a></p>`;
+      return;
+    }
+    view.name = "war-army"; document.title = `${army.name} · War Ledger`;
+    let D = await warData(false), filter = "all";
+    async function reload(){ army = await store.getArmy(id) || army; D = await warData(false); draw(); }
+    function draw(){
+      const units = D.byArmy(id).slice().sort((a, b) => (ROLE_ORDER.indexOf(a.role) + 99) % 99 - (ROLE_ORDER.indexOf(b.role) + 99) % 99 || a.name.localeCompare(b.name));
+      const t = sumUp(units), gs = D.games.filter(g => g.armyId === id), rec = recordOf(gs), ls = D.lists.filter(l => l.armyId === id);
+      const roles = ROLE_ORDER.map(r => [r, units.filter(u => (ROLE_ORDER.includes(u.role) ? u.role : "Other") === r)]).filter(x => x[1].length);
+      const shown = filter === "notready" ? units.filter(u => { const r = readiness(u); return r.ready < r.owned; }) : units;
+      app.innerHTML = `
+        <div class="crumbs"><a href="#/war">War Ledger</a> / <a href="#/war/armies">Armies</a> / ${esc(army.name)}</div>
+        <section class="page-head war-head">
+          <div class="wh-id">${armyBadge(army, 64)}<div><p class="eyebrow">${esc(factionName(army.faction))}</p><h1>${esc(army.name)}</h1>
+            <p class="sub"><a href="#/army/${esc(id)}">Open in Livery Ledger</a> to plan its colours and painting.</p></div></div>
+          <div class="war-actions"><button type="button" class="primary" data-add-unit>+ Add unit</button><button type="button" data-from-list>Add from a list</button></div>
+        </section>
+        ${warTabs("armies")}
+        ${missingBanner(D)}
+        <section class="war-stats five" aria-label="Army overview">
+          <div class="wstat"><b>${num(t.points)}</b><span>Points</span><small>${army.scheme.limit ? `Building to ${ptsText(army.scheme.limit)}` : "Total of all units"}</small></div>
+          <div class="wstat"><b>${num(t.models)}</b><span>Models</span><small>${plural(units.length, "unit")}</small></div>
+          <div class="wstat ready"><b>${num(t.ready)}<small> / ${num(t.models)}</small></b><span>Battle ready</span><div class="wbar" aria-hidden="true"><i style="width:${pctOf(t.ready, t.models)}%"></i></div></div>
+          <div class="wstat"><b>${gs.length}</b><span>${gs.length === 1 ? "Game" : "Games"}</span><small>${gs[0] ? "Last on " + esc(dayText(gs[0].date)) : "None logged yet"}</small></div>
+          <div class="wstat"><b>${recText(rec)}</b><span>Record</span><small>${gs.length ? `${pctOf(rec.w, gs.length)}% won` : "Wins – losses"}</small></div>
+        </section>
+        ${units.length ? `
+        <section class="panel" aria-labelledby="fc-h"><h2 class="ph" id="fc-h">Force composition</h2>
+          <ul class="comp">${roles.map(([r, us]) => `<li><b>${us.length}</b><span>${esc(r)}</span><small>${plural(us.reduce((a, u) => a + readiness(u).owned, 0), "model")}</small></li>`).join("")}</ul>
+        </section>
+        <section class="war-sec" aria-labelledby="cf-h">
+          <div class="sec-h"><h2 id="cf-h">Current force</h2>
+            <div class="seg" role="group" aria-label="Show"><button type="button" data-filter="all" aria-pressed="${filter === "all"}">All units</button><button type="button" data-filter="notready" aria-pressed="${filter === "notready"}">Not battle ready</button></div></div>
+          ${shown.length ? `<div class="wt-scroll"><table class="wtable">
+            <thead><tr><th scope="col">Unit</th><th scope="col">Role</th><th scope="col" class="n">Owned</th><th scope="col" class="n">Built</th><th scope="col" class="n">Painted</th><th scope="col" class="n">Ready</th><th scope="col" class="n">Points</th></tr></thead>
+            <tbody>${shown.map(u => { const r = readiness(u); return `<tr><th scope="row"><button type="button" class="linkish" data-unit="${esc(u.id)}">${esc(u.name)}</button>${u.datasheet && u.datasheet !== u.name ? `<small>${esc(u.datasheet)}</small>` : ""}</th>
+              <td>${esc(u.role || "—")}</td><td class="n">${r.owned}</td><td class="n">${r.built}</td><td class="n">${r.painted}</td>
+              <td class="n"><span class="rdy ${r.ready >= r.owned ? "ok" : r.ready ? "part" : "no"}">${r.ready}</span></td><td class="n">${num(r.points)}</td></tr>`; }).join("")}</tbody>
+            ${filter === "all" ? `<tfoot><tr><th scope="row">Total</th><td></td><td class="n">${t.models}</td><td class="n">${t.built}</td><td class="n">${t.painted}</td><td class="n">${t.ready}</td><td class="n">${num(t.points)}</td></tr></tfoot>` : ""}
+          </table></div>` : `<p class="hint">Every unit is battle ready.</p>`}
+        </section>` : `<section class="panel war-empty"><h2>No units yet</h2><p class="sub">Add the units you own one at a time, or paste an army list to add them all at once.</p><div class="war-actions"><button type="button" class="primary" data-add-unit>+ Add unit</button><button type="button" data-from-list>Add from a list</button></div></section>`}
+        <section class="war-sec" aria-labelledby="al-h"><div class="sec-h"><h2 id="al-h">Army lists</h2>${D.warMissing ? "" : `<button type="button" class="btn-sm" data-new-list="${esc(id)}">+ New list</button>`}</div>
+          ${ls.length ? `<div class="ledgers">${ls.map(l => listCard(l, D)).join("")}</div>` : `<p class="hint">Build lists from this collection for the games you play, and see whether each one is ready for the table.</p>`}</section>
+        <section class="war-sec" aria-labelledby="ab-h"><div class="sec-h"><h2 id="ab-h">Battles</h2>${D.warMissing ? "" : `<button type="button" class="btn-sm" data-log="${esc(id)}">Log a battle</button>`}</div>
+          ${gs.length ? gameRows(gs.slice(0, 8), D) : `<p class="hint">No battles with this army yet.</p>`}</section>
+        <section class="war-sec danger-zone" aria-labelledby="dz-h"><h2 id="dz-h" class="sr-only">Manage army</h2>
+          <div class="row-actions"><button type="button" class="btn-sm" data-rename>Rename army</button><button type="button" class="btn-sm danger" id="w-delarmy">Delete army</button><span class="msg" id="w-amsg" role="status"></span></div></section>`;
+      armButton($("w-delarmy"), "Tap again: deletes the army, its units, lists and battles", async () => {
+        try { await store.removeArmy(army); flash(`Deleted ${army.name}`); location.hash = "#/war/armies"; }
+        catch(err){ $("w-amsg").textContent = "Couldn't delete: " + errText(err); }
+      });
+    }
+    draw();
+    onApp(async e => {
+      const b = e.target.closest("button"); if(!b) return;
+      if(b.matches("[data-add-unit]")) openUnit(army, null, reload);
+      else if(b.matches("[data-from-list]")) openAddFromList(army, reload);
+      else if(b.matches("[data-unit]")) { const u = D.units.find(x => x.id === b.dataset.unit); if(u) openUnit(army, u, reload); }
+      else if(b.matches("[data-filter]")) { filter = b.dataset.filter; draw(); }
+      else if(b.matches("[data-new-list]")) openNewList(D, id);
+      else if(b.matches("[data-rename]")) {
+        const d = modal("Rename army", `<label>Army name<input id="w-rn" maxlength="80" value="${esc(army.name)}"></label><div class="row-actions"><button type="submit" class="primary">Save</button><span class="msg" id="w-msg" role="status"></span></div>`);
+        d.querySelector("form").addEventListener("submit", async ev => {
+          ev.preventDefault(); const name = $("w-rn").value.trim(); if(!name) return;
+          try { army = await store.saveArmy({faction: army.faction, name, scheme: army.scheme, public: army.public}, army.id); d.close(); document.title = `${army.name} · War Ledger`; reload(); }
+          catch(err){ $("w-msg").textContent = "Couldn't rename: " + errText(err); }
+        });
+      }
+      else warClicks(e, D, reload);
+    });
+  }
+
+  /* ---------- the whole collection ---------- */
+  async function viewWarCollection(){
+    view.name = "war-collection"; document.title = "Collection · War Ledger";
+    let D = await warData(true), q = "", armyF = "", notReady = false;
+    const armyOf = id => D.armies.find(a => a.id === id);
+    async function reload(){ D = await warData(true); draw(); }
+    app.innerHTML = `
+      <section class="page-head war-head">
+        <div><p class="eyebrow">War Ledger</p><h1>My collection</h1><p class="sub">Everything you own across all your armies.</p></div>
+      </section>
+      ${warTabs("collection")}
+      <div class="war-filters">
+        <input type="search" id="wc-q" placeholder="Search units" aria-label="Search units">
+        <select id="wc-army" aria-label="Army"><option value="">All armies</option>${D.armies.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join("")}</select>
+        <label class="chk"><input type="checkbox" id="wc-nr"><span>Not battle ready only</span></label>
+      </div>
+      <div id="wc-out"></div>`;
+    function draw(){
+      const list = D.units.filter(u => armyOf(u.armyId) && (!armyF || u.armyId === armyF) && (!q || [u.name, u.datasheet, u.role].join(" ").toLowerCase().includes(q))
+        && (!notReady || readiness(u).ready < readiness(u).owned)).sort((a, b) => a.name.localeCompare(b.name));
+      const t = sumUp(list), kits = D.kits.filter(k => !armyF || (armyOf(armyF) && k.faction === armyOf(armyF).faction));
+      $("wc-out").innerHTML = `
+        <p class="wc-sum">${plural(list.length, "unit")} · ${plural(t.models, "model")} · ${ptsText(t.points)} · ${pctOf(t.ready, t.models)}% battle ready</p>
+        ${list.length ? `<div class="wt-scroll"><table class="wtable">
+          <thead><tr><th scope="col">Unit</th><th scope="col">Army</th><th scope="col" class="n">Owned</th><th scope="col" class="n">Built</th><th scope="col" class="n">Painted</th><th scope="col" class="n">Ready</th><th scope="col" class="n">Points</th></tr></thead>
+          <tbody>${list.map(u => { const r = readiness(u), a = armyOf(u.armyId); return `<tr><th scope="row"><button type="button" class="linkish" data-unit="${esc(u.id)}">${esc(u.name)}</button><small>${esc(u.role || "")}</small></th>
+            <td><a href="#/war/army/${esc(a.id)}">${esc(a.name)}</a></td><td class="n">${r.owned}</td><td class="n">${r.built}</td><td class="n">${r.painted}</td>
+            <td class="n"><span class="rdy ${r.ready >= r.owned ? "ok" : r.ready ? "part" : "no"}">${r.ready}</span></td><td class="n">${num(r.points)}</td></tr>`; }).join("")}</tbody>
+        </table></div>` : `<p class="hint">${D.units.length ? "No units match." : "No units yet. Add some from one of your armies."}</p>`}
+        ${kits.length ? `<p class="hint wc-kits"><a href="#/shame">Pile of shame</a>: ${plural(kits.length, "kit")} and ${plural(kits.reduce((a, k) => a + k.models, 0), "model")} still on the sprue.</p>` : ""}`;
+    }
+    $("wc-q").addEventListener("input", e => { q = e.target.value.trim().toLowerCase(); draw(); });
+    $("wc-army").addEventListener("change", e => { armyF = e.target.value; draw(); });
+    $("wc-nr").addEventListener("change", e => { notReady = e.target.checked; draw(); });
+    draw();
+    onApp(e => {
+      const b = e.target.closest("[data-unit]"); if(!b) return;
+      const u = D.units.find(x => x.id === b.dataset.unit), a = u && armyOf(u.armyId);
+      if(u && a) openUnit(a, u, reload);
+    });
+  }
+
+  /* ---------- army lists ---------- */
+  // What a list holds, set against the collection: what's owned, what's ready, what's missing.
+  function listState(l, D){
+    const armyUnits = D.byArmy(l.armyId);
+    const rows = l.units.map((e, i) => {
+      if(e.u){
+        const u = armyUnits.find(x => x.id === e.u);
+        return u ? {i, u, name: u.name, role: u.role, count: readiness(u).owned, points: +u.points || 0, r: readiness(u)} : {i, gone: true, name: "A unit you've since deleted", role: "Other", count: 0, points: 0};
+      }
+      return {i, missing: true, name: e.n, sheet: e.sheet, role: e.role || "Other", count: e.count, points: e.points};
+    });
+    const live = rows.filter(x => !x.gone), owned = rows.filter(x => x.u);
+    const models = live.reduce((a, x) => a + x.count, 0), have = owned.reduce((a, x) => a + x.count, 0), ready = owned.reduce((a, x) => a + x.r.ready, 0);
+    return {rows, models, have, ready, points: live.reduce((a, x) => a + x.points, 0), avail: pctOf(have, models), readyPct: pctOf(ready, models),
+      notReady: owned.filter(x => x.r.ready < x.r.owned), missing: rows.filter(x => x.missing), gone: rows.filter(x => x.gone)};
+  }
+  function listCard(l, D){
+    const s = listState(l, D), a = D.armies.find(x => x.id === l.armyId), gs = D.games.filter(g => g.listId === l.id), r = recordOf(gs);
+    const note = !s.rows.length ? "No units yet" : l.limit && s.points > l.limit ? "Over the points limit" : s.avail < 100 ? `${s.avail}% in your collection` : "All in your collection";
+    return `<a class="lcard war-card" href="#/war/list/${esc(l.id)}">
+      <div class="card-top">${a ? armyBadge(a, 44) : ""}<div><h3>${esc(l.name)}</h3><div class="meta">${esc(a ? a.name : "Deleted army")}${l.detachment ? " · " + esc(l.detachment) : ""}</div></div></div>
+      <div class="wc-nums"><span><b>${num(s.points)}</b>${l.limit ? ` / ${num(l.limit)}` : ""} pts</span><span><b>${s.rows.length}</b> ${s.rows.length === 1 ? "unit" : "units"}</span>${gs.length ? `<span><b>${recText(r)}</b> record</span>` : ""}</div>
+      <div class="prog" aria-hidden="true"><i style="width:${s.readyPct}%"></i></div>
+      <div class="foot"><span>${s.readyPct}% battle ready</span><span>${note}</span></div>
+    </a>`;
+  }
+  async function viewWarLists(){
+    view.name = "war-lists"; document.title = "Army lists · War Ledger";
+    let D = null;
+    const render = async () => { D = await warData(false); drawWarLists(D); };
+    await render();
+    onApp(e => {
+      const b = e.target.closest("[data-new-list]");
+      if(b) openNewList(D, b.dataset.newList || ""); else warClicks(e, D, render);
+    });
+  }
+  function drawWarLists(D){
+    const groups = D.armies.map(a => [a, D.lists.filter(l => l.armyId === a.id)]).filter(x => x[1].length);
+    app.innerHTML = `
+      <section class="page-head war-head">
+        <div><p class="eyebrow">War Ledger</p><h1>Army lists</h1><p class="sub">Your collection is everything you own. A list is what you take to a particular game.</p></div>
+        <div class="war-actions">${D.armies.length && !D.warMissing ? `<button type="button" class="primary" data-new-list="">+ New list</button>` : ""}</div>
+      </section>
+      ${warTabs("lists")}
+      ${missingBanner(D)}
+      ${!D.armies.length ? warEmpty() : groups.length ? groups.map(([a, ls]) => `<section class="war-sec"><div class="sec-h"><h2>${esc(a.name)}</h2><a href="#/war/army/${esc(a.id)}">View army</a></div><div class="ledgers">${ls.map(l => listCard(l, D)).join("")}</div></section>`).join("")
+        : D.warMissing ? "" : `<section class="panel war-empty"><h2>No army lists yet</h2><p class="sub">Build a list from one of your armies, or paste one you've made elsewhere, and War Ledger checks whether it's ready for the table.</p><button type="button" class="primary" data-new-list="">+ New list</button></section>`}`;
+  }
+  const LIMITS = [500, 1000, 1500, 2000, 3000];
+  function openNewList(D, armyId){
+    if(!D.armies.length){ flash("Create an army first."); return; }
+    if(D.warMissing){ flash("Run supabase/features.sql in Supabase to turn on army lists."); return; }
+    const d = modal("New army list", `
+      <label>Army<select id="w-la">${D.armies.map(a => `<option value="${esc(a.id)}"${a.id === armyId ? " selected" : ""}>${esc(a.name)} (${esc(factionName(a.faction))})</option>`).join("")}</select></label>
+      <label>List name<input id="w-ln" maxlength="80" placeholder="e.g. Club night 2,000"></label>
+      <label>Points limit<select id="w-ll">${LIMITS.map(v => `<option value="${v}"${v === 2000 ? " selected" : ""}>${num(v)} points</option>`).join("")}<option value="0">No limit</option></select></label>
+      <label><span>Detachment <span class="opt">(optional)</span></span><input id="w-ld" maxlength="80"></label>
+      <div class="row-actions"><button type="submit" class="primary">Create list</button><span class="msg" id="w-msg" role="status"></span></div>`);
+    d.querySelector("form").addEventListener("submit", async e => {
+      e.preventDefault();
+      const limit = +$("w-ll").value || 0, name = $("w-ln").value.trim() || (limit ? `${num(limit)} points` : "Army list");
+      try { const l = await store.saveList({armyId: $("w-la").value, name, limit, detachment: $("w-ld").value.trim(), units: []}); d.close(); location.hash = `#/war/list/${l.id}`; }
+      catch(err){ console.error(err); $("w-msg").textContent = "Couldn't create the list: " + errText(err); }
+    });
+    $("w-ln").focus();
+  }
+
+  async function viewWarList(id){
+    let D = await warData(false), list = D.lists.find(l => l.id === id);
+    const army0 = list && D.armies.find(a => a.id === list.armyId);
+    if(!list || !army0){
+      app.innerHTML = `${warTabs("lists")}<div class="banner"><span class="dot warn"></span><span>${D.warMissing ? "Army lists need a quick database update first. Run supabase/features.sql in Supabase." : list ? "The army for this list was deleted." : "That list couldn't be found. It may have been deleted."}</span></div><p><a class="btn" href="#/war/lists">Your army lists</a></p>`;
+      return;
+    }
+    let army = army0, q = "", chain = Promise.resolve();
+    view.name = "war-list"; document.title = `${list.name} · War Ledger`;
+    // Saves run one after another, so the last change always wins.
+    function save(patch){
+      list = {...list, ...patch}; draw();
+      chain = chain.then(() => store.saveList(list, list.id)).then(saved => { list = {...list, updatedAt: saved.updatedAt}; D.lists = D.lists.map(l => l.id === list.id ? list : l); })
+        .catch(err => { console.error(err); flash("Couldn't save the list: " + errText(err)); });
+      return chain;
+    }
+    async function reload(){ D = await warData(false); list = D.lists.find(l => l.id === id) || list; army = D.armies.find(a => a.id === list.armyId) || army; draw(); }
+    const why = r => r.built < r.owned ? "not all built" : readyRule() === "based" && r.painted >= r.owned ? "needs basing" : readyRule() === "built" ? "not ready" : `${r.owned - r.painted} to paint`;
+    const byRole = rows => ROLE_ORDER.map(role => [role, rows.filter(x => (ROLE_ORDER.includes(x.role) ? x.role : "Other") === role)]).filter(x => x[1].length);
+    function draw(){
+      const s = listState(list, D), used = new Set(list.units.filter(e => e.u).map(e => e.u));
+      const coll = D.byArmy(army.id).filter(u => !used.has(u.id) && (!q || [u.name, u.datasheet, u.role].join(" ").toLowerCase().includes(q)));
+      const over = list.limit && s.points > list.limit, gs = D.games.filter(g => g.listId === list.id), rec = recordOf(gs);
+      const verdict = !s.rows.length ? ["", "Add units to see whether this list is ready for the table."]
+        : s.avail >= 100 && s.readyPct >= 100 && !s.gone.length ? ["ok", "Yes. Every model in this list is in your collection and battle ready."]
+        : s.avail >= 100 ? ["part", `Nearly. You own everything, and ${s.readyPct}% of the models are battle ready.`]
+        : ["no", `Not yet. ${s.avail}% of the models are in your collection and ${s.readyPct}% are battle ready.`];
+      app.innerHTML = `
+        <div class="crumbs"><a href="#/war">War Ledger</a> / <a href="#/war/lists">Army lists</a> / ${esc(list.name)}</div>
+        <section class="page-head war-head">
+          <div class="wh-id">${armyBadge(army, 56)}<div><p class="eyebrow"><a href="#/war/army/${esc(army.id)}">${esc(army.name)}</a> · ${esc(factionName(army.faction))}</p><h1>${esc(list.name)}</h1>
+            <p class="sub">${list.detachment ? esc(list.detachment) + " · " : ""}${list.limit ? ptsText(list.limit) + " limit" : "No points limit"}${gs.length ? ` · ${recText(rec)} record` : ""}</p></div></div>
+          <div class="war-actions"><button type="button" class="primary" data-log="${esc(army.id)}" data-list="${esc(list.id)}">Log a battle</button><button type="button" data-import>Paste a list</button><button type="button" data-details>Edit details</button></div>
+        </section>
+        ${warTabs("lists")}
+        <section class="war-stats" aria-label="List summary">
+          <div class="wstat${over ? " over" : ""}"><b>${num(s.points)}${list.limit ? `<small> / ${num(list.limit)}</small>` : ""}</b><span>Points</span>${list.limit ? `<div class="wbar" aria-hidden="true"><i style="width:${Math.min(100, pctOf(s.points, list.limit))}%"></i></div><small>${over ? `${num(s.points - list.limit)} over the limit` : `${num(list.limit - s.points)} left`}</small>` : ""}</div>
+          <div class="wstat"><b>${s.rows.length}</b><span>${s.rows.length === 1 ? "Unit" : "Units"}</span><small>${plural(s.models, "model")}</small></div>
+          <div class="wstat"><b>${s.avail}%</b><span>Models available</span><small>${num(s.have)} of ${num(s.models)} in your collection</small></div>
+          <div class="wstat ready"><b>${s.readyPct}%</b><span>Battle ready</span><div class="wbar" aria-hidden="true"><i style="width:${s.readyPct}%"></i></div><small>${num(s.ready)} of ${num(s.models)} models</small></div>
+        </section>
+        <section class="panel lr" aria-labelledby="lr-h"><h2 class="ph" id="lr-h">Ready for the table?</h2>
+          <p class="verdict ${verdict[0]}">${verdict[1]}</p>
+          ${s.notReady.length ? `<h3 class="lr-sub">Not battle ready</h3><ul class="lr-list">${s.notReady.map(x => `<li><button type="button" class="linkish" data-unit="${esc(x.u.id)}">${esc(x.name)}</button> <small>${x.r.ready} of ${x.r.owned} ready · ${why(x.r)}</small></li>`).join("")}</ul>` : ""}
+          ${s.missing.length ? `<h3 class="lr-sub">Not in your collection</h3><ul class="lr-list">${s.missing.map(x => `<li>${esc(x.name)} <small>${plural(x.count, "model")} · ${x.points} pts</small> <button type="button" class="btn-sm" data-own="${x.i}">I own this</button></li>`).join("")}</ul>` : ""}
+          ${s.gone.length ? `<p class="hint">${plural(s.gone.length, "unit")} in this list ${s.gone.length === 1 ? "was" : "were"} deleted from the army. <button type="button" class="btn-sm" data-prune>Remove from list</button></p>` : ""}
+        </section>
+        <div class="lb">
+          <section class="panel lb-in" aria-labelledby="lb-in-h"><h2 class="ph" id="lb-in-h">In this list</h2>
+            ${s.rows.length ? byRole(s.rows.filter(x => !x.gone)).map(([role, rows]) => `<h3 class="lb-role">${esc(role)} <small>${ptsText(rows.reduce((a, x) => a + x.points, 0))}</small></h3>
+              <ul class="lb-rows">${rows.map(x => `<li class="${x.missing ? "missing" : x.r.ready >= x.r.owned ? "ready" : "notready"}">
+                <span class="lb-name">${x.u ? `<button type="button" class="linkish" data-unit="${esc(x.u.id)}">${esc(x.name)}</button>` : esc(x.name)}<small>${x.missing ? "Not owned" : `${x.r.ready}/${x.r.owned} ready`}${x.count > 1 ? ` · ${x.count} models` : ""}</small></span>
+                <span class="lb-pts">${num(x.points)}</span>
+                <button type="button" class="btn-sm icon-x" data-rm="${x.i}" aria-label="Remove ${esc(x.name)} from the list">×</button></li>`).join("")}</ul>`).join("")
+              : `<p class="hint">Add units from your collection, or paste a list you've built elsewhere.</p>`}
+          </section>
+          <section class="panel lb-coll" aria-labelledby="lb-c-h"><h2 class="ph" id="lb-c-h">Your collection</h2>
+            <input type="search" id="lb-q" placeholder="Search ${esc(army.name)}" aria-label="Search your collection" value="${esc(q)}">
+            ${coll.length ? `<ul class="lb-rows">${coll.map(u => { const r = readiness(u); return `<li><span class="lb-name">${esc(u.name)}<small>${esc(u.role || "")} · ${r.ready}/${r.owned} ready</small></span><span class="lb-pts">${num(u.points)}</span><button type="button" class="btn-sm" data-add="${esc(u.id)}" aria-label="Add ${esc(u.name)} to the list">Add</button></li>`; }).join("")}</ul>`
+              : `<p class="hint">${D.byArmy(army.id).length ? (q ? "No units match." : "Every unit in this army is already in the list.") : "This army has no units yet."}</p>`}
+            <button type="button" class="btn-sm" data-add-unit>+ Add a new unit to the army</button>
+          </section>
+        </div>
+        <section class="war-sec danger-zone"><div class="row-actions"><button type="button" class="btn-sm" data-copy>Copy as text</button><button type="button" class="btn-sm" data-dup>Duplicate list</button><button type="button" class="btn-sm danger" id="w-dellist">Delete list</button></div></section>`;
+      const inp = $("lb-q");
+      inp.addEventListener("input", () => { q = inp.value.trim().toLowerCase(); const pos = inp.selectionStart; draw(); const n = $("lb-q"); n.focus(); n.setSelectionRange(pos, pos); });
+      armButton($("w-dellist"), "Tap again to delete", async () => {
+        try { await chain; await store.removeList(list.id); flash(`Deleted ${list.name}`); location.hash = "#/war/lists"; }
+        catch(err){ flash("Couldn't delete: " + errText(err)); }
+      });
+    }
+    draw();
+    onApp(async e => {
+      const b = e.target.closest("button"); if(!b) return;
+      if(b.dataset.add) save({units: list.units.concat({u: b.dataset.add})});
+      else if(b.dataset.rm != null) save({units: list.units.filter((x, i) => i !== +b.dataset.rm)});
+      else if(b.matches("[data-prune]")) { const ids = new Set(D.byArmy(army.id).map(u => u.id)); save({units: list.units.filter(x => !x.u || ids.has(x.u))}); }
+      else if(b.dataset.unit) { const u = D.units.find(x => x.id === b.dataset.unit); if(u) openUnit(army, u, reload); }
+      else if(b.matches("[data-add-unit]")) openUnit(army, null, reload);
+      else if(b.dataset.own != null) {
+        // A unit from the list you do own after all: add it to the collection and link it.
+        const e2 = list.units[+b.dataset.own]; if(!e2 || e2.u) return;
+        b.disabled = true;
+        try {
+          const sh = sheetsOf(army.faction).find(s => s.n === e2.sheet);
+          const row = await store.saveUnit(army.id, unitRow(army, sh, {name: e2.n, role: e2.role || (sh ? sh.r : "Other"), count: e2.count, points: e2.points}), null, null, false, null);
+          D = await warData(false);
+          await save({units: list.units.map((x, i) => i === +b.dataset.own ? {u: row.id} : x)});
+          flash(`Added ${e2.n} to ${army.name}`);
+        } catch(err){ flash("Couldn't add it: " + errText(err)); b.disabled = false; }
+      }
+      else if(b.matches("[data-details]")) {
+        const d = modal("List details", `
+          <label>List name<input id="w-ln" maxlength="80" value="${esc(list.name)}"></label>
+          <label>Points limit<input id="w-ll" type="number" min="0" max="20000" step="250" inputmode="numeric" value="${list.limit || ""}" placeholder="No limit"></label>
+          <label>Detachment<input id="w-ld" maxlength="80" value="${esc(list.detachment)}"></label>
+          <label>Notes<textarea id="w-lnote" rows="3" maxlength="600">${esc(list.notes)}</textarea></label>
+          <div class="row-actions"><button type="submit" class="primary">Save</button></div>`);
+        d.querySelector("form").addEventListener("submit", ev => {
+          ev.preventDefault();
+          save({name: $("w-ln").value.trim() || list.name, limit: Math.max(0, parseInt($("w-ll").value, 10) || 0), detachment: $("w-ld").value.trim(), notes: $("w-lnote").value.trim()});
+          document.title = `${list.name} · War Ledger`; d.close();
+        });
+      }
+      else if(b.matches("[data-import]")) openListImport(army, list, D, patch => save(patch));
+      else if(b.matches("[data-copy]")) {
+        const s = listState(list, D);
+        const text = [`${list.name} (${ptsText(s.points)}${list.limit ? ` of ${num(list.limit)}` : ""})`, `${army.name} · ${factionName(army.faction)}${list.detachment ? " · " + list.detachment : ""}`, ""]
+          .concat(...byRole(s.rows.filter(x => !x.gone)).map(([role, rows]) => [role.toUpperCase(), ...rows.map(x => `  ${x.name}${x.count > 1 ? ` (${x.count} models)` : ""} · ${x.points} pts`), ""])).join("\n").trim();
+        try { await navigator.clipboard.writeText(text); flash("List copied."); } catch(err){ flash("Couldn't copy. Your browser blocked the clipboard."); }
+      }
+      else if(b.matches("[data-dup]")) {
+        try { await chain; const c = await store.saveList({...list, name: `${list.name} (copy)`}); flash("List duplicated."); location.hash = `#/war/list/${c.id}`; }
+        catch(err){ flash("Couldn't duplicate: " + errText(err)); }
+      }
+      else warClicks(e, D, reload);
+    });
+  }
+  // Paste a list: its units are matched to the collection, and anything you don't own is marked.
+  function openListImport(army, list, D, apply){
+    const d = modal("Paste an army list", `
+      <p class="sub">Paste a list from the Warhammer 40,000 app, New Recruit, BattleScribe or a list-builder share code. Each unit is matched to one you own in ${esc(army.name)}.</p>
+      <label>Army list<textarea id="w-list" rows="8"></textarea></label>
+      <div id="w-found" class="w-found" aria-live="polite"></div>
+      <label class="chk"><input type="checkbox" id="w-repl"${list.units.length ? "" : " checked"}><span>Replace the units already in this list</span></label>
+      <div class="row-actions"><button type="submit" class="primary" id="w-add" disabled>Use this list</button></div>`, "wide");
+    const reader = makeListReader(army.faction);
+    let plan = null;
+    const read = () => {
+      const t = $("w-list").value, parsed = t.trim() ? (reader.parseCode(t) || reader.parseList(t)) : null;
+      if(!parsed || !parsed.units.length){ plan = null; $("w-found").innerHTML = parsed ? `<p class="hint">No units found yet. Paste the whole list, including the points.</p>` : ""; $("w-add").disabled = true; return; }
+      const taken = new Set($("w-repl").checked ? [] : list.units.filter(x => x.u).map(x => x.u)), pool = D.byArmy(army.id);
+      const entries = parsed.units.map(x => {
+        const cands = pool.filter(u => !taken.has(u.id) && u.datasheet === x.sheet.n);
+        const hit = cands.find(u => u.count === x.count) || cands[0];
+        if(hit){ taken.add(hit.id); return {e: {u: hit.id}, name: x.name, owned: true}; }
+        return {e: {n: x.name, sheet: x.sheet.n, role: x.sheet.r, count: x.count, points: x.points}, name: x.name, owned: false};
+      });
+      plan = {parsed, entries};
+      const own = entries.filter(x => x.owned).length;
+      $("w-found").innerHTML = `<p><strong>${plural(entries.length, "unit")}</strong> · ${ptsText(parsed.units.reduce((a, x) => a + x.points, 0))} · ${own} matched to your collection</p>
+        <ul>${entries.map(x => `<li>${esc(x.name)} <small>${x.owned ? "In your collection" : "Not owned"}</small></li>`).join("")}</ul>${parsed.unmatched.length ? `<p class="hint">Not recognised: ${esc(parsed.unmatched.join(", "))}</p>` : ""}`;
+      $("w-add").disabled = false;
+    };
+    $("w-list").addEventListener("input", read); $("w-repl").addEventListener("change", read);
+    d.querySelector("form").addEventListener("submit", e => {
+      e.preventDefault(); if(!plan) return;
+      const units = ($("w-repl").checked ? [] : list.units).concat(plan.entries.map(x => x.e));
+      const patch = {units};
+      if(plan.parsed.limit && !list.limit) patch.limit = plan.parsed.limit;
+      if(plan.parsed.detachment && !list.detachment) patch.detachment = plan.parsed.detachment;
+      apply(patch); d.close(); flash("List updated.");
+    });
+    $("w-list").focus();
+  }
+
+  /* ---------- battle reports ---------- */
+  const oppText = g => [g.opp ? factionName(g.opp) : "", g.oppName].filter(Boolean).join(" · ") || "Unknown opponent";
+  // Keep each army's record on the army itself, so Shared armies can show it.
+  async function syncRecords(armyIds){
+    try {
+      const games = await store.listGames();
+      for(const id of [...new Set(armyIds.filter(Boolean))]){
+        const a = await store.getArmy(id); if(!a) continue;
+        await store.setArmyRecord(a, recordOf(games.filter(g => g.armyId === id)));
+      }
+    } catch(e){ console.warn("Couldn't update the army record", e); }
+  }
+  function openGame(D, g, again){
+    if(!D.armies.length){ flash("Create an army first."); return; }
+    if(D.warMissing){ flash("Run supabase/features.sql in Supabase to turn on battle reports."); return; }
+    const edit = !!(g && g.id), seed = g || {};
+    const armyId = D.armies.some(a => a.id === seed.armyId) ? seed.armyId : D.armies[0].id;
+    const d = modal(edit ? "Edit battle" : "Log a battle", `
+      <div class="wgrid">
+        <label class="span2">Your army<select id="w-ga">${D.armies.map(a => `<option value="${esc(a.id)}"${a.id === armyId ? " selected" : ""}>${esc(a.name)}</option>`).join("")}</select></label>
+        <label>Date<input id="w-gd" type="date" value="${esc(seed.date || isoDay(new Date()))}" max="${isoDay(new Date())}"></label>
+        <label class="span3">Army list<select id="w-gl"></select></label>
+        <label class="span2">Opponent's faction${factionSelect("w-go", seed.opp || "", "Not sure / other")}</label>
+        <label><span>Opponent <span class="opt">(optional)</span></span><input id="w-gp" maxlength="60" value="${esc(seed.oppName || "")}" placeholder="Name"></label>
+        <label class="span3"><span>Mission <span class="opt">(optional)</span></span><input id="w-gm" maxlength="80" value="${esc(seed.mission || "")}"></label>
+      </div>
+      <fieldset class="wfs"><legend>Result</legend>
+        <div class="res-pick" role="radiogroup" aria-label="Result">${["w", "l", "d"].map(k => `<label class="r-${k}"><input type="radio" name="w-gr" value="${k}"${(seed.result || "w") === k ? " checked" : ""}><span>${RES[k]}</span></label>`).join("")}</div>
+        <div class="wgrid"><label>Your score<input id="w-gu" type="number" min="0" max="999" inputmode="numeric" value="${seed.us ?? ""}"></label><label>Their score<input id="w-gt" type="number" min="0" max="999" inputmode="numeric" value="${seed.them ?? ""}"></label></div>
+      </fieldset>
+      <label><span>Most valuable unit <span class="opt">(optional)</span></span><select id="w-gv"></select></label>
+      <label>Notes<textarea id="w-gn" rows="3" maxlength="1000" placeholder="What worked, what didn't, what to try next time">${esc(seed.notes || "")}</textarea></label>
+      <div class="row-actions"><button type="submit" class="primary">${edit ? "Save battle" : "Log battle"}</button>${edit ? `<button type="button" class="danger" id="w-gdel">Delete</button>` : ""}<span class="msg" id="w-msg" role="status"></span></div>`, "wide");
+    const fill = () => {
+      const a = $("w-ga").value, ls = D.lists.filter(l => l.armyId === a), us = D.byArmy(a);
+      $("w-gl").innerHTML = `<option value="">No list / not recorded</option>${ls.map(l => `<option value="${esc(l.id)}"${l.id === seed.listId ? " selected" : ""}>${esc(l.name)}</option>`).join("")}`;
+      $("w-gv").innerHTML = `<option value="">None</option>${us.map(u => `<option value="${esc(u.id)}"${u.id === seed.mvp ? " selected" : ""}>${esc(u.name)}</option>`).join("")}`;
+    };
+    $("w-ga").addEventListener("change", fill); fill();
+    d.querySelector("form").addEventListener("submit", async e => {
+      e.preventDefault();
+      const row = {armyId: $("w-ga").value, listId: $("w-gl").value, date: $("w-gd").value, opp: $("w-go").value, oppName: $("w-gp").value.trim(), mission: $("w-gm").value.trim(),
+        result: (d.querySelector("[name=w-gr]:checked") || {}).value || "w", us: $("w-gu").value, them: $("w-gt").value, mvp: $("w-gv").value, notes: $("w-gn").value.trim()};
+      const b = e.submitter || d.querySelector("[type=submit]"); b.disabled = true; $("w-msg").textContent = "Saving…";
+      try { await store.saveGame(row, edit ? g.id : null); await syncRecords([row.armyId, edit ? g.armyId : ""]); d.close(); flash(edit ? "Battle saved." : `${RES[row.result]} logged.`); again(); }
+      catch(err){ console.error(err); $("w-msg").textContent = "Couldn't save: " + errText(err); b.disabled = false; }
+    });
+    if(edit) armButton($("w-gdel"), "Tap again to delete", async () => {
+      try { await store.removeGame(g.id); await syncRecords([g.armyId]); d.close(); flash("Battle deleted."); again(); }
+      catch(err){ $("w-msg").textContent = "Couldn't delete: " + errText(err); }
+    });
+  }
+  async function viewWarBattles(){
+    view.name = "war-battles"; document.title = "Battles · War Ledger";
+    let D = await warData(false), armyF = "";
+    const again = async () => { D = await warData(false); draw(); };
+    app.innerHTML = `
+      <section class="page-head war-head">
+        <div><p class="eyebrow">War Ledger</p><h1>Battle reports</h1><p class="sub">Every game you've played, and how each army and list has fared.</p></div>
+        <div class="war-actions">${D.armies.length && !D.warMissing ? `<button type="button" class="primary" data-log="">Log a battle</button>` : ""}</div>
+      </section>
+      ${warTabs("battles")}
+      ${missingBanner(D)}
+      <div id="wb-out"></div>`;
+    function table(title, rows){
+      return rows.length ? `<section class="panel wrec"><h2 class="ph">${title}</h2><div class="wt-scroll"><table class="wtable compact">
+        <thead><tr><th scope="col">${title.replace(/^By /, "")}</th><th scope="col" class="n">Games</th><th scope="col" class="n">W</th><th scope="col" class="n">L</th><th scope="col" class="n">D</th><th scope="col" class="n">Won</th></tr></thead>
+        <tbody>${rows.map(([name, gs]) => { const r = recordOf(gs); return `<tr><th scope="row">${name}</th><td class="n">${gs.length}</td><td class="n">${r.w}</td><td class="n">${r.l}</td><td class="n">${r.d}</td><td class="n">${pctOf(r.w, gs.length)}%</td></tr>`; }).join("")}</tbody></table></div></section>` : "";
+    }
+    const group = (gs, key, name) => { const m = new Map(); gs.forEach(g => { const k = key(g); if(!m.has(k)) m.set(k, []); m.get(k).push(g); }); return [...m.entries()].map(([k, v]) => [name(k, v), v]).sort((a, b) => b[1].length - a[1].length); };
+    function draw(){
+      if(!D.armies.length){ $("wb-out").innerHTML = warEmpty(); return; }
+      const gs = D.games.filter(g => !armyF || g.armyId === armyF), rec = recordOf(gs);
+      const an = id => { const a = D.armies.find(x => x.id === id); return a ? esc(a.name) : "Deleted army"; };
+      $("wb-out").innerHTML = `
+        <div class="war-filters"><select id="wb-army" aria-label="Army"><option value="">All armies</option>${D.armies.map(a => `<option value="${esc(a.id)}"${a.id === armyF ? " selected" : ""}>${esc(a.name)}</option>`).join("")}</select></div>
+        ${gs.length ? `
+        <section class="war-stats five" aria-label="Record">
+          <div class="wstat"><b>${gs.length}</b><span>${gs.length === 1 ? "Game" : "Games"}</span></div>
+          <div class="wstat"><b>${rec.w}</b><span>Wins</span></div>
+          <div class="wstat"><b>${rec.l}</b><span>Losses</span></div>
+          <div class="wstat"><b>${rec.d}</b><span>Draws</span></div>
+          <div class="wstat"><b>${pctOf(rec.w, gs.length)}%</b><span>Won</span><small class="form" aria-label="Last five results">${gs.slice(0, 5).map(g => `<i class="r-${g.result}" title="${RES[g.result]}">${g.result.toUpperCase()}</i>`).join("")}</small></div>
+        </section>
+        <div class="wrec-grid">
+          ${armyF ? "" : table("By army", group(gs, g => g.armyId, k => an(k)))}
+          ${table("By opponent", group(gs, g => g.opp || g.oppName || "", (k, v) => esc(oppText(v[0]))))}
+          ${table("By list", group(gs.filter(g => g.listId), g => g.listId, k => esc((D.lists.find(l => l.id === k) || {}).name || "Deleted list")))}
+        </div>
+        <section class="war-sec"><div class="sec-h"><h2>History</h2></div>${gameRows(gs, D)}</section>`
+        : `<section class="panel war-empty"><h2>No battles yet</h2><p class="sub">After a game, log the result here. War Ledger keeps each army's record, and shows it on Shared armies when you share that army.</p>${D.warMissing ? "" : `<button type="button" class="primary" data-log="${esc(armyF)}">Log a battle</button>`}</section>`}`;
+      $("wb-army").addEventListener("change", e => { armyF = e.target.value; draw(); });
+    }
+    draw();
+    onApp(e => warClicks(e, D, again));
   }
 
   /* ============================================================
@@ -531,6 +1335,177 @@
      Homepage: what Livery Ledger does, with log in / sign up in the hero
      ============================================================ */
   // A feature's picture: img/shots/<name>.webp when it's been added, otherwise a drawing made from the app's own parts.
+  const WAR_FIELDS = ["built", "ready", "bought", "price", "shop", "assembly"];
+  const singleRole = r => ["Epic Hero","Character","Vehicle","Monster","Dedicated Transport","Fortification"].includes(r);
+  /* ---------- army list import: reads pasted lists and list-builder share codes for one faction ---------- */
+  function makeListReader(factionId){
+    const army = {faction: factionId}, sheets = (FBY[factionId] || {}).units || [];
+    const norm = s => String(s || "").toLowerCase().replace(/[’`]/g, "'").replace(/\[[^\]]*\]/g, " ").replace(/[^a-z0-9']+/g, " ").trim();
+    const sheetIndex = new Map();
+    sheets.slice().sort((a, b) => (a.t ? 1 : 0) - (b.t ? 1 : 0)).forEach(s => { const k = norm(s.n); if(!sheetIndex.has(k)) sheetIndex.set(k, s); });
+    const sheetKeys = [...sheetIndex.keys()].sort((a, b) => b.length - a.length);
+    function matchSheet(text){
+      const k = norm(text);
+      if(sheetIndex.has(k)) return sheetIndex.get(k);
+      const hit = sheetKeys.find(s => k === s || k.startsWith(s + " "));
+      return hit ? sheetIndex.get(hit) : null;
+    }
+    function guessCount(sh, pts){
+      if(singleRole(sh.r)) return 1;
+      const br = sh.pb || [];
+      const hit = br.filter(b => b[2] === pts).pop();
+      if(hit) return hit[1] || Math.max(hit[0], (hit[0] - 1) * 2);
+      return br.length ? (br[0][0] === br[0][1] ? br[0][0] : Math.max(1, br[0][0] - 1)) : 1;
+    }
+    // Allied units (e.g. Imperial Knights in a Space Marine list) live in another faction's datasheets.
+    function allySheet(text, prefer){
+      const k = norm(text);
+      const order = [FBY[prefer], ...FACTIONS].filter(x => x && x.id !== army.faction);
+      for(const fx of order){
+        const sh = (fx.units || []).find(u => !u.t && norm(u.n) === k) || (fx.units || []).find(u => norm(u.n) === k);
+        if(sh) return {sheet: sh, from: fx.name};
+      }
+      return null;
+    }
+
+    /* List codes from list-building sites: base64 JSON like
+       {"f":"black-templars","d":"","l":2000,"u":[["ancient",0,{"w":1,"o":{"wargear-weapon-option":"bolt-rifle-close-combat-weapon"}}]]}
+       u = [datasheet slug, size option (0 = smallest), {w: warlord, o: chosen options}]. */
+    const codeSlug = s => String(s || "").toLowerCase().replace(/[’']/g, "").replace(/armour/g, "armor").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    function decodeListCode(text){
+      const raw = String(text || "").replace(/%3D/gi, "=");
+      const tokens = (raw.match(/[A-Za-z0-9_\-+/]{24,}={0,2}/g) || []).sort((a, b) => b.length - a.length);
+      for(const tk of tokens){
+        try {
+          let b64 = tk.replace(/-/g, "+").replace(/_/g, "/"); b64 += "===".slice((b64.length + 3) % 4);
+          const bin = atob(b64), bytes = Uint8Array.from(bin, c => c.charCodeAt(0));
+          const d = JSON.parse(new TextDecoder().decode(bytes));
+          if(d && typeof d === "object" && Array.isArray(d.u)) return d;
+        } catch(e){ /* not a list code */ }
+      }
+      return null;
+    }
+    // "emperor-s-shield" -> "Emperor's Shield"
+    const titleCase = sl => String(sl || "").replace(/([a-z0-9])-s(?=-|$)/g, "$1's").split("-").filter(Boolean).map(w => w[0].toUpperCase() + w.slice(1)).join(" ");
+    function parseCode(text){
+      const d = decodeListCode(text);
+      if(!d) return null;
+      const out = [], unmatched = [];
+      const own = new Map(), from = FBY[d.f];
+      sheets.slice().sort((a, b) => (a.t ? 1 : 0) - (b.t ? 1 : 0)).forEach(s => { const k = codeSlug(s.n); if(!own.has(k)) own.set(k, s); });
+      d.u.forEach(entry => {
+        if(!Array.isArray(entry) || typeof entry[0] !== "string") return;
+        const [id, size, extra] = entry, ex = extra && typeof extra === "object" ? extra : {};
+        let sh = own.get(codeSlug(id)), ally = null;
+        if(!sh){
+          for(const fx of [from, ...FACTIONS].filter(x => x && x.id !== army.faction)){
+            const hit = (fx.units || []).find(u => !u.t && codeSlug(u.n) === codeSlug(id)) || (fx.units || []).find(u => codeSlug(u.n) === codeSlug(id));
+            if(hit){ sh = hit; ally = fx.name; break; }
+          }
+        }
+        if(!sh){ unmatched.push(titleCase(id)); return; }
+        // Size option 0 is the base unit; 1+ step through the larger squad sizes.
+        const br = sh.pb || [], k = Math.max(0, parseInt(size, 10) || 0);
+        const points = k && br[k - 1] ? br[k - 1][2] : (sh.p || 0);
+        const u = {sheet: sh, name: sh.n, points, count: guessCount(sh, points), melee: [], ranged: [], notes: [], include: true};
+        if(ally) u.notes.push("Allied: " + ally);
+        if(ex.w) u.notes.push("Warlord");
+        if(typeof ex.e === "string" && ex.e) u.notes.push("Enhancement: " + titleCase(ex.e));
+        // Chosen options: pull out any weapons we recognise; keep the rest as a note.
+        const weapons = [...(sh.wm || []).map(n => [n, "melee"]), ...(sh.wr || []).map(n => [n, "ranged"])]
+          .map(([n, kind]) => [n, kind, codeSlug(n)]).filter(w => w[2]).sort((a, b) => b[2].length - a[2].length);
+        const other = [];
+        Object.entries(ex.o && typeof ex.o === "object" ? ex.o : {}).forEach(([group, val]) => {
+          // A choice is a slug, a list of slugs, or {slug: how many}.
+          const picks = typeof val === "string" ? [val] : Array.isArray(val) ? val : val && typeof val === "object" ? Object.keys(val).filter(k => val[k]) : [];
+          picks.forEach(v => pickOption(group, v));
+        });
+        function pickOption(group, v){
+          if(typeof v !== "string") return;
+          const vs = codeSlug(v).split("-").filter(x => x !== "w").join("-"); // "initiate-w-bolt-rifle": w = with
+          let rest = "-" + vs + "-", hit = false;
+          weapons.forEach(([n, kind, ws]) => {
+            if(!rest.includes("-" + ws + "-")) return;
+            rest = rest.replace("-" + ws + "-", "-"); hit = true;
+            const list = kind === "melee" ? u.melee : u.ranged; if(!list.includes(n)) list.push(n);
+          });
+          // Skip picks that only say which model is which ("devastator-centurion", "...-sergeant").
+          const g = codeSlug(group);
+          if(!hit && !/sergeant$/.test(vs) && !g.startsWith(vs) && !codeSlug(sh.n).includes(vs)) other.push(titleCase(vs));
+        }
+        if(other.length) u.notes.push(other.join(", "));
+        out.push(u);
+      });
+      const limit = parseInt(d.l, 10);
+      return {units: out, unmatched, limit: limit >= 500 && limit <= 10000 ? limit : 0, codeFaction: from ? from.name : (d.f || ""), codeFactionId: d.f || "", detachment: typeof d.d === "string" && d.d ? titleCase(d.d) : ""};
+    }
+    const HEAD = /^(?:[a-z]+\d*\s*:\s*)?(?:(\d+)\s*x\s+)?(.+?)\s*[\(\[]\s*([\d,]+)\s*(?:pts?|points)\s*[\)\]]\s*:?\s*(.*)$/i;
+    function parseList(text){
+      const lines = String(text || "").replace(/\r/g, "").split("\n");
+      const out = [], unmatched = [];
+      let cur = null, limit = 0, softLimit = 0, baseIndent = null;
+      const finish = () => { if(!cur) return; if(!cur.models){ cur.count = guessCount(cur.sheet, cur.points); } else cur.count = cur.models; out.push(cur); cur = null; };
+      lines.forEach((raw, idx) => {
+        const indent = raw.match(/^\s*/)[0].replace(/\t/g, "    ").length;
+        const line = raw.trim().replace(/^[•◦▪·*+\-–>]+\s*/, "");
+        if(!line) return;
+        if(idx < 15 && !limit){
+          const hh = line.match(HEAD);
+          if(!(hh && matchSheet(hh[2]))){
+            const m = line.match(/([\d,]{3,6})\s*(?:pts|points)/i);
+            const v = m ? parseInt(m[1].replace(/,/g, ""), 10) : 0;
+            if(v >= 500 && v <= 10000){ if(/strike force|incursion|onslaught|combat patrol|\+\+|roster/i.test(line)) limit = v; else if(!softLimit) softLimit = v; }
+          }
+        }
+        const h = line.match(HEAD);
+        if(h){
+          const sh = matchSheet(h[2]);
+          if(sh){
+            finish();
+            cur = {sheet: sh, name: sh.n, points: parseInt(h[3].replace(/,/g, ""), 10) || 0, models: 0, melee: [], ranged: [], notes: [], include: true};
+            baseIndent = null;
+            if(h[4]) parseItems(h[4], 0);
+            return;
+          }
+          const al = !/(strike force|incursion|onslaught|combat patrol|detachment)/i.test(h[2]) && allySheet(h[2]);
+          if(al){
+            finish();
+            cur = {sheet: al.sheet, name: al.sheet.n, points: parseInt(h[3].replace(/,/g, ""), 10) || 0, models: 0, melee: [], ranged: [], notes: ["Allied: " + al.from], include: true};
+            baseIndent = null;
+            if(h[4]) parseItems(h[4], 0);
+            return;
+          }
+          if(!/^(characters?|battleline|other datasheets|dedicated transports?|allied units|epic hero)/i.test(h[2]) && !/(strike force|incursion|onslaught|combat patrol|detachment)/i.test(h[2]) && idx > 0) unmatched.push(h[2]);
+          return;
+        }
+        if(!cur) return;
+        if(/^(characters?|battleline|other datasheets|dedicated transports?|allied units|exported with|\+\+|=+)/i.test(line)){ finish(); return; }
+        if(/^warlord\b/i.test(line)){ cur.notes.push("Warlord"); return; }
+        const enh = line.match(/^enhancements?\s*:\s*(.+)$/i); if(enh){ cur.notes.push("Enhancement: " + enh[1]); return; }
+        if(baseIndent === null) baseIndent = indent;
+        parseItems(line, indent - baseIndent);
+      });
+      finish();
+      if(!limit) limit = softLimit;
+      function parseItems(text, depth){
+        text.split(/,(?![^()]*\))/).forEach(part => {
+          const inner = (part.match(/\(([^)]*)\)/) || [])[1];
+          const p = part.replace(/\(.*?\)/g, "").trim();
+          const m = p.match(/^(\d+)\s*x\s+(.+)$/i);
+          const qty = m ? parseInt(m[1], 10) : 1, name = (m ? m[2] : p).trim();
+          if(!name) return;
+          const wn = norm(name);
+          const w = (list) => (list || []).find(x => norm(x) === wn || wn.startsWith(norm(x) + " "));
+          const mw = w(cur.sheet.wm), rw = w(cur.sheet.wr);
+          if(mw || rw){ if(mw && !cur.melee.includes(mw)) cur.melee.push(mw); if(rw && !cur.ranged.includes(rw)) cur.ranged.push(rw); }
+          else if(m && depth <= 0) cur.models += qty;
+          if(inner) parseItems(inner, depth + 1);
+        });
+      }
+      return {units: out, unmatched, limit};
+    }
+    return {parseCode, parseList, matchSheet};
+  }
   const shot = (name, alt, art) => `<figure class="shot" data-shot="${name}"><div class="shot-art" aria-hidden="true">${art}</div><img src="img/shots/${name}.webp" alt="${esc(alt)}" loading="lazy" decoding="async"></figure>`;
   const paintName = l => String(l || "").replace(/^Citadel\s+/, "").replace(/\s*\([^)]*\)\s*$/, "");
   async function viewLanding(){
@@ -560,7 +1535,7 @@
     };
     const icon = k => `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[k]}</svg>`;
     const tick = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg>';
-    const cta = me ? `<a class="btn primary lg" href="#/profile">Go to your ledgers</a>` : online ? `<button type="button" class="primary lg" data-cta="up">Create your free account</button>` : `<a class="btn primary lg" href="#/profile">Start a ledger</a>`;
+    const cta = me ? `<a class="btn primary lg" href="${isWar() ? "#/war" : "#/profile"}">${isWar() ? "Go to your armies" : "Go to your ledgers"}</a>` : online ? `<button type="button" class="primary lg" data-cta="up">Create your free account</button>` : `<a class="btn primary lg" href="#/profile">Start a ledger</a>`;
 
     app.innerHTML = `
       <section class="lp-hero">
@@ -578,7 +1553,7 @@
               ${avatarHtml(me, "xl")}
               <h2>Welcome back, ${esc(me.name)}</h2>
               <p class="sub">Your ledgers are waiting.</p>
-              <a class="btn primary" href="#/profile">Go to your ledgers</a>
+              <a class="btn primary" href="${isWar() ? "#/war" : "#/profile"}">${isWar() ? "Go to your armies" : "Go to your ledgers"}</a>
             </div>`
           : online ? `<div class="panel lp-card auth" id="lp-auth"></div>`
           : `<div class="panel lp-card lp-welcome">
@@ -703,6 +1678,34 @@ Redemptor Dreadnought (210 points)</pre>
             </div>`).join("")}
           </div>`)}
         </article>
+      </section>
+
+      <section class="lp-war panel" aria-labelledby="lp-war-h">
+        <div class="lpw-copy">
+          <p class="eyebrow">The companion: War Ledger</p>
+          <h2 id="lp-war-h">Livery Ledger records the hobby. <span class="grad">War Ledger records the war.</span></h2>
+          <p>Flip the switch at the top and your collection becomes a fighting force. Same account, same armies, no painting required: track what you own, build lists from it, check it's ready for the table and log how every game went.</p>
+          <div class="lpw-cols">
+            <div><h3>Livery Ledger · the hobby</h3><ul class="lp-list"><li>${tick}Colour schemes and recipes</li><li>${tick}Painting stages and progress</li><li>${tick}Photos of every unit</li></ul></div>
+            <div><h3>War Ledger · the fighting force</h3><ul class="lp-list"><li>${tick}Your collection, points and battle readiness</li><li>${tick}Army lists that check what's ready to field</li><li>${tick}Battle reports and win–loss records</li></ul></div>
+          </div>
+          <div class="lp-cta-btns">${me || !online ? `<a class="btn primary" href="#/war">Open War Ledger</a>` : `<button type="button" class="primary" data-cta="up">Create your free account</button>`}</div>
+        </div>
+        <div class="lpw-art" aria-hidden="true">
+          <div class="ill-stats">
+            <div><b>247</b><small>Models</small></div>
+            <div><b>4,850</b><small>Points</small></div>
+            <div class="rdy-tile"><b>66%</b><small>Battle ready</small></div>
+          </div>
+          <div class="ill-card lpw-list">
+            <div class="ill-rh"><strong>Club night · 2,000 pts</strong><small>List</small></div>
+            <div class="ill-prog"><i style="width:86%"></i></div>
+            <p class="lpw-verdict">Nearly ready: 86% battle ready</p>
+            <div class="ill-row"><span>Redemptor Dreadnought</span><em>Unpainted</em></div>
+            <div class="ill-row"><span>4× Intercessors</span><em>Unpainted</em></div>
+          </div>
+          <div class="lpw-games"><span class="r-w">W</span><span class="r-w">W</span><span class="r-l">L</span><span class="r-w">W</span><span class="r-d">D</span><em>17 games · 10–6–1</em></div>
+        </div>
       </section>
 
       <section class="lp-grid" aria-labelledby="lp-more-h">
@@ -926,7 +1929,7 @@ Redemptor Dreadnought (210 points)</pre>
         return `<div class="lcard shcard">
           <a class="sh-open" href="#/army/${esc(a.id)}">
             ${ownerLine(a)}
-            <div class="card-top">${tierBadge(a.scheme, a.scheme.tiers[0], 56)}<div><h3>${esc(a.name)}</h3><div class="meta">${esc(f ? f.name : a.faction)}</div></div></div>
+            <div class="card-top">${tierBadge(a.scheme, a.scheme.tiers[0], 56)}<div><h3>${esc(a.name)}</h3><div class="meta">${esc(f ? f.name : a.faction)}${(a.scheme.rec.w + a.scheme.rec.l + a.scheme.rec.d) ? ` · <span class="rec-chip" title="Battle record: wins–losses${a.scheme.rec.d ? "–draws" : ""}">${recText(a.scheme.rec)}</span>` : ""}</div></div></div>
             <div class="prog" aria-hidden="true"><i style="width:${pct}%"></i></div>
             <div class="foot"><span>${plural(s.units, "unit")} · ${plural(s.models, "model")}</span><span>${pct}% painted</span></div>
           </a>
@@ -1109,7 +2112,7 @@ Redemptor Dreadnought (210 points)</pre>
      ============================================================ */
   async function viewSettings(){
     view.name = "settings";
-    document.title = "Settings · Livery Ledger";
+    document.title = `Settings · ${isWar() ? "War" : "Livery"} Ledger`;
     const me = acct(), online = store.kind === "supabase";
     let listPrefs = {group: "role", sort: "rank"};
     try { listPrefs = {...listPrefs, ...JSON.parse(localStorage.getItem("ll-list-prefs") || "{}")}; } catch(e){}
@@ -1117,7 +2120,7 @@ Redemptor Dreadnought (210 points)</pre>
     const iOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
     const opt = (v, cur, label) => `<option value="${esc(v)}"${String(v) === String(cur) ? " selected" : ""}>${esc(label)}</option>`;
     app.innerHTML = `
-      <div class="crumbs"><a href="#/profile">My ledgers</a> / Settings</div>
+      <div class="crumbs">${isWar() ? `<a href="#/war">War Ledger</a>` : `<a href="#/profile">My ledgers</a>`} / Settings</div>
       <section class="page-head"><p class="eyebrow">${me ? esc(me.email) : "This browser"}</p><h1>Settings</h1></section>
       <div class="settings">
         ${me ? `<section class="panel set-sec">
@@ -1146,6 +2149,14 @@ Redemptor Dreadnought (210 points)</pre>
           <div class="msg" id="set-msg" role="status"></div>
         </section>
         <section class="panel set-sec">
+          <h2>War Ledger</h2>
+          <div class="set-grid">
+            <label>A model is battle ready when it's<select id="set-ready">${READY_RULES.map(([v, l]) => opt(v, readyRule(), l)).join("")}</select></label>
+          </div>
+          <p class="hint">Used for battle readiness across War Ledger. You can still set any unit by hand.</p>
+          <div class="msg" id="set-wmsg" role="status"></div>
+        </section>
+        <section class="panel set-sec">
           <h2>App</h2>
           ${standalone() ? `<p class="hint">You're using Livery Ledger as an installed app.</p>`
             : installable() ? `<p class="hint">Add Livery Ledger to your home screen or desktop. It opens like an app, and still opens without a connection, showing what was last loaded.</p><div class="row-actions"><button type="button" class="primary btn-sm" id="set-install">Install app</button></div>`
@@ -1169,6 +2180,9 @@ Redemptor Dreadnought (210 points)</pre>
     const saved = async patch => { try { await saveSettings(patch); say("set-msg", "Saved."); } catch(err){ say("set-msg", "Saved on this device, but not to your account: " + errText(err), true); } };
     $("set-points").addEventListener("change", e => saved({hidePoints: e.target.checked}));
     $("set-cur").addEventListener("change", e => saved({currency: e.target.value}));
+    $("set-ready").addEventListener("change", async e => {
+      try { await saveSettings({ready: e.target.value}); $("set-wmsg").textContent = "Saved."; } catch(err){ $("set-wmsg").textContent = "Couldn't save: " + errText(err); }
+    });
     const listSave = () => { try { localStorage.setItem("ll-list-prefs", JSON.stringify({group: $("set-group").value, sort: $("set-sort").value})); } catch(e){} say("set-msg", "Saved."); };
     $("set-group").addEventListener("change", listSave); $("set-sort").addEventListener("change", listSave);
     $("set-bg").addEventListener("change", e => { document.documentElement.dataset.bg = e.target.value; try { localStorage.setItem("ll-bg", e.target.value); } catch(err){} say("set-msg", "Saved."); });
@@ -1662,7 +2676,6 @@ Redemptor Dreadnought (210 points)</pre>
       return p;
     }
     const fmt = n => Number(n || 0).toLocaleString("en");
-    const singleRole = r => ["Epic Hero","Character","Vehicle","Monster","Dedicated Transport","Fortification"].includes(r);
 
     // A paint picker per colour area (the hidden input #f-<id> holds the colour).
     const colorField = (id, label) => `<label>${label}<span data-slot="${id}"></span></label>`;
@@ -1676,7 +2689,7 @@ Redemptor Dreadnought (210 points)</pre>
         <div>
           ${!canWrite ? ownerLine(army, "big") : ""}
           <h1>${esc(army.name)}</h1>
-          <p class="sub">${esc(f.name)} · Track colours, weapons, points and painting progress for every unit.</p>
+          <p class="sub">${esc(f.name)}${!canWrite && (army.scheme.rec.w + army.scheme.rec.l + army.scheme.rec.d) ? ` · <span class="rec-chip">${recText(army.scheme.rec)}</span> battle record` : " · Track colours, weapons, points and painting progress for every unit."}</p>
         </div>
         <div class="stats" aria-live="polite">
           <div class="stat stat-pts"><b><span id="st-pts">0</span><small class="lim"${!canWrite && !scheme.limit ? " hidden" : ""}> / <button type="button" id="b-limit" class="lim-btn" ${canWrite ? "" : "disabled"} aria-label="Change points limit">${scheme.limit ? fmt(scheme.limit) : "set limit"}</button></small></b><span>Points</span><i class="pts-bar" aria-hidden="true"><i id="pts-bar"></i></i></div>
@@ -2414,6 +3427,8 @@ Redemptor Dreadnought (210 points)</pre>
       const cur = currentUnit();
       u.fav = !!(cur && cur.fav);
       u.photos = cur ? cur.photos || [] : [];
+      // Kept from War Ledger: built count, battle-ready override and purchase details.
+      if(cur) WAR_FIELDS.forEach(k => { u[k] = cur[k]; });
       busy = true; const b = $("b-save"), label = b.textContent; b.disabled = true; b.textContent = "Saving…";
       try {
         const row = await store.saveUnit(army.id, u, cur ? cur.id : null, pendingPhoto, removePhoto, cur);
@@ -2632,170 +3647,7 @@ Redemptor Dreadnought (210 points)</pre>
     }
 
     /* ---------- army list import ---------- */
-    const norm = s => String(s || "").toLowerCase().replace(/[’`]/g, "'").replace(/\[[^\]]*\]/g, " ").replace(/[^a-z0-9']+/g, " ").trim();
-    const sheetIndex = new Map();
-    sheets.slice().sort((a, b) => (a.t ? 1 : 0) - (b.t ? 1 : 0)).forEach(s => { const k = norm(s.n); if(!sheetIndex.has(k)) sheetIndex.set(k, s); });
-    const sheetKeys = [...sheetIndex.keys()].sort((a, b) => b.length - a.length);
-    function matchSheet(text){
-      const k = norm(text);
-      if(sheetIndex.has(k)) return sheetIndex.get(k);
-      const hit = sheetKeys.find(s => k === s || k.startsWith(s + " "));
-      return hit ? sheetIndex.get(hit) : null;
-    }
-    function guessCount(sh, pts){
-      if(singleRole(sh.r)) return 1;
-      const br = sh.pb || [];
-      const hit = br.filter(b => b[2] === pts).pop();
-      if(hit) return hit[1] || Math.max(hit[0], (hit[0] - 1) * 2);
-      return br.length ? (br[0][0] === br[0][1] ? br[0][0] : Math.max(1, br[0][0] - 1)) : 1;
-    }
-    // Allied units (e.g. Imperial Knights in a Space Marine list) live in another faction's datasheets.
-    function allySheet(text, prefer){
-      const k = norm(text);
-      const order = [FBY[prefer], ...FACTIONS].filter(x => x && x.id !== army.faction);
-      for(const fx of order){
-        const sh = (fx.units || []).find(u => !u.t && norm(u.n) === k) || (fx.units || []).find(u => norm(u.n) === k);
-        if(sh) return {sheet: sh, from: fx.name};
-      }
-      return null;
-    }
-
-    /* List codes from list-building sites: base64 JSON like
-       {"f":"black-templars","d":"","l":2000,"u":[["ancient",0,{"w":1,"o":{"wargear-weapon-option":"bolt-rifle-close-combat-weapon"}}]]}
-       u = [datasheet slug, size option (0 = smallest), {w: warlord, o: chosen options}]. */
-    const codeSlug = s => String(s || "").toLowerCase().replace(/[’']/g, "").replace(/armour/g, "armor").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-    function decodeListCode(text){
-      const raw = String(text || "").replace(/%3D/gi, "=");
-      const tokens = (raw.match(/[A-Za-z0-9_\-+/]{24,}={0,2}/g) || []).sort((a, b) => b.length - a.length);
-      for(const tk of tokens){
-        try {
-          let b64 = tk.replace(/-/g, "+").replace(/_/g, "/"); b64 += "===".slice((b64.length + 3) % 4);
-          const bin = atob(b64), bytes = Uint8Array.from(bin, c => c.charCodeAt(0));
-          const d = JSON.parse(new TextDecoder().decode(bytes));
-          if(d && typeof d === "object" && Array.isArray(d.u)) return d;
-        } catch(e){ /* not a list code */ }
-      }
-      return null;
-    }
-    // "emperor-s-shield" -> "Emperor's Shield"
-    const titleCase = sl => String(sl || "").replace(/([a-z0-9])-s(?=-|$)/g, "$1's").split("-").filter(Boolean).map(w => w[0].toUpperCase() + w.slice(1)).join(" ");
-    function parseCode(text){
-      const d = decodeListCode(text);
-      if(!d) return null;
-      const out = [], unmatched = [];
-      const own = new Map(), from = FBY[d.f];
-      sheets.slice().sort((a, b) => (a.t ? 1 : 0) - (b.t ? 1 : 0)).forEach(s => { const k = codeSlug(s.n); if(!own.has(k)) own.set(k, s); });
-      d.u.forEach(entry => {
-        if(!Array.isArray(entry) || typeof entry[0] !== "string") return;
-        const [id, size, extra] = entry, ex = extra && typeof extra === "object" ? extra : {};
-        let sh = own.get(codeSlug(id)), ally = null;
-        if(!sh){
-          for(const fx of [from, ...FACTIONS].filter(x => x && x.id !== army.faction)){
-            const hit = (fx.units || []).find(u => !u.t && codeSlug(u.n) === codeSlug(id)) || (fx.units || []).find(u => codeSlug(u.n) === codeSlug(id));
-            if(hit){ sh = hit; ally = fx.name; break; }
-          }
-        }
-        if(!sh){ unmatched.push(titleCase(id)); return; }
-        // Size option 0 is the base unit; 1+ step through the larger squad sizes.
-        const br = sh.pb || [], k = Math.max(0, parseInt(size, 10) || 0);
-        const points = k && br[k - 1] ? br[k - 1][2] : (sh.p || 0);
-        const u = {sheet: sh, name: sh.n, points, count: guessCount(sh, points), melee: [], ranged: [], notes: [], include: true};
-        if(ally) u.notes.push("Allied: " + ally);
-        if(ex.w) u.notes.push("Warlord");
-        if(typeof ex.e === "string" && ex.e) u.notes.push("Enhancement: " + titleCase(ex.e));
-        // Chosen options: pull out any weapons we recognise; keep the rest as a note.
-        const weapons = [...(sh.wm || []).map(n => [n, "melee"]), ...(sh.wr || []).map(n => [n, "ranged"])]
-          .map(([n, kind]) => [n, kind, codeSlug(n)]).filter(w => w[2]).sort((a, b) => b[2].length - a[2].length);
-        const other = [];
-        Object.entries(ex.o && typeof ex.o === "object" ? ex.o : {}).forEach(([group, val]) => {
-          // A choice is a slug, a list of slugs, or {slug: how many}.
-          const picks = typeof val === "string" ? [val] : Array.isArray(val) ? val : val && typeof val === "object" ? Object.keys(val).filter(k => val[k]) : [];
-          picks.forEach(v => pickOption(group, v));
-        });
-        function pickOption(group, v){
-          if(typeof v !== "string") return;
-          const vs = codeSlug(v).split("-").filter(x => x !== "w").join("-"); // "initiate-w-bolt-rifle": w = with
-          let rest = "-" + vs + "-", hit = false;
-          weapons.forEach(([n, kind, ws]) => {
-            if(!rest.includes("-" + ws + "-")) return;
-            rest = rest.replace("-" + ws + "-", "-"); hit = true;
-            const list = kind === "melee" ? u.melee : u.ranged; if(!list.includes(n)) list.push(n);
-          });
-          // Skip picks that only say which model is which ("devastator-centurion", "...-sergeant").
-          const g = codeSlug(group);
-          if(!hit && !/sergeant$/.test(vs) && !g.startsWith(vs) && !codeSlug(sh.n).includes(vs)) other.push(titleCase(vs));
-        }
-        if(other.length) u.notes.push(other.join(", "));
-        out.push(u);
-      });
-      const limit = parseInt(d.l, 10);
-      return {units: out, unmatched, limit: limit >= 500 && limit <= 10000 ? limit : 0, codeFaction: from ? from.name : (d.f || ""), codeFactionId: d.f || "", detachment: typeof d.d === "string" && d.d ? titleCase(d.d) : ""};
-    }
-    const HEAD = /^(?:[a-z]+\d*\s*:\s*)?(?:(\d+)\s*x\s+)?(.+?)\s*[\(\[]\s*([\d,]+)\s*(?:pts?|points)\s*[\)\]]\s*:?\s*(.*)$/i;
-    function parseList(text){
-      const lines = String(text || "").replace(/\r/g, "").split("\n");
-      const out = [], unmatched = [];
-      let cur = null, limit = 0, softLimit = 0, baseIndent = null;
-      const finish = () => { if(!cur) return; if(!cur.models){ cur.count = guessCount(cur.sheet, cur.points); } else cur.count = cur.models; out.push(cur); cur = null; };
-      lines.forEach((raw, idx) => {
-        const indent = raw.match(/^\s*/)[0].replace(/\t/g, "    ").length;
-        const line = raw.trim().replace(/^[•◦▪·*+\-–>]+\s*/, "");
-        if(!line) return;
-        if(idx < 15 && !limit){
-          const hh = line.match(HEAD);
-          if(!(hh && matchSheet(hh[2]))){
-            const m = line.match(/([\d,]{3,6})\s*(?:pts|points)/i);
-            const v = m ? parseInt(m[1].replace(/,/g, ""), 10) : 0;
-            if(v >= 500 && v <= 10000){ if(/strike force|incursion|onslaught|combat patrol|\+\+|roster/i.test(line)) limit = v; else if(!softLimit) softLimit = v; }
-          }
-        }
-        const h = line.match(HEAD);
-        if(h){
-          const sh = matchSheet(h[2]);
-          if(sh){
-            finish();
-            cur = {sheet: sh, name: sh.n, points: parseInt(h[3].replace(/,/g, ""), 10) || 0, models: 0, melee: [], ranged: [], notes: [], include: true};
-            baseIndent = null;
-            if(h[4]) parseItems(h[4], 0);
-            return;
-          }
-          const al = !/(strike force|incursion|onslaught|combat patrol|detachment)/i.test(h[2]) && allySheet(h[2]);
-          if(al){
-            finish();
-            cur = {sheet: al.sheet, name: al.sheet.n, points: parseInt(h[3].replace(/,/g, ""), 10) || 0, models: 0, melee: [], ranged: [], notes: ["Allied: " + al.from], include: true};
-            baseIndent = null;
-            if(h[4]) parseItems(h[4], 0);
-            return;
-          }
-          if(!/^(characters?|battleline|other datasheets|dedicated transports?|allied units|epic hero)/i.test(h[2]) && !/(strike force|incursion|onslaught|combat patrol|detachment)/i.test(h[2]) && idx > 0) unmatched.push(h[2]);
-          return;
-        }
-        if(!cur) return;
-        if(/^(characters?|battleline|other datasheets|dedicated transports?|allied units|exported with|\+\+|=+)/i.test(line)){ finish(); return; }
-        if(/^warlord\b/i.test(line)){ cur.notes.push("Warlord"); return; }
-        const enh = line.match(/^enhancements?\s*:\s*(.+)$/i); if(enh){ cur.notes.push("Enhancement: " + enh[1]); return; }
-        if(baseIndent === null) baseIndent = indent;
-        parseItems(line, indent - baseIndent);
-      });
-      finish();
-      if(!limit) limit = softLimit;
-      function parseItems(text, depth){
-        text.split(/,(?![^()]*\))/).forEach(part => {
-          const inner = (part.match(/\(([^)]*)\)/) || [])[1];
-          const p = part.replace(/\(.*?\)/g, "").trim();
-          const m = p.match(/^(\d+)\s*x\s+(.+)$/i);
-          const qty = m ? parseInt(m[1], 10) : 1, name = (m ? m[2] : p).trim();
-          if(!name) return;
-          const wn = norm(name);
-          const w = (list) => (list || []).find(x => norm(x) === wn || wn.startsWith(norm(x) + " "));
-          const mw = w(cur.sheet.wm), rw = w(cur.sheet.wr);
-          if(mw || rw){ if(mw && !cur.melee.includes(mw)) cur.melee.push(mw); if(rw && !cur.ranged.includes(rw)) cur.ranged.push(rw); }
-          else if(m && depth <= 0) cur.models += qty;
-          if(inner) parseItems(inner, depth + 1);
-        });
-      }
-      return {units: out, unmatched, limit};
-    }
+    const {parseCode, parseList} = makeListReader(army.faction);
     let parsed = null;
     function renderParsed(){
       const box = $("ld-out");
