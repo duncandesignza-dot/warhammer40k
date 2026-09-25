@@ -1533,3 +1533,25 @@ header.top .wh-id h1{margin:0}
 .colours-prompt{flex-wrap:wrap;gap:10px 14px;border-color:var(--brand-line)}
 .colours-prompt>span:nth-child(2){flex:1 1 320px}
 .cp-acts{display:flex;gap:8px;flex-wrap:wrap}
+/* Army list details: status tags, warlord, enhancements and leaders. */
+.tag.st-draft{color:var(--muted);background:rgba(255,255,255,.05);border-color:var(--line)}
+.tag.st-theory{color:#c4b5fd;background:rgba(167,139,250,.12);border-color:rgba(167,139,250,.35)}
+.tag.st-tournament{color:#fcd34d;background:rgba(251,191,36,.12);border-color:rgba(251,191,36,.35)}
+.tag.st-narrative{color:#93c5fd;background:rgba(96,165,250,.12);border-color:rgba(96,165,250,.35)}
+.tag.st-archived{color:var(--muted);background:transparent;border-color:var(--line);border-style:dashed}
+.tag.wl{color:#fcd34d;background:rgba(251,191,36,.12);border-color:rgba(251,191,36,.35)}
+.lcard.archived{border-style:dashed;background:transparent}
+.lst-meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin:8px 0 0;color:var(--muted);font-size:.86rem}
+.lst-meta .tag{margin:0}
+.lb-title .tag{margin:0 0 0 6px;vertical-align:2px}
+.lb-name small.lb-extra{color:var(--ink);opacity:.8;margin-top:2px}
+.lb-rows .icon-x+.icon-x{margin-left:-4px}
+.det-row{display:flex;gap:8px;align-items:center}
+.det-row+.det-row{margin-top:8px}
+.det-row input{flex:1;min-width:0}
+#w-det-add{margin-top:10px}
+@media (max-width:420px){
+  .lb-in .lb-rows li{flex-wrap:wrap;row-gap:6px}
+  .lb-in .lb-name{flex-basis:100%}
+  .lb-in .lb-pts{margin-left:auto}
+}

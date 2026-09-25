@@ -146,16 +146,39 @@
   const day = v => /^\d{4}-\d{2}-\d{2}$/.test(v || "") ? v : new Date().toISOString().slice(0, 10);
   const int = (v, lo, hi) => Math.min(hi, Math.max(lo, parseInt(v, 10) || 0));
   // An army list: units picked from the collection ({u: unit id}), or units you don't own yet ({n, sheet, ...}).
+  // Each entry has a key (k) so leaders can point at the unit they lead; warlord, enhancement and a
+  // points override (pts) are only stored when set. Nothing here checks the rules: that's left to the player.
+  const slug = v => /^[a-z0-9-]{1,24}$/.test(v || "") ? v : "";
+  const LIST_STATUS = ["draft", "theory", "tournament", "narrative", "archived"];
   function cleanList(l){
     l = l || {};
-    const units = (Array.isArray(l.units) ? l.units : []).slice(0, 200).map(e => {
+    const seen = new Set();
+    const units = (Array.isArray(l.units) ? l.units : []).slice(0, 200).map((e, i) => {
       if(!e || typeof e !== "object") return null;
-      if(e.u) return {u: String(e.u).slice(0, 60)};
-      const n = String(e.n || e.sheet || "").trim().slice(0, 80);
-      return n ? {n, sheet: String(e.sheet || "").slice(0, 80), role: String(e.role || "").slice(0, 40), count: int(e.count, 1, 99) || 1, points: int(e.points, 0, 9999)} : null;
+      let row;
+      if(e.u) row = {u: String(e.u).slice(0, 60)};
+      else {
+        const n = String(e.n || e.sheet || "").trim().slice(0, 80);
+        if(!n) return null;
+        row = {n, sheet: String(e.sheet || "").slice(0, 80), role: String(e.role || "").slice(0, 40), count: int(e.count, 1, 99) || 1, points: int(e.points, 0, 9999)};
+      }
+      let k = /^[\w-]{1,24}$/.test(e.k || "") ? e.k : "e" + i;
+      while(seen.has(k)) k += "x";
+      seen.add(k); row.k = k;
+      if(e.warlord === true) row.warlord = true;
+      const en = e.enh && typeof e.enh === "object" ? String(e.enh.n || "").trim().slice(0, 80) : "";
+      if(en) row.enh = {n: en, p: int(e.enh.p, 0, 999)};
+      if(e.lead && /^[\w-]{1,24}$/.test(e.lead)) row.lead = e.lead;
+      if(e.u && e.pts !== null && e.pts !== undefined && e.pts !== "") row.pts = int(e.pts, 0, 9999);
+      return row;
     }).filter(Boolean);
+    // Leaders only point at units still in the list.
+    units.forEach(r => { if(r.lead && (r.lead === r.k || !seen.has(r.lead))) delete r.lead; });
+    const dets = (Array.isArray(l.detachments) ? l.detachments : [l.detachment]).map(d => String(d || "").trim().slice(0, 80)).filter(Boolean).slice(0, 4);
     return {armyId: String(l.armyId || "").slice(0, 60), name: String(l.name || "Army list").trim().slice(0, 80) || "Army list",
-      limit: int(l.limit, 0, 20000), detachment: String(l.detachment || "").slice(0, 80), notes: String(l.notes || "").slice(0, 600), units};
+      limit: int(l.limit, 0, 20000), size: slug(l.size), detachments: dets, detachment: dets.join(" + "),
+      status: LIST_STATUS.includes(l.status) ? l.status : "draft", ptsAsOf: /^\d{4}-\d{2}-\d{2}$/.test(l.ptsAsOf || "") ? l.ptsAsOf : "",
+      notes: String(l.notes || "").slice(0, 600), units};
   }
   // A battle: when, with which list, against whom, and how it went.
   function cleanGame(g){
