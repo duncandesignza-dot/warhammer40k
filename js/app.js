@@ -475,7 +475,7 @@
     if(parts[0] === "profile"){ history.replaceState(null, "", "#/livery"); lastHash = location.hash; parts.splice(0, parts.length, "livery"); }
     setMode(parts[0] === "war" ? "war" : ["livery", "army", "new"].includes(parts[0]) ? "livery" : savedMode());
     document.querySelectorAll("dialog.wdlg[open]").forEach(d => d.close());
-    setTop();
+    setTop(); setBotNav(parts);
     try {
       if(parts[0] === "war"){
         if(store.kind === "supabase" && !store.session){ await viewLanding(); setTimeout(() => openAuth("in", "Log in to open War Ledger."), 0); }
@@ -487,7 +487,8 @@
         else if(parts[1] === "list" && parts[2]) await viewWarList(parts[2]);
         else if(parts[1] === "lists") await viewWarLists();
         else if(parts[1] === "battles") await viewWarBattles();
-        else await viewWarDash();
+        else if(!parts[1]) await viewWarDash();
+        else viewNotFound();
       } else
       if(parts[0] === "new" && FBY[parts[1]]) await viewSetup({factionId: parts[1]});
       else if(parts[0] === "army" && parts[1] && parts[2] === "colours") await viewSetup({armyId: parts[1]});
@@ -516,15 +517,29 @@
         else if(parts[1] === "roster") await viewLiveryRoster();
         else if(parts[1] === "activity") await viewLiveryActivity();
         else if(parts[1] === "paints") await viewLiveryPaints();
-        else await viewLivery();
+        else if(!parts[1]) await viewLivery();
+        else viewNotFound();
       }
       // "#/" (and the old "#/welcome"): the homepage.
-      else await viewLanding();
+      else if(!parts[0] || parts[0] === "welcome") await viewLanding();
+      else viewNotFound();
     } catch(err){
       console.error(err);
       app.innerHTML = `<div class="banner"><span class="dot warn"></span>Couldn't load this page: ${esc(errText(err))}</div><p><a class="btn" href="${isWar() ? "#/war" : "#/livery"}">Back to your ${isWar() ? "armies" : "ledgers"}</a></p>`;
     }
     window.scrollTo(0, 0);
+  }
+
+  // An address that isn't a page here: say so, and offer the way back.
+  function viewNotFound(){
+    view.name = "notfound";
+    const war = isWar(), tool = war ? "War Ledger" : "Livery Ledger";
+    document.title = `Page not found · ${tool}`;
+    app.innerHTML = `<section class="panel nf" aria-labelledby="nf-h">
+      <p class="eyebrow">${tool}</p><h1 id="nf-h">Page not found</h1>
+      <p class="sub">There's no page at this address. The link may be mistyped, or the page may have moved.</p>
+      <div class="row-actions"><a class="btn primary" href="${war ? "#/war" : "#/livery"}">${war ? "Go to War Ledger" : "Go to your ledgers"}</a><a class="btn" href="#/">Homepage</a></div>
+    </section>`;
   }
 
   /* ============================================================
@@ -594,6 +609,41 @@
     D.units = D.units.map(x => x.id === id ? next : x); redraw();
     try { const row = await store.saveUnit(u.armyId, next, u.id, null, false, u); D.units = D.units.map(x => x.id === id ? {...next, ...row} : x); }
     catch(err){ D.units = D.units.map(x => x.id === id ? u : x); redraw(); flash("Couldn't star it: " + errText(err)); }
+  }
+  /* On phones, the sections of the tool you're in sit in a bar along the bottom of the screen. */
+  const NAV_ICON = {
+    home: '<path d="M4 11 12 4l8 7v9h-5v-6H9v6H4z"/>',
+    book: '<path d="M5 5a2 2 0 0 1 2-2h12v15H7a2 2 0 0 0-2 2z"/><path d="M5 20a2 2 0 0 0 2 2h12v-4"/>',
+    list: '<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6h.01M4 12h.01M4 18h.01" stroke-width="3"/>',
+    drop: '<path d="M12 3s-6 7-6 11.5a6 6 0 0 0 12 0C18 10 12 3 12 3z"/>',
+    chart: '<path d="M4 20h16M7 16v-5M12 16V6M17 16v-8"/>',
+    shield: '<path d="M12 3 20 6v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/>',
+    grid: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
+    clip: '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 3h6v3H9zM9 11h6M9 15h6"/>',
+    swords: '<path d="m4 4 11 11M20 4 9 15M7 14l-3 3 3 3 3-3M17 14l3 3-3 3-3-3"/>'
+  };
+  const BOTNAV = {
+    livery: {label: "Livery Ledger", items: [["", "Overview", "home"], ["ledgers", "Ledgers", "book"], ["roster", "Roster", "list"], ["paints", "Paints", "drop"], ["activity", "Activity", "chart"]]},
+    war: {label: "War Ledger", items: [["", "Overview", "home"], ["armies", "Armies", "shield"], ["collection", "Collection", "grid"], ["lists", "Lists", "clip"], ["battles", "Battles", "swords"]]}
+  };
+  // Which section a page belongs to, so its tab is lit (a ledger counts as Ledgers, an army list as Lists).
+  function navSection(parts){
+    if(parts[0] === "war") return ({army: "armies", new: "armies", list: "lists"})[parts[1]] || (BOTNAV.war.items.some(i => i[0] === parts[1]) ? parts[1] || "" : "");
+    if(parts[0] === "army" || parts[0] === "new") return "ledgers";
+    if(parts[0] === "livery") return parts[1] === "new" ? "ledgers" : parts[1] || "";
+    return null;
+  }
+  function setBotNav(parts){
+    let nav = $("botnav");
+    if(!nav){ nav = document.createElement("nav"); nav.id = "botnav"; nav.className = "botnav"; document.body.appendChild(nav); }
+    // Not on the homepage, or when the online version is waiting for someone to log in.
+    const show = parts.length > 0 && !(store.kind === "supabase" && !store.session);
+    document.body.classList.toggle("has-botnav", show);
+    nav.hidden = !show;
+    if(!show) return;
+    const mode = isWar() ? "war" : "livery", cfg = BOTNAV[mode], on = navSection(parts);
+    nav.setAttribute("aria-label", cfg.label + " sections");
+    nav.innerHTML = cfg.items.map(([k, l, ic]) => `<a href="#/${mode}${k ? "/" + k : ""}"${k === on ? ` aria-current="page"` : ""}><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${NAV_ICON[ic]}</svg><span>${l}</span></a>`).join("");
   }
   const WAR_TABS = [["", "Overview"], ["armies", "Armies"], ["collection", "Collection"], ["lists", "Army lists"], ["battles", "Battles"]];
   const warTabs = on => `<nav class="war-tabs" aria-label="War Ledger">${WAR_TABS.map(([k, l]) => `<a href="#/war${k ? "/" + k : ""}"${k === on ? ` aria-current="page"` : ""}>${l}</a>`).join("")}</nav>`;

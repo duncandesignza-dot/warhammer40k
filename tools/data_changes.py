@@ -11,9 +11,22 @@ Used by .github/workflows/refresh-datasheets.yml, and handy after a manual rebui
 """
 import json, re, sys
 
+ROLES = ["Epic Hero", "Character", "Battleline", "Infantry", "Mounted", "Beast", "Swarm", "Monster", "Vehicle", "Dedicated Transport", "Fortification", "Other"]
+
 def load(path):
-    text = open(path, encoding="utf-8").read()
-    return json.loads(re.search(r"window\.LEDGER_FACTIONS\s*=\s*(\{.*\});?\s*$", text, re.S).group(1))
+    line = next(l for l in open(path, encoding="utf-8") if l.startswith("window.LEDGER_FACTIONS"))
+    data = json.loads(line.split("=", 1)[1].strip().rstrip(";"))
+    # Chapters are stored as their parent's lists plus their own (see pack() in build_factions.py).
+    if data.pop("packed", None):
+        by = {f["id"]: f for f in data["factions"]}
+        for f in data["factions"]:
+            p = by.get(f.get("parent"))
+            if not p: continue
+            ux, dx = set(f.pop("ux", [])), set(f.pop("dx", []))
+            f["units"] = sorted([u for u in p["units"] if u["n"] not in ux] + f["units"], key=lambda u: (bool(u.get("t")), ROLES.index(u["r"]), u["n"]))
+            dets = sorted([d for d in p.get("dets", []) if d["n"] not in dx] + f.get("dets", []), key=lambda d: d["n"])
+            if dets: f["dets"] = dets
+    return data
 
 old, new = load(sys.argv[1]), load(sys.argv[2])
 

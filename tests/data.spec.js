@@ -15,6 +15,16 @@ test("every faction has units and detachments", () => {
   }
 });
 
+test("chapters get their parent's units and detachments as well as their own", () => {
+  const by = Object.fromEntries(load().factions.map(f => [f.id, f]));
+  const um = by.ultramarines, sm = by["space-marines"];
+  expect(um.units.some(u => u.n === "Marneus Calgar")).toBe(true);
+  expect(um.units.some(u => u.n === "Intercessor Squad")).toBe(true);
+  expect(um.dets.map(d => d.n)).toEqual(expect.arrayContaining(["Gladius Task Force", "Blade of Ultramar"]));
+  expect(sm.dets.some(d => d.n === "Blade of Ultramar")).toBe(false);
+  expect(um.ux).toBeUndefined();
+});
+
 test("battle sizes have points, Detachment Points and enhancement limits", () => {
   const {sizes} = load();
   expect(sizes.map(z => z.id)).toEqual(["incursion", "strike", "onslaught"]);
