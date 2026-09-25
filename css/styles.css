@@ -6,7 +6,7 @@
   --surface-2:rgba(30,36,41,.45);        /* inner panels, fields */
   --surface-solid:#0d1114;               /* dialogs, sticky bars */
   --field:rgba(12,16,19,.7);
-  --ink:#e9efeb; --muted:#8e9a94; --faint:#5f6b65;
+  --ink:#e9efeb; --muted:#8e9a94; --faint:#7f8c86;
   --line:#1c2429; --line-strong:#2a353b;
   --brand:#3ddc84; --brand-2:#4dd7cf; --brand-ink:#04140b;
   --brand-soft:rgba(61,220,132,.12); --brand-line:rgba(61,220,132,.45);
@@ -126,7 +126,7 @@ svg.mini.solo{overflow:hidden}
 @media (max-width:900px){.setup{grid-template-columns:1fr}}
 .panel{padding:20px}
 .panel+.panel{margin-top:14px}
-.panel h3{font-family:var(--mono);font-size:.7rem;text-transform:uppercase;letter-spacing:.12em;color:var(--brand);margin:0 0 14px;font-weight:700}
+.panel h3,.panel h2.ph{font-family:var(--mono);font-size:.7rem;text-transform:uppercase;letter-spacing:.12em;color:var(--brand);margin:0 0 14px;font-weight:700}
 .panel p.hint{margin:-6px 0 14px;color:var(--muted);font-size:.86rem}
 .cgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}
 .cfield{display:flex;flex-direction:column;gap:6px;padding:12px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface-2)}
@@ -244,7 +244,7 @@ dialog.small{max-width:min(460px,calc(100vw - 32px))}
 .detail .info{padding:24px;display:flex;flex-direction:column;gap:16px}
 .detail h2{font-size:1.6rem;font-weight:800;letter-spacing:-.02em;line-height:1.15;margin:0;overflow-wrap:anywhere;padding-right:70px}
 .detail .meta{color:var(--muted);margin-top:4px}
-.detail h4{font-family:var(--mono);font-size:.66rem;text-transform:uppercase;letter-spacing:.12em;color:var(--brand);margin:0 0 8px;font-weight:700}
+.detail h4,.detail .dsec-h{font-family:var(--mono);font-size:.66rem;text-transform:uppercase;letter-spacing:.12em;color:var(--brand);margin:0 0 8px;font-weight:700}
 .detail section{border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;background:var(--surface-2)}
 .detail section.row-actions{border:0;padding:0;background:none}
 .detail .row{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
@@ -643,7 +643,7 @@ div.hd-when{display:contents}
 .detail .media svg.mini{max-width:100%;height:auto}
 .detail .media,.detail .info{min-width:0}
 dialog{overflow-x:hidden}
-@media (max-width:720px){.detail .media{min-height:0;padding:18px 16px}}
+@media (max-width:720px){.detail .media{min-height:0;padding:56px 16px 18px}}
 /* Unit details: the Edit / Duplicate / Delete row stays pinned to the bottom while the details scroll, like the editor's buttons. */
 .detail section.row-actions{position:sticky;bottom:0;z-index:2;margin:0 -24px -24px;padding:14px 24px calc(14px + env(safe-area-inset-bottom,0px));background:rgba(13,17,20,.94);border-top:1px solid var(--line);border-radius:0;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
 @media (max-width:720px){.detail section.row-actions{flex-wrap:nowrap;gap:8px}.detail section.row-actions>*{flex:1;white-space:nowrap;padding-left:10px;padding-right:10px}.detail section.row-actions .danger{flex:0 0 auto}}
@@ -657,7 +657,7 @@ dialog{overflow-x:hidden}
 .detail details.dsec{border:1px solid var(--line);border-radius:var(--r);background:var(--surface-2)}
 .detail details.dsec>summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border-radius:var(--r)}
 .detail details.dsec>summary::-webkit-details-marker{display:none}
-.detail details.dsec>summary h4{margin:0}
+.detail details.dsec>summary h4,.detail details.dsec>summary h3{margin:0}
 .detail details.dsec>summary::after{content:"";width:7px;height:7px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg);margin-right:4px;transition:transform .15s}
 .detail details.dsec[open]>summary::after{transform:rotate(-135deg)}
 .detail details.dsec>summary:hover::after{border-color:var(--ink)}
@@ -859,7 +859,7 @@ button.lg,.btn.lg{padding:13px 22px;font-size:1rem;border-radius:12px}
   .shot-art{padding:20px 16px}
   .ill-import{grid-template-columns:1fr}
   .ill-arrow{transform:rotate(90deg);justify-self:center}
-  .lp-parade{gap:8px}
+  .lp-parade{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
   .lp-parade>span{padding:4px 8px}
   .lp-parade>span:nth-child(n+7){display:none}
   .ill-unit{padding-bottom:0}
@@ -1094,7 +1094,7 @@ small.swaps{display:block;color:var(--brand-2);font-size:.74rem;margin-top:2px}
 .ag-done{margin-left:6px;font-size:.72rem;font-weight:700;color:var(--good);border:1px solid rgba(74,222,128,.4);border-radius:99px;padding:2px 8px;white-space:nowrap}
 .act-goal p{margin:0;font-size:.86rem;color:var(--muted)}
 .act-goal small{font-size:.78rem;color:var(--muted)}
-.act-goal .btn-sm{align-self:flex-start}
+.act-goal .btn-sm{align-self:flex-start;font-weight:600;padding:7px 14px}
 .meter{height:8px;border-radius:99px;background:rgba(42,168,102,.18);overflow:hidden}
 .meter i{display:block;height:100%;border-radius:99px;background:var(--bar)}
 .ag-form{display:flex;flex-direction:column;gap:10px}
@@ -1181,3 +1181,23 @@ body.no-points .card-top .pts,body.no-points .stat-pts,body.no-points .ro-pts,bo
 .stage input,.switch input,.headseg input{top:0;left:0}
 /* Full-height dialogs only scroll their inner content */
 dialog.editdlg,dialog.paintdlg{overflow:clip}
+
+/* Very small phones */
+.g-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.g-scroll .g-units{min-width:420px}
+@media print{.g-scroll{overflow:visible}.g-scroll .g-units{min-width:0}}
+@media (max-width:380px){
+  .detail section.row-actions{flex-wrap:wrap}
+  .detail section.row-actions .danger{flex:1 1 100%;margin-left:0}
+}
+
+.sr-only{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+
+/* Unit cards: the name is the card's button, stretched over the whole card; star and next-step sit above it */
+.card{position:relative}
+.card-open{all:unset;cursor:pointer;overflow-wrap:break-word}
+.card-open::after{content:"";position:absolute;inset:0;z-index:1;border-radius:inherit}
+.card .star,.card .step,.card .card-foot button{position:relative;z-index:2}
+.card:has(.card-open:focus-visible){outline:2px solid var(--focus);outline-offset:2px}
+@media (max-width:640px){.ph-actions>*{flex:1 1 auto;justify-content:center}.toast{font-size:.84rem;gap:10px;padding-left:14px}}
+@media (max-width:370px){.lp-parade{grid-template-columns:repeat(2,minmax(0,1fr))}}

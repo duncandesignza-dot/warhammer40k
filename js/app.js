@@ -761,7 +761,7 @@ Redemptor Dreadnought (210 points)</pre>
 
         ${sorted.length ? `<section class="g-sec">
           <h2>Units</h2>
-          <table class="g-table g-units">
+          <div class="g-scroll"><table class="g-table g-units">
             <thead><tr><th>Unit</th><th>Models</th><th>Rank</th><th>Progress</th><th>Painted differently</th></tr></thead>
             <tbody>${sorted.map(u => {
               const rs = (u.recipes || []).map(id => recipes.find(r => r.id === id)).filter(Boolean).map(r => r.name);
@@ -771,7 +771,7 @@ Redemptor Dreadnought (210 points)</pre>
                 <td>${u.painted}/${u.count}${u.status === "done" ? " ✓" : ""}</td>
                 <td>${own.length ? own.join("<br>") : "—"}</td></tr>`;
             }).join("")}</tbody>
-          </table>
+          </table></div>
         </section>` : ""}
 
         <section class="g-sec">
@@ -835,7 +835,7 @@ Redemptor Dreadnought (210 points)</pre>
       $("sh-count").textContent = armies.length ? (list.length === armies.length ? `${armies.length} ${armies.length === 1 ? "army" : "armies"}` : `${list.length} of ${armies.length}`) : "";
       if(!armies.length){ $("sh-list").innerHTML = `<div class="ro-empty"><strong>No shared armies yet</strong><p>Be the first: open one of your ledgers and press Share.</p></div>`; return; }
       if(!list.length){ $("sh-list").innerHTML = `<p class="hint">${show === "following" && !q && !fid ? "You're not following anyone yet, or they haven't shared anything. Follow a painter from one of their armies." : "No shared armies match. Try a different search or faction."}</p>`; return; }
-      $("sh-list").innerHTML = `<div class="ledgers">${list.map(a => {
+      $("sh-list").innerHTML = `<h2 class="sr-only">Armies</h2><div class="ledgers">${list.map(a => {
         const s = sum[a.id] || {units: 0, models: 0, done: 0}, f = FBY[a.faction];
         const pct = s.models ? Math.round(s.done / s.models * 100) : 0;
         PROF = P.profileFor(a.faction);
@@ -1190,7 +1190,7 @@ Redemptor Dreadnought (210 points)</pre>
         <figcaption>Models painted each month</figcaption>
         <div class="bars" style="--top:${top}">
           <div class="grid" aria-hidden="true"><span style="bottom:100%"><i>${top}</i></span><span style="bottom:50%"><i>${top / 2}</i></span><span style="bottom:0"><i>0</i></span></div>
-          ${A.months.map((m, i) => `<div class="col${i === 11 ? " now" : ""}" tabindex="0" aria-label="${esc(m.long)}: ${plural(m.n, "model")} painted">
+          ${A.months.map((m, i) => `<div class="col${i === 11 ? " now" : ""}" tabindex="0" role="img" aria-label="${esc(m.long)}: ${plural(m.n, "model")} painted">
             <div class="bar-wrap"><div class="mbar" style="height:${m.n / top * 100}%">${m.n && (i === 11 || i === peak) ? `<span class="bar-val">${m.n}</span>` : ""}</div></div>
             <span class="tip" role="tooltip">${esc(m.long)}<b>${plural(m.n, "model")}</b></span>
             <span class="mo" aria-hidden="true">${esc(m.short)}</span>
@@ -1311,16 +1311,16 @@ Redemptor Dreadnought (210 points)</pre>
       <div class="setup">
         <div>
           <div class="panel">
-            <h3>Army</h3>
+            <h2 class="ph">Army</h2>
             <label>Army name<input id="s-name" maxlength="80" placeholder="e.g. ${esc(f.name)} Crusade" value="${esc(draft.name)}"></label>
           </div>
           ${known.length ? `<div class="panel">
-            <h3>Start from a known scheme</h3>
+            <h2 class="ph">Start from a known scheme</h2>
             <p class="hint">Sets every colour to the Citadel paints for a well-known ${esc(f.name)} scheme, and the emblem to match. You can change anything afterwards.</p>
             <div class="schemes" id="s-schemes">${known.map((k, i) => `<button type="button" class="scheme" data-scheme="${i}">${ART.pauldron(k.colors.armour, k.colors.trim, k.colors.emblem, k.shape || draft.scheme.shape, 40)}<span>${esc(k.name)}</span></button>`).join("")}</div>
           </div>` : ""}
           <div class="panel">
-            <h3>Colours</h3>
+            <h2 class="ph">Colours</h2>
             <p class="hint">Pick the paint you use for each area. The picker also has plain colours and a custom colour.</p>
             <div class="cgrid">${colorKeys().map(([k, label]) => `
               <div class="cfield${BASE_OF[k] ? " pd-when" : ""}"${BASE_OF[k] && !draft.scheme.splitPauldrons ? " hidden" : ""}>
@@ -1328,31 +1328,31 @@ Redemptor Dreadnought (210 points)</pre>
                 <span id="s-${k}"></span>
               </div>`).join("")}</div>
             ${PROF.pauldrons ? `<label class="check split-check"><input type="checkbox" id="s-split" ${draft.scheme.splitPauldrons ? "checked" : ""}> Paint each pauldron differently <small>Gives the left and right pauldron their own colour, secondary and emblem colour. New units start with this setting.</small></label>` : ""}
-            <div class="xa-wrap"><h4 class="em-h">Extra paint areas</h4>
+            <div class="xa-wrap"><h3 class="em-h">Extra paint areas</h3>
               <p class="hint">Add the areas your models have, like leather or power weapons. They become the starting paints for new units.</p>
-              <h5 class="pd-h">${esc(PROF.legends.details)}</h5><div class="xa" id="s-xa-d"></div>
-              <h5 class="pd-h">Weapons</h5><div class="xa" id="s-xa-w"></div></div>
+              <h4 class="pd-h">${esc(PROF.legends.details)}</h4><div class="xa" id="s-xa-d"></div>
+              <h4 class="pd-h">Weapons</h4><div class="xa" id="s-xa-w"></div></div>
           </div>
           <div class="panel">
-            <h3>Emblem</h3>
+            <h2 class="ph">Emblem</h2>
             <p class="hint">Shown on your army badge in the emblem colour. Pick a faction icon or a simple shape.</p>
             <div class="em-current" id="s-emcur"></div>
             <input type="search" id="s-emq" class="em-search" placeholder="Search all ${EMB.icons.length} icons, e.g. Khorne, Iyanden, Goffs" aria-label="Search icons">
-            <h4 class="em-h" id="s-emh">Suggested for ${esc(f.name)}</h4>
+            <h3 class="em-h" id="s-emh">Suggested for ${esc(f.name)}</h3>
             <div class="icongrid" id="s-icons"></div>
             <div class="row-actions" style="margin-top:8px"><button type="button" class="btn-sm" id="s-emmore" hidden>Show more</button></div>
-            <h4 class="em-h">Simple shapes</h4>
+            <h3 class="em-h">Simple shapes</h3>
             <div class="shapes" id="s-shapes">${P.SHAPES.map(([k, label]) => `<button type="button" class="shape" data-shape="${k}" aria-pressed="${draft.scheme.shape === k}">${ART.shapeIcon(k, draft.scheme.colors.emblem, 34)}${label}</button>`).join("")}</div>
           </div>
           <div class="panel">
-            <h3>Badge style</h3>
+            <h2 class="ph">Badge style</h2>
             <div class="shapes">
               <button type="button" class="shape" style="width:auto;padding:8px 12px" data-style="astartes" aria-pressed="${draft.scheme.style === "astartes"}">Power-armour helmet</button>
               <button type="button" class="shape" style="width:auto;padding:8px 12px" data-style="roundel" aria-pressed="${draft.scheme.style === "roundel"}">Colour roundel</button>
             </div>
           </div>
           <div class="panel">
-            <h3>Ranks</h3>
+            <h2 class="ph">Ranks</h2>
             <p class="hint">Ranks group your units, such as ${esc(draft.scheme.tiers.slice(0, 3).map(t => t.name).join(", ").replace(/, ([^,]*)$/, " and $1"))}, so you can paint some a little differently from the rest of the army. Each rank has a colour for the ${esc(PROF.head)}; a unit starts with its rank's colour, and you can still change it per unit.</p>
             <div class="tiers" id="s-tiers"></div>
             <div class="row-actions" style="margin-top:10px"><button type="button" class="btn-sm" id="s-addtier">Add rank</button></div>
@@ -1360,7 +1360,7 @@ Redemptor Dreadnought (210 points)</pre>
         </div>
         <div class="side">
           <div class="panel">
-            <h3>Preview</h3>
+            <h2 class="ph">Preview</h2>
             <div class="pv-tiers" id="s-preview"></div>
           </div>
           <div class="panel">
@@ -1782,10 +1782,10 @@ Redemptor Dreadnought (210 points)</pre>
             <div class="ed-titles"><h2 id="pd-h">Paints &amp; recipes</h2></div>
             <button type="button" class="btn-sm" id="pd-close">Close</button>
           </header>
-          <div class="pd-tabs"><div class="seg" role="tablist" id="pd-tabs">
-            <button type="button" role="tab" data-tab="recipes" aria-pressed="true">Recipes</button>
-            ${canWrite ? `<button type="button" role="tab" data-tab="owned" aria-pressed="false">My paints</button>
-            <button type="button" role="tab" data-tab="buy" aria-pressed="false">To buy <span class="buy-badge" id="buy-tab" hidden></span></button>` : ""}
+          <div class="pd-tabs"><div class="seg" role="group" aria-label="Section" id="pd-tabs">
+            <button type="button" data-tab="recipes" aria-pressed="true">Recipes</button>
+            ${canWrite ? `<button type="button" data-tab="owned" aria-pressed="false">My paints</button>
+            <button type="button" data-tab="buy" aria-pressed="false">To buy <span class="buy-badge" id="buy-tab" hidden></span></button>` : ""}
           </div></div>
           <div class="pd-body" id="pd-body"></div>
         </div>
@@ -1967,7 +1967,7 @@ Redemptor Dreadnought (210 points)</pre>
       $("pv-svg").innerHTML = unitBadge(u, scheme, 120);
       $("pv-name").textContent = u.name || u.datasheet || "Unnamed unit";
       const tier = scheme.tiers[u.tier];
-      $("pv-meta").textContent = [u.datasheet || "Unit", tier && tier.name, plural(u.count, "model"), u.points ? u.points + " pts" : ""].filter(Boolean).join(" · ");
+      $("pv-meta").textContent = [u.datasheet || "Unit", tier && tier.name, plural(u.count, "model"), u.points ? u.points + "\u00a0pts" : ""].filter(Boolean).join(" · ");
       $("painted-of").textContent = "of " + u.count;
       $("f-painted").max = u.count;
       updatePointsHint();
@@ -2126,11 +2126,11 @@ Redemptor Dreadnought (210 points)</pre>
       const nx = canWrite ? nextStep(u) : null;
       const segs = STAGE_KEYS.map(k => `<i class="${(u.stages || []).includes(k) ? "on" : ""}"></i>`).join("");
       const pk = selecting && picked.has(u.id);
-      return `<div class="card${u.id === selId && !selecting ? " sel" : ""}${pk ? " picked" : ""}" tabindex="0" role="button" data-id="${esc(u.id)}" ${selecting ? `aria-pressed="${pk}" aria-label="Select ${esc(u.name)}"` : `aria-label="View ${esc(u.name)}"`}>
+      return `<div class="card${u.id === selId && !selecting ? " sel" : ""}${pk ? " picked" : ""}" data-id="${esc(u.id)}">
         ${selecting ? `<span class="pick" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg></span>` : ""}
         ${img ? `<div class="photo"><img src="${esc(img)}" alt="" loading="lazy" decoding="async"></div>` : ""}
         <div class="body">
-          <div class="card-top">${unitBadge(u, scheme, 60)}<div><h3>${esc(u.name)}</h3><div class="type">${esc([u.datasheet && u.datasheet !== u.name ? u.datasheet : "", u.role].filter(Boolean).join(" · ") || "Unit")}</div></div>${u.points ? `<span class="pts">${fmt(u.points)}<small>pts</small></span>` : ""}${starBtn(u)}</div>
+          <div class="card-top">${unitBadge(u, scheme, 60)}<div><h3><button type="button" class="card-open" ${selecting ? `aria-pressed="${pk}" aria-label="Select ${esc(u.name)}"` : `aria-label="View ${esc(u.name)}"`}>${esc(u.name)}</button></h3><div class="type">${esc([u.datasheet && u.datasheet !== u.name ? u.datasheet : "", u.role].filter(Boolean).join(" · ") || "Unit")}</div></div>${u.points ? `<span class="pts">${fmt(u.points)}<small>pts</small></span>` : ""}${starBtn(u)}</div>
           <dl>
             <dt>Rank</dt><dd>${esc(tier.name || "—")}</dd>
             ${u.head === "none" ? "" : `<dt>${u.head === "bare" ? "Face" : esc(LB.helmet)}</dt><dd>${u.head === "bare" ? chip(u.skin) + "Bare head" : chip(u.helmet) + esc(nameOf(u, "helmet"))}${u.hdetail ? ", " + esc(u.hdetail) : ""}</dd>`}
@@ -2196,7 +2196,7 @@ Redemptor Dreadnought (210 points)</pre>
       // Collapsible sections: open unless closed before (remembered in this browser); recipes start closed.
       const box = (key, title, body, openByDefault = true) => {
         const open = key in detailOpen ? detailOpen[key] : openByDefault;
-        return `<details class="dsec" data-k="${esc(key)}"${open ? " open" : ""}><summary><h4>${title}</h4></summary>${body}</details>`;
+        return `<details class="dsec" data-k="${esc(key)}"${open ? " open" : ""}><summary><h3 class="dsec-h">${title}</h3></summary>${body}</details>`;
       };
       const sec = (title, rows, key) => { const r = rows.filter(x => x[1]); return r.length ? box(key || title, title, `<dl>${r.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>`) : ""; };
       $("detail-body").innerHTML = `<div class="detail">
@@ -2204,14 +2204,14 @@ Redemptor Dreadnought (210 points)</pre>
           const shots = [img ? {src: img, main: true} : null, ...(u.photos || []).map(p => ({src: photoSrc(p), path: p}))].filter(x => x && x.src);
           const first = shots[0];
           return `<div class="media-main" id="dt-main">${first ? `<img src="${esc(first.src)}" alt="Photo of ${esc(u.name)}">` : unitBadge(u, scheme, 180)}</div>
-            ${shots.length > 1 || canWrite ? `<div class="gallery" role="list" aria-label="Photos of ${esc(u.name)}">
-              ${shots.map((x, i) => `<div class="g-item${i === 0 ? " on" : ""}" role="listitem"><button type="button" class="g-thumb" data-show="${esc(x.src)}" aria-label="Show photo ${i + 1}"><img src="${esc(x.src)}" alt="" loading="lazy"></button>${canWrite && x.path ? `<button type="button" class="g-rm" data-rmphoto="${esc(x.path)}" aria-label="Remove this photo" title="Remove photo">×</button>` : ""}</div>`).join("")}
+            ${shots.length > 1 || canWrite ? `<div class="gallery" role="group" aria-label="Photos of ${esc(u.name)}">
+              ${shots.map((x, i) => `<div class="g-item${i === 0 ? " on" : ""}"><button type="button" class="g-thumb" data-show="${esc(x.src)}" aria-label="Show photo ${i + 1}"><img src="${esc(x.src)}" alt="" loading="lazy"></button>${canWrite && x.path ? `<button type="button" class="g-rm" data-rmphoto="${esc(x.path)}" aria-label="Remove this photo" title="Remove photo">×</button>` : ""}</div>`).join("")}
               ${canWrite && (u.photos || []).length < S.MAX_PHOTOS ? `<label class="g-add" title="Add photos"><input type="file" accept="image/*" multiple data-addphoto="${esc(u.id)}" hidden><span aria-hidden="true">+</span><small>Add photo</small></label>` : ""}
             </div>` : ""}`;
         })()}</div>
         <div class="info">
           <div><h2 id="dt-name">${esc(u.name)}</h2>
-            <div class="meta">${esc(u.datasheet || "Unit")}${u.role ? " · " + esc(u.role) : ""} · ${plural(u.count, "model")}${u.points ? " · " + fmt(u.points) + " pts" : ""}</div></div>
+            <div class="meta">${esc(u.datasheet || "Unit")}${u.role ? " · " + esc(u.role) : ""} · ${plural(u.count, "model")}${u.points ? " · " + fmt(u.points) + "\u00a0pts" : ""}</div></div>
           <div class="row">${img ? unitBadge(u, scheme, 64) : ""}<span class="row-end">${starBtn(u, true)}<span class="pill s-${esc(u.status)}">${esc(u.status === "done" ? "Painted" : stageLabel(u))}</span></span></div>
           ${box("painting", "Painting", `<div class="stage-list">${STAGES.map(([k, l]) => `<span class="${(u.stages || []).includes(k) ? "on" : ""}">${l}</span>`).join("")}</div>
             <p class="prose" style="margin-top:10px">${u.painted} of ${plural(u.count, "model")} painted</p>`)}
@@ -2385,7 +2385,7 @@ Redemptor Dreadnought (210 points)</pre>
     function togglePick(id){
       if(picked.has(id)) picked.delete(id); else picked.add(id);
       const c = $("cards").querySelector(`.card[data-id="${CSS.escape(id)}"]`);
-      if(c){ c.classList.toggle("picked", picked.has(id)); c.setAttribute("aria-pressed", picked.has(id)); }
+      if(c){ c.classList.toggle("picked", picked.has(id)); const o = c.querySelector(".card-open"); if(o) o.setAttribute("aria-pressed", picked.has(id)); }
       updateBatch();
     }
     function updateBatch(){
@@ -2717,10 +2717,10 @@ Redemptor Dreadnought (210 points)</pre>
       const box = $("ld-out");
       if(!parsed){ box.innerHTML = ""; return; }
       const us = parsed.units;
-      $("ld-sum").textContent = us.length ? [parsed.detachment, plural(us.length, "unit"), fmt(us.reduce((a, u) => a + (u.include ? u.points : 0), 0)) + " pts"].filter(Boolean).join(" · ") : "";
-      box.innerHTML = (us.length ? `<div class="ld-table" role="table">
-          <div class="ld-row ld-head" role="row"><span></span><span>Datasheet</span><span>Models</span><span>Points</span><span>Weapons</span></div>
-          ${us.map((u, i) => `<label class="ld-row" role="row"><span><input type="checkbox" data-inc="${i}" ${u.include ? "checked" : ""}></span><span><strong>${esc(u.name)}</strong><small>${esc(u.sheet.r)}${u.notes.length ? " · " + esc(u.notes.join(", ")) : ""}</small></span><span><input type="number" min="1" max="99" data-cnt="${i}" value="${u.count}"></span><span>${u.points}</span><span>${esc([...u.melee, ...u.ranged].slice(0, 3).join(", ") || "—")}</span></label>`).join("")}
+      $("ld-sum").textContent = us.length ? [parsed.detachment, plural(us.length, "unit"), fmt(us.reduce((a, u) => a + (u.include ? u.points : 0), 0)) + "\u00a0pts"].filter(Boolean).join(" · ") : "";
+      box.innerHTML = (us.length ? `<div class="ld-table">
+          <div class="ld-row ld-head" aria-hidden="true"><span></span><span>Datasheet</span><span>Models</span><span>Points</span><span>Weapons</span></div>
+          ${us.map((u, i) => `<label class="ld-row"><span><input type="checkbox" data-inc="${i}" ${u.include ? "checked" : ""} aria-label="Include ${esc(u.name)}"></span><span><strong>${esc(u.name)}</strong><small>${esc(u.sheet.r)}${u.notes.length ? " · " + esc(u.notes.join(", ")) : ""}</small></span><span><input type="number" min="1" max="99" data-cnt="${i}" value="${u.count}" aria-label="Models in ${esc(u.name)}"></span><span>${u.points}</span><span>${esc([...u.melee, ...u.ranged].slice(0, 3).join(", ") || "—")}</span></label>`).join("")}
         </div>` : `<p class="hint">No ${esc(f.name)} datasheets found in that text. Check the list is for this faction.</p>`)
         + (parsed.codeFactionId && parsed.codeFactionId !== army.faction ? `<p class="hint warn">This list is for ${esc(parsed.codeFaction)}, but this ledger is ${esc(f.name)}. Units were matched to ${esc(f.name)} datasheets where possible, and the rest were added as allies.</p>` : "")
         + (parsed.unmatched.length ? `<p class="hint">Not matched to a datasheet: ${esc(parsed.unmatched.slice(0, 12).join(", "))}${parsed.unmatched.length > 12 ? "…" : ""}</p>` : "");
@@ -2892,7 +2892,7 @@ Redemptor Dreadnought (210 points)</pre>
       library = library.filter(r => !ids.has(r.id)).concat(rows.map(r => ({...recipeOnly(r), deleted: r.deleted === true})));
     }
     function librarySection(){
-      const head = `<h4 class="em-h">Your recipe library</h4>`;
+      const head = `<h3 class="em-h">Your recipe library</h3>`;
       if(libState === "setup") return `<section class="lib">${head}<p class="hint">To reuse recipes in your other ledgers, add the recipes table to Supabase: open the SQL editor and run <code>supabase/recipes.sql</code> from this project. Recipes in this ledger work either way.</p></section>`;
       if(libState === "error") return `<section class="lib">${head}<p class="hint">Couldn't load your recipe library. Check your connection and reopen this ledger.</p></section>`;
       if(!library) return `<section class="lib">${head}<p class="hint">Loading your recipe library…</p></section>`;
@@ -2983,7 +2983,7 @@ Redemptor Dreadnought (210 points)</pre>
         body.innerHTML = `
           <div class="pd-head"><p class="hint">Write a recipe once, then tick it on every unit that uses it. Paints you don't own show as <span class="own no">To buy</span>.</p>
           ${canWrite ? `<span class="row-actions"><button type="button" class="btn-sm" data-act="suggest">Suggest recipes</button><button type="button" class="primary btn-sm" data-act="new-recipe">+ New recipe</button></span>` : ""}</div>
-          ${canWrite ? `<h4 class="em-h">In this ledger</h4>` : ""}
+          ${canWrite ? `<h3 class="em-h">In this ledger</h3>` : ""}
           ${list.length ? `<div class="recipes">${list.map(r => {
             const n = units.filter(u => (u.recipes || []).includes(r.id)).length;
             return `<article class="recipe">
@@ -3002,7 +3002,7 @@ Redemptor Dreadnought (210 points)</pre>
           <div class="owned-head"><strong>${plural(ownedList.length, "paint")}</strong>${ownedList.length > 8 ? `<input type="search" id="op-q" class="search" placeholder="Filter" value="${esc(ownedQuery)}">` : ""}</div>
           <div class="owned">${shown.map(p => `<span class="ochip" title="${esc(p)}">${PU.swatch(p)}<span>${esc(PU.describe(p).name)}</span><button type="button" data-act="rm-owned" data-p="${esc(p)}" aria-label="Remove ${esc(p)}">×</button></span>`).join("") || `<p class="hint">${ownedList.length ? "No paints match." : "Nothing here yet. Add the paints on your shelf."}</p>`}</div>
           ${!ownedList.length && usedHere.length ? `<div class="used-here">
-            <div class="lib-head"><h4 class="em-h">Used in this ledger</h4><button type="button" class="btn-sm" data-act="got-all">I have all ${usedHere.length}</button></div>
+            <div class="lib-head"><h3 class="em-h">Used in this ledger</h3><button type="button" class="btn-sm" data-act="got-all">I have all ${usedHere.length}</button></div>
             <p class="hint">Paints from this ledger's colours and recipes. Tick off the ones already on your shelf.</p>
             <ul class="buy">${usedHere.map(it => `<li>${PU.swatch(it.label)}<span class="b-n">${paintLine(it.label)}</span><button type="button" class="btn-sm" data-act="got" data-p="${esc(it.label)}">I have it</button></li>`).join("")}</ul></div>` : ""}`;
         PU.picker($("op-add"), {owned: () => owned, extra: () => [], onPick: () => {}});
@@ -3027,7 +3027,7 @@ Redemptor Dreadnought (210 points)</pre>
             <label>Recipe name<input id="re-name" maxlength="60" value="${esc(r.name)}" placeholder="e.g. Black armour"></label>
             <label>Used for<select id="re-area"><option value="">Choose…</option>${(r.area && !AREAS.includes(r.area) ? [r.area, ...AREAS] : AREAS).map(a => `<option ${a === r.area ? "selected" : ""}>${esc(a)}</option>`).join("")}</select></label>
           </div>
-          <h4 class="em-h">Steps</h4>
+          <h3 class="em-h">Steps</h3>
           <ol class="r-steps" id="re-steps">${r.steps.map((st, i) => `<li>
             <span class="r-num">${i + 1}</span>
             <select data-st="${i}" aria-label="Technique for step ${i + 1}">${TECHNIQUES.map(t => `<option ${t === st.t ? "selected" : ""}>${t}</option>`).join("")}</select>
@@ -3224,7 +3224,7 @@ Redemptor Dreadnought (210 points)</pre>
       const a = byId[u.armyId], f = FBY[a.faction];
       return !q || [u.name, u.datasheet, u.role, u.melee, u.ranged, u.notes, a.name, f && f.name].join(" ").toLowerCase().includes(q);
     });
-    $("ro-sum").textContent = units.length ? [plural(units.length, "unit"), plural(models, "model"), num(pts) + " pts", (models ? Math.round(done / models * 100) : 0) + "% painted"].join(" · ") + (list.length !== units.length ? ` · showing ${list.length}` : "") : "";
+    $("ro-sum").textContent = units.length ? [plural(units.length, "unit"), plural(models, "model"), num(pts) + "\u00a0pts", (models ? Math.round(done / models * 100) : 0) + "% painted"].join(" · ") + (list.length !== units.length ? ` · showing ${list.length}` : "") : "";
     if(!units.length){
       $("ro-body").innerHTML = `<div class="ro-empty"><strong>No units yet</strong><p>Open a ledger and add your units, or import your army list, and they'll all show up here.</p></div>`;
       return;
@@ -3243,7 +3243,7 @@ Redemptor Dreadnought (210 points)</pre>
         <span class="ro-badge">${unitBadge(u, a.scheme, 44)}</span>
         <span class="ro-name"><strong>${u.fav ? `<span class="star on" title="Starred">${STAR(true)}</span>` : ""}${esc(u.name || u.datasheet || "Unit")}</strong><small>${esc(sub || "Unit")}</small></span>
         <span class="ro-prog"><span class="ro-bar"><i style="width:${pct}%"></i></span><small>${dn}/${c} painted</small></span>
-        <span class="ro-pts">${u.points ? num(u.points) + " pts" : "—"}</span>
+        <span class="ro-pts">${u.points ? num(u.points) + "\u00a0pts" : "—"}</span>
         <span class="ro-st st-${esc(st)}">${esc(STATUS[st] || st)}</span>
       </a>`;
     };
