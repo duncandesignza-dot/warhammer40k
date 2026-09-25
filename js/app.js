@@ -191,6 +191,19 @@
   }
   // Profile picture if there is one, otherwise initials.
   const avatarInner = a => a.avatar ? `<img src="${esc(a.avatar)}" alt="" decoding="async">` : esc(a.initials);
+  // Who a shared ledger belongs to: you, or its painter's shared name and picture (initials if no picture).
+  function ownerOf(army){
+    const me = acct();
+    if(me && store.session && army.owner === store.session.user.id) return {...me, you: true};
+    const name = (army.scheme && army.scheme.by) || "";
+    const bits = name.split(/[\s._-]+/).filter(Boolean);
+    const initials = bits.length ? (bits[0][0] + (bits.length > 1 ? bits[bits.length - 1][0] : bits[0].slice(1, 2))).toUpperCase() : "?";
+    return {name: name || "A painter", initials, avatar: (army.scheme && army.scheme.byPic) || "", you: false};
+  }
+  const ownerLine = (army, cls) => {
+    const o = ownerOf(army);
+    return `<div class="owner-line${cls ? " " + cls : ""}">${avatarHtml(o, cls === "big" ? "lg" : "")}<span><small>${o.you ? "Your" : "Collection of"}</small><strong>${o.you ? "collection" : esc(o.name)}</strong></span></div>`;
+  };
   const avatarHtml = (a, cls) => `<span class="avatar${cls ? " " + cls : ""}${a.avatar ? " has-img" : ""}" aria-hidden="true">${avatarInner(a)}</span>`;
   const monthYear = d => { const t = new Date(d); return isNaN(t) ? "" : t.toLocaleDateString("en-GB", {month: "long", year: "numeric"}); };
   const CARET = `<svg class="caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>`;
@@ -848,11 +861,11 @@ Redemptor Dreadnought (210 points)</pre>
         const s = sum[a.id] || {units: 0, models: 0, done: 0}, f = FBY[a.faction];
         const pct = s.models ? Math.round(s.done / s.models * 100) : 0;
         PROF = P.profileFor(a.faction);
-        const by = a.owner === mine ? "you" : a.scheme.by;
         const liked = social && social.liked.has(a.id), n = likesOf(a), follows = social && social.following.has(a.owner);
         return `<div class="lcard shcard">
           <a class="sh-open" href="#/army/${esc(a.id)}">
-            <div class="card-top">${tierBadge(a.scheme, a.scheme.tiers[0], 56)}<div><h3>${esc(a.name)}</h3><div class="meta">${esc(f ? f.name : a.faction)}${by ? ` · by ${esc(by)}` : ""}</div></div>${a.owner === mine ? `<span class="tag">Yours</span>` : ""}</div>
+            ${ownerLine(a)}
+            <div class="card-top">${tierBadge(a.scheme, a.scheme.tiers[0], 56)}<div><h3>${esc(a.name)}</h3><div class="meta">${esc(f ? f.name : a.faction)}</div></div></div>
             <div class="prog" aria-hidden="true"><i style="width:${pct}%"></i></div>
             <div class="foot"><span>${plural(s.units, "unit")} · ${plural(s.models, "model")}</span><span>${pct}% painted</span></div>
           </a>
@@ -1597,14 +1610,15 @@ Redemptor Dreadnought (210 points)</pre>
     try { prefs = {...prefs, ...JSON.parse(localStorage.getItem(PREF_KEY) || "{}")}; } catch(e){}
 
     app.innerHTML = `
-      <div class="crumbs">${canWrite ? `<a href="#/profile">My ledgers</a>` : store.session ? `<a href="#/shared">Shared armies</a>` : `<a href="#/">Livery Ledger</a>`} / ${esc(f.name)}${!canWrite && army.scheme.by ? ` · shared by ${esc(army.scheme.by)}` : ""}</div>
+      <div class="crumbs">${canWrite ? `<a href="#/profile">My ledgers</a>` : store.session ? `<a href="#/shared">Shared armies</a>` : `<a href="#/">Livery Ledger</a>`} / ${esc(f.name)}</div>
       <header class="top">
         <div>
+          ${!canWrite ? ownerLine(army, "big") : ""}
           <h1>${esc(army.name)}</h1>
           <p class="sub">${esc(f.name)} · Track colours, weapons, points and painting progress for every unit.</p>
         </div>
         <div class="stats" aria-live="polite">
-          <div class="stat stat-pts"><b><span id="st-pts">0</span><small class="lim"> / <button type="button" id="b-limit" class="lim-btn" ${canWrite ? "" : "disabled"} aria-label="Change points limit">${scheme.limit ? fmt(scheme.limit) : "set limit"}</button></small></b><span>Points</span><i class="pts-bar" aria-hidden="true"><i id="pts-bar"></i></i></div>
+          <div class="stat stat-pts"><b><span id="st-pts">0</span><small class="lim"${!canWrite && !scheme.limit ? " hidden" : ""}> / <button type="button" id="b-limit" class="lim-btn" ${canWrite ? "" : "disabled"} aria-label="Change points limit">${scheme.limit ? fmt(scheme.limit) : "set limit"}</button></small></b><span>Points</span><i class="pts-bar" aria-hidden="true"><i id="pts-bar"></i></i></div>
           <div class="stat"><b id="st-units">0</b><span>Units</span></div>
           <div class="stat"><b id="st-done">0/0</b><span>Models painted</span></div>
           <div class="stat"><b id="st-pct">0%</b><span>Complete</span></div>
@@ -1643,7 +1657,7 @@ Redemptor Dreadnought (210 points)</pre>
 
         <section class="list" aria-labelledby="army-h">
           <div class="list-head">
-            <h2 class="eyebrow" id="army-h">Your army</h2>
+            <h2 class="eyebrow" id="army-h">${canWrite ? "Your army" : "Their army"}</h2>
             ${canWrite ? `<button type="button" class="primary btn-add" id="b-add">+ Add unit</button>` : ""}
             <div class="list-tools">
               <input type="search" class="search" id="q" placeholder="Search units" aria-label="Search units">

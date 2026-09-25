@@ -2,6 +2,7 @@
 (function(){
   "use strict";
   const CFG = window.LEDGER_CONFIG || {};
+  const PIC_BASE = CFG.SUPABASE_URL ? String(CFG.SUPABASE_URL).replace(/\/+$/, "") + "/storage/v1/object/public/" : "";
 
   const FIELDS = ["datasheet","role","name","count","status","tier","head","helmet","skin","lens","hdetail","noHelmet",
     "armour","lpauldron","lpsecondary","lpemblem","rpauldron","rpsecondary","rpemblem","secondary","trim","emblem","shape","cloth","metal","extras","melee","ranged","paints","notes","points","painted"];
@@ -121,7 +122,9 @@
     const recipes = (Array.isArray(s.recipes) ? s.recipes : []).slice(0, 60).filter(r => r && r.id).map(cleanRecipe);
     // by: the owner's display name, shown on the Shared armies page (never their email).
     const by = String(s.by || "").replace(/\s+/g, " ").trim().slice(0, 40);
-    return {style: s.style === "roundel" ? "roundel" : "astartes", by, limit, recipes, colors, slotPaints: cleanSlotPaints(s.slotPaints), splitPauldrons: s.splitPauldrons === true, xareas: cleanXareas(s.xareas), shape: String(s.shape || "cross").slice(0, 160), tiers: tiers.length ? tiers : [{name:"Line", note:"", color:colors.armour}]};
+    // byPic: the owner's profile picture, only ever a public image from this site's own storage.
+    const byPic = typeof s.byPic === "string" && s.byPic.length < 600 && PIC_BASE && s.byPic.startsWith(PIC_BASE) && !/["'<>\s]/.test(s.byPic) ? s.byPic : "";
+    return {style: s.style === "roundel" ? "roundel" : "astartes", by, byPic, limit, recipes, colors, slotPaints: cleanSlotPaints(s.slotPaints), splitPauldrons: s.splitPauldrons === true, xareas: cleanXareas(s.xareas), shape: String(s.shape || "cross").slice(0, 160), tiers: tiers.length ? tiers : [{name:"Line", note:"", color:colors.armour}]};
   }
   const cleanPaints = list => [...new Set((Array.isArray(list) ? list : []).map(p => String(p).trim().slice(0, 90)).filter(Boolean))].slice(0, 600);
   function cleanArmy(a){
@@ -281,6 +284,7 @@
     const tableMissing = e => /PGRST205|42P01/.test(e.code || "") || /could not find the table|does not exist/i.test(e.message || "");
     let paintsTable = null;   // null: not checked yet; false: owned_paints isn't set up, so paints stay on the account
     const myName = () => String(((session && session.user.user_metadata) || {}).display_name || "").trim();
+    const myPic = () => String(((session && session.user.user_metadata) || {}).avatar_url || "");
 
     return {
       kind: "supabase", client: sb, canShare: true,
@@ -385,7 +389,7 @@
       },
       async saveArmy(a, id){
         need();
-        const row = {...cleanArmy({...a, scheme: {...(a.scheme || {}), by: myName()}}), updated_at: new Date().toISOString()};
+        const row = {...cleanArmy({...a, scheme: {...(a.scheme || {}), by: myName(), byPic: myPic()}}), updated_at: new Date().toISOString()};
         const res = id ? await sb.from(A).update(row).eq("id", id).select().single() : await sb.from(A).insert(row).select().single();
         return toArmy(mustOk(res));
       },
@@ -466,11 +470,11 @@
       async updateProfile(data){
         const {data: d, error} = await sb.auth.updateUser({data}); if(error) throw error;
         if(d && d.user && session) session = {...session, user: d.user};
-        // A new display name also goes on your shared ledgers (without moving them up the Shared armies list).
-        if("display_name" in data){
+        // A new display name or picture also goes on your shared ledgers (without moving them up the Shared armies list).
+        if("display_name" in data || "avatar_url" in data){
           try {
             const mine = mustOk(await sb.from(A).select("id,scheme").eq("owner", session.user.id).eq("public", true)) || [];
-            for(const r of mine) await sb.from(A).update({scheme: {...(r.scheme || {}), by: myName()}}).eq("id", r.id);
+            for(const r of mine) await sb.from(A).update({scheme: {...(r.scheme || {}), by: myName(), byPic: myPic()}}).eq("id", r.id);
           } catch(e){ console.warn("Couldn't update the name on shared ledgers", e); }
         }
         return d && d.user;
