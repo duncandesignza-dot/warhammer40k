@@ -15,7 +15,7 @@ You need Node.js 20 or newer and Python 3.
 cd tests
 npm ci
 npx playwright install chromium   # once
-npx playwright test               # all 34, about half a minute
+npx playwright test               # all 40, under a minute
 npx playwright test war           # just the files matching "war"
 npx playwright test --ui          # watch them run, step by step
 ```
@@ -30,6 +30,7 @@ The tests start their own copy of the site on http://localhost:8765 (Python's we
 | `a11y.spec.js` | No accessibility problems on the main pages and the list dialogs |
 | `livery.spec.js` | Making a ledger and adding units, planned units, the colours prompt, the delete warning |
 | `war.spec.js` | Mustering an army, units not in an army, planned units, list details, unit options, things to check, battles |
+| `editors.spec.js` | Livery Ledger's and War Ledger's unit editors follow the same rules and never undo each other's work |
 | `backup.spec.js` | Downloading everything and restoring it, with lists and battles still linked to their units |
 | `online.spec.js` | The online version against the pretend Supabase |
 | `nav.spec.js` | The tab bar on phones, the page for unknown addresses, and the link preview picture |
