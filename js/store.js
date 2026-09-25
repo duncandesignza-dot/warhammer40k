@@ -88,6 +88,15 @@
     o.log = cleanLog(r.log);
     // Extra photos (the gallery): storage paths online, small data URLs when saving in this browser.
     o.photos = (Array.isArray(r.photos) ? r.photos : []).filter(x => typeof x === "string" && (/^data:image\/(jpeg|png|webp);base64,/.test(x) || /^[\w-]+\/[\w-]+\/[\w-]+\.jpg$/.test(x))).slice(0, MAX_PHOTOS);
+    // War Ledger: models built (null = follow the Built stage), a battle-ready override (null = follow
+    // the Battle Ready setting), and where and when the unit was bought.
+    const cnt = (v, max) => v === null || v === undefined || v === "" ? null : Math.min(max, Math.max(0, parseInt(v, 10) || 0));
+    o.built = cnt(r.built, o.count);
+    o.ready = cnt(r.ready, o.count);
+    o.bought = /^\d{4}-\d{2}-\d{2}$/.test(r.bought || "") ? r.bought : "";
+    o.price = Math.min(1e6, Math.max(0, Math.round((parseFloat(r.price) || 0) * 100) / 100));
+    o.shop = String(r.shop || "").slice(0, 80);
+    o.assembly = String(r.assembly || "").slice(0, 600);
     if(!o.name) o.name = o.datasheet || "Unnamed unit";
     return o;
   }
@@ -124,9 +133,36 @@
     const by = String(s.by || "").replace(/\s+/g, " ").trim().slice(0, 40);
     // byPic: the owner's profile picture, only ever a public image from this site's own storage.
     const byPic = typeof s.byPic === "string" && s.byPic.length < 600 && PIC_BASE && s.byPic.startsWith(PIC_BASE) && !/["'<>\s]/.test(s.byPic) ? s.byPic : "";
-    return {style: s.style === "roundel" ? "roundel" : "astartes", by, byPic, limit, recipes, colors, slotPaints: cleanSlotPaints(s.slotPaints), splitPauldrons: s.splitPauldrons === true, xareas: cleanXareas(s.xareas), shape: String(s.shape || "cross").slice(0, 160), tiers: tiers.length ? tiers : [{name:"Line", note:"", color:colors.armour}]};
+    // wonly: made in War Ledger, so the colours were never chosen. rec: the army's battle record, kept
+    // on the army so Shared armies can show it.
+    const n = v => Math.min(9999, Math.max(0, parseInt(v, 10) || 0)), rc = s.rec && typeof s.rec === "object" ? s.rec : {};
+    const rec = {w: n(rc.w), l: n(rc.l), d: n(rc.d)};
+    return {style: s.style === "roundel" ? "roundel" : "astartes", by, byPic, wonly: s.wonly === true, rec, limit, recipes, colors, slotPaints: cleanSlotPaints(s.slotPaints), splitPauldrons: s.splitPauldrons === true, xareas: cleanXareas(s.xareas), shape: String(s.shape || "cross").slice(0, 160), tiers: tiers.length ? tiers : [{name:"Line", note:"", color:colors.armour}]};
   }
   const cleanPaints = list => [...new Set((Array.isArray(list) ? list : []).map(p => String(p).trim().slice(0, 90)).filter(Boolean))].slice(0, 600);
+  const day = v => /^\d{4}-\d{2}-\d{2}$/.test(v || "") ? v : new Date().toISOString().slice(0, 10);
+  const int = (v, lo, hi) => Math.min(hi, Math.max(lo, parseInt(v, 10) || 0));
+  // An army list: units picked from the collection ({u: unit id}), or units you don't own yet ({n, sheet, ...}).
+  function cleanList(l){
+    l = l || {};
+    const units = (Array.isArray(l.units) ? l.units : []).slice(0, 200).map(e => {
+      if(!e || typeof e !== "object") return null;
+      if(e.u) return {u: String(e.u).slice(0, 60)};
+      const n = String(e.n || e.sheet || "").trim().slice(0, 80);
+      return n ? {n, sheet: String(e.sheet || "").slice(0, 80), role: String(e.role || "").slice(0, 40), count: int(e.count, 1, 99) || 1, points: int(e.points, 0, 9999)} : null;
+    }).filter(Boolean);
+    return {armyId: String(l.armyId || "").slice(0, 60), name: String(l.name || "Army list").trim().slice(0, 80) || "Army list",
+      limit: int(l.limit, 0, 20000), detachment: String(l.detachment || "").slice(0, 80), notes: String(l.notes || "").slice(0, 600), units};
+  }
+  // A battle: when, with which list, against whom, and how it went.
+  function cleanGame(g){
+    g = g || {};
+    const score = v => v === null || v === undefined || v === "" ? null : int(v, 0, 999);
+    return {armyId: String(g.armyId || "").slice(0, 60), listId: String(g.listId || "").slice(0, 60), date: day(g.date),
+      opp: String(g.opp || "").slice(0, 60), oppName: String(g.oppName || "").slice(0, 60), mission: String(g.mission || "").slice(0, 80),
+      result: ["w", "l", "d"].includes(g.result) ? g.result : "w", us: score(g.us), them: score(g.them),
+      mvp: String(g.mvp || "").slice(0, 60), notes: String(g.notes || "").slice(0, 1000)};
+  }
   function cleanArmy(a){
     return {faction: String(a.faction || "").slice(0, 60), name: String(a.name || "My army").slice(0, 80), scheme: cleanScheme(a.scheme), public: a.public === true};
   }
@@ -160,12 +196,12 @@
   function LocalStore(){
     const KEY = "livery-ledger-v3";
     let ok = true;
-    let db = {armies: [], units: []};
+    let db = {armies: [], units: [], lists: [], games: []};
 
     function load(){
       try {
         const v = JSON.parse(localStorage.getItem(KEY) || "null");
-        if(v && Array.isArray(v.armies) && Array.isArray(v.units)){ db = v; return; }
+        if(v && Array.isArray(v.armies) && Array.isArray(v.units)){ db = {lists: [], games: [], ...v}; return; }
         migrateOld();
       } catch(e){ ok = false; }
     }
@@ -220,7 +256,23 @@
         const row = {...(prev || {createdAt: now}), ...cleanArmy(a), id: prev ? prev.id : newId(), updatedAt: now};
         db.armies = db.armies.filter(x => x.id !== row.id).concat(row); save(); return {...row};
       },
-      async removeArmy(a){ db.armies = db.armies.filter(x => x.id !== a.id); db.units = db.units.filter(u => u.armyId !== a.id); save(); },
+      async removeArmy(a){ db.armies = db.armies.filter(x => x.id !== a.id); db.units = db.units.filter(u => u.armyId !== a.id); db.lists = db.lists.filter(l => l.armyId !== a.id); db.games = db.games.filter(g => g.armyId !== a.id); save(); },
+      // War Ledger: army lists and battles.
+      async listLists(){ return db.lists.map(l => ({...l, ...cleanList(l)})); },
+      async saveList(l, id){
+        const prev = id ? db.lists.find(x => x.id === id) : null, now = new Date().toISOString();
+        const row = {...cleanList(l), id: prev ? prev.id : newId(), createdAt: prev ? prev.createdAt : now, updatedAt: now};
+        db.lists = db.lists.filter(x => x.id !== row.id).concat(row); save(); return {...row};
+      },
+      async removeList(id){ db.lists = db.lists.filter(x => x.id !== id); save(); },
+      async listGames(){ return db.games.map(g => ({...g, ...cleanGame(g)})); },
+      async saveGame(g, id){
+        const prev = id ? db.games.find(x => x.id === id) : null, now = new Date().toISOString();
+        const row = {...cleanGame(g), id: prev ? prev.id : newId(), createdAt: prev ? prev.createdAt : now, updatedAt: now};
+        db.games = db.games.filter(x => x.id !== row.id).concat(row); save(); return {...row};
+      },
+      async removeGame(id){ db.games = db.games.filter(x => x.id !== id); save(); },
+      async setArmyRecord(army, rec){ const a = db.armies.find(x => x.id === army.id); if(a){ a.scheme = cleanScheme({...a.scheme, rec}); save(); } },
       async listUnits(armyId){ return db.units.filter(u => u.armyId === armyId).map(u => ({...u, ...cleanUnit(u)})); },
       async listAllUnits(){ return db.units.map(u => ({...u, ...cleanUnit(u)})); },
       async listShared(){ return {armies: [], sum: {}}; },
@@ -240,8 +292,8 @@
       photoUrl: p => p,
       // "Delete account" when saving in this browser: clear everything this site saved here.
       async deleteAccount(){
-        ["livery-ledger-v3", "livery-paints-v1", "livery-recipes-v1", "ll-goal", "ll-settings", "ll-shame", "ll-list-prefs", "ll-detail-open", "ll-roster-group"].forEach(k => { try { localStorage.removeItem(k); } catch(e){} });
-        db = {armies: [], units: []};
+        ["livery-ledger-v3", "livery-paints-v1", "livery-recipes-v1", "ll-goal", "ll-settings", "ll-shame", "ll-list-prefs", "ll-detail-open", "ll-roster-group", "ll-mode"].forEach(k => { try { localStorage.removeItem(k); } catch(e){} });
+        db = {armies: [], units: [], lists: [], games: []};
       },
       async addUnitPhoto(armyId, u, file){ const url = await blobToDataURL(await resizeImage(file, 900, .78)); return this.saveUnit(armyId, {...u, photos: [...(u.photos || []), url]}, u.id, null, false, u); },
       async removeUnitPhoto(armyId, u, p){ return this.saveUnit(armyId, {...u, photos: (u.photos || []).filter(x => x !== p)}, u.id, null, false, u); },
@@ -260,6 +312,7 @@
   function SupaStore(){
     const sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY);
     const A = CFG.ARMIES_TABLE || "armies", U = CFG.UNITS_TABLE || "units", B = CFG.BUCKET || "unit-images", R = CFG.RECIPES_TABLE || "recipes";
+    const L = "lists", G = "games";
     // The recipes table is optional (added later): say so plainly when it hasn't been created yet.
     const libErr = error => /PGRST205|42P01/.test(error.code || "") || /could not find the table|does not exist/i.test(error.message || "")
       ? Object.assign(new Error("The recipes table hasn't been set up in Supabase yet."), {code: "nolib"}) : error;
@@ -281,6 +334,11 @@
       rows.forEach(r => { const s = m[r.army_id] || (m[r.army_id] = {units:0, models:0, done:0, points:0}); const c = parseInt(r.count, 10) || 1; const p = parseInt(r.painted, 10); s.units++; s.models += c; s.done += Math.min(c, Number.isFinite(p) ? p : (r.status === "done" ? c : 0)); s.points += parseInt(r.points, 10) || 0; });
       return m;
     }
+    // War Ledger's tables are added by supabase/features.sql; say so plainly if they're not there yet.
+    const warErr = e => tableMissing(e) ? Object.assign(new Error("Army lists and battles aren't set up in Supabase yet. Run supabase/features.sql to add them."), {code: "nowar"}) : e;
+    const warOk = ({data, error}) => { if(error) throw warErr(error); return data; };
+    const toList = r => ({...cleanList({...(r.data || {}), armyId: r.army_id}), id: r.id, createdAt: r.created_at, updatedAt: r.updated_at});
+    const toGame = r => ({...cleanGame({...(r.data || {}), armyId: r.army_id}), id: r.id, createdAt: r.created_at, updatedAt: r.updated_at});
     const tableMissing = e => /PGRST205|42P01/.test(e.code || "") || /could not find the table|does not exist/i.test(e.message || "");
     let paintsTable = null;   // null: not checked yet; false: owned_paints isn't set up, so paints stay on the account
     const myName = () => String(((session && session.user.user_metadata) || {}).display_name || "").trim();
@@ -393,6 +451,20 @@
         const res = id ? await sb.from(A).update(row).eq("id", id).select().single() : await sb.from(A).insert(row).select().single();
         return toArmy(mustOk(res));
       },
+      async listLists(){ if(!session) return []; return (warOk(await sb.from(L).select("*").eq("owner", session.user.id).order("updated_at", {ascending: false})) || []).map(toList); },
+      async saveList(l, id){
+        need(); const c = cleanList(l), row = {army_id: c.armyId, data: c, updated_at: new Date().toISOString()};
+        return toList(warOk(id ? await sb.from(L).update(row).eq("id", id).select().single() : await sb.from(L).insert(row).select().single()));
+      },
+      async removeList(id){ need(); warOk(await sb.from(L).delete().eq("id", id)); },
+      async listGames(){ if(!session) return []; return (warOk(await sb.from(G).select("*").eq("owner", session.user.id).order("created_at", {ascending: false})) || []).map(toGame); },
+      async saveGame(g, id){
+        need(); const c = cleanGame(g), row = {army_id: c.armyId, data: c, updated_at: new Date().toISOString()};
+        return toGame(warOk(id ? await sb.from(G).update(row).eq("id", id).select().single() : await sb.from(G).insert(row).select().single()));
+      },
+      async removeGame(id){ need(); warOk(await sb.from(G).delete().eq("id", id)); },
+      // The army's win/loss record lives on the army, so Shared armies can show it (without moving it up that list).
+      async setArmyRecord(army, rec){ need(); mustOk(await sb.from(A).update({scheme: cleanScheme({...army.scheme, rec})}).eq("id", army.id)); },
       async removeArmy(a){
         need();
         const paths = (mustOk(await sb.from(U).select("image_path,data->photos").eq("army_id", a.id)) || [])
@@ -495,5 +567,5 @@
     return ready ? SupaStore() : LocalStore();
   }
 
-  window.LEDGER_STORE = {create, MAX_PHOTOS, FIELDS, STATUS, STAGES, STAGE_KEYS, deriveStatus, cleanUnit, cleanScheme, cleanRecipe, newId};
+  window.LEDGER_STORE = {create, MAX_PHOTOS, FIELDS, STATUS, STAGES, STAGE_KEYS, deriveStatus, cleanUnit, cleanScheme, cleanRecipe, cleanList, cleanGame, newId};
 })();

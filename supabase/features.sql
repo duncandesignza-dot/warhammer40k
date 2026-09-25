@@ -80,3 +80,33 @@ create table if not exists public.owned_paints (
 alter table public.owned_paints enable row level security;
 drop policy if exists "Your own paints" on public.owned_paints;
 create policy "Your own paints" on public.owned_paints for all to authenticated using (owner = auth.uid()) with check (owner = auth.uid());
+
+-- 6. War Ledger: army lists (what you take to a game, picked from your collection)
+create table if not exists public.lists (
+  id uuid primary key default gen_random_uuid(),
+  owner uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  army_id uuid not null references public.armies(id) on delete cascade,
+  data jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists lists_owner_idx on public.lists(owner);
+alter table public.lists enable row level security;
+drop policy if exists "Your own lists" on public.lists;
+create policy "Your own lists" on public.lists for all to authenticated using (owner = auth.uid())
+  with check (owner = auth.uid() and exists (select 1 from public.armies a where a.id = army_id and a.owner = auth.uid()));
+
+-- 7. War Ledger: battle reports (games you've played and how they went)
+create table if not exists public.games (
+  id uuid primary key default gen_random_uuid(),
+  owner uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  army_id uuid not null references public.armies(id) on delete cascade,
+  data jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists games_owner_idx on public.games(owner);
+alter table public.games enable row level security;
+drop policy if exists "Your own games" on public.games;
+create policy "Your own games" on public.games for all to authenticated using (owner = auth.uid())
+  with check (owner = auth.uid() and exists (select 1 from public.armies a where a.id = army_id and a.owner = auth.uid()));
