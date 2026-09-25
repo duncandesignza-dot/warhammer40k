@@ -550,7 +550,13 @@
       points: '<path d="M4 19V9"/><path d="M10 19V5"/><path d="M16 19v-7"/><path d="M22 19H2"/>',
       cart: '<circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M2 3h3l2.6 12.2a2 2 0 0 0 2 1.6h8.2a2 2 0 0 0 2-1.5L22 8H6"/>',
       backup: '<path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/>',
-      phone: '<rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/>'
+      phone: '<rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/>',
+      swap: '<path d="M4 8h13"/><path d="m14 4 4 4-4 4"/><path d="M20 16H7"/><path d="m10 12-4 4 4 4"/>',
+      box: '<path d="M21 8 12 3 3 8v8l9 5 9-5V8Z"/><path d="m3 8 9 5 9-5"/><path d="M12 13v8"/>',
+      print: '<path d="M7 9V3h10v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 14h10v7H7z"/>',
+      star: '<path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9Z"/>',
+      layers: '<path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/>',
+      list: '<path d="M9 6h12"/><path d="M9 12h12"/><path d="M9 18h12"/><circle cx="4.5" cy="6" r="1.2"/><circle cx="4.5" cy="12" r="1.2"/><circle cx="4.5" cy="18" r="1.2"/>'
     };
     const icon = k => `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[k]}</svg>`;
     const tick = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg>';
@@ -659,7 +665,42 @@ Intercessor Squad (160 points)
   • 10x Intercessor
 Redemptor Dreadnought (210 points)</pre>
             <div class="ill-arrow" aria-hidden="true">→</div>
-            <div class="ill-rows">${[["Captain", "1", "80"], ["Intercessor Squad", "10", "160"], ["Redemptor Dreadnought", "1", "210"]].map(([n, m, pt]) => `<div class="ill-row"><span class="ck">${tick}</span><span>${n}</span><em>${m} · ${pt} pts</em></div>`).join("")}</div>
+            <div class="ill-rows">${[["Captain", "1", "80"], ["Intercessor Squad", "10", "160"], ["Redemptor Dreadnought", "1", "210"]].map(([n, m, pt]) => `<div class="ill-row"><span class="ck">${tick}</span><span>${n}</span><em>${m} · ${pt}\u00a0pts</em></div>`).join("")}</div>
+          </div>`)}
+        </article>
+
+        <article class="lp-feat">
+          <div class="lp-text">
+            <p class="eyebrow">Painting history</p>
+            <h3>Watch your painted pile grow, month by month</h3>
+            <p>Every model you mark as painted is dated, so you can see how much you get done each month. Set a monthly goal, keep a weekly streak going and look back over the whole year.</p>
+            <ul class="lp-list"><li>${tick}A monthly goal with progress as you paint</li><li>${tick}Weekly streaks and your best month</li><li>${tick}A chart of the last twelve months</li></ul>
+          </div>
+          ${shot("activity", "Painting activity with a monthly goal and chart", `<div class="ill ill-activity">
+            <div class="ill-stats">
+              <div><b>14</b><small>This month</small></div>
+              <div><b>5</b><small>Week streak</small></div>
+              <div><b>22</b><small>Best month</small></div>
+            </div>
+            <div class="ill-goal"><div class="ill-rh"><strong>Monthly goal</strong><small>14 of 20 models</small></div><div class="ill-prog"><i style="width:70%"></i></div></div>
+            <div class="ill-bars">${[4, 7, 3, 10, 6, 12, 8, 15, 9, 22, 11, 14].map((v, i, a) => `<span class="${i === a.length - 1 ? "now" : ""}" style="height:${Math.round(v / 22 * 100)}%"></span>`).join("")}</div>
+          </div>`)}
+        </article>
+
+        <article class="lp-feat flip">
+          <div class="lp-text">
+            <p class="eyebrow">Community</p>
+            <h3>Share your army and see what others are painting</h3>
+            <p>Share a ledger and it joins the Shared armies page, with your name and picture on it. Browse other painters' schemes for ideas, like the ones you love and follow the painters you want to keep up with.</p>
+            <ul class="lp-list"><li>${tick}Read-only links anyone can open</li><li>${tick}Likes and follows</li><li>${tick}Private until you choose to share</li></ul>
+          </div>
+          ${shot("community", "Shared armies from other painters", `<div class="ill ill-community">
+            ${[["Brother Dmitri", "BD", "Crusade of Sigismund", "Black Templars", "black-templars", 47, 12, true], ["Kaylee R", "KR", "The Silver Host", "Necrons", "necrons", 81, 31, false]].filter(x => FBY[x[4]]).map(([who, ini, name, fac, fid, pct, likes, fol]) => `<div class="ill-card ill-share">
+              <div class="owner-line"><span class="avatar" aria-hidden="true">${ini}</span><span><small>Collection of</small><strong>${who}</strong></span></div>
+              <div class="ill-top">${factionBadge(fid, 48)}<div><strong>${name}</strong><small>${fac}</small></div></div>
+              <div class="ill-prog"><i style="width:${pct}%"></i></div>
+              <div class="ill-foot"><span>${pct}% painted</span><span class="ill-soc"><em class="like">♥ ${likes}</em><em class="${fol ? "on" : ""}">${fol ? "Following" : "Follow"}</em></span></div>
+            </div>`).join("")}
           </div>`)}
         </article>
       </section>
@@ -667,12 +708,18 @@ Redemptor Dreadnought (210 points)</pre>
       <section class="lp-grid" aria-labelledby="lp-more-h">
         <h2 id="lp-more-h" class="lp-grid-h">And the little things that help</h2>
         <div class="lp-cards">
-          ${[["share", "Share your army", "Send a read-only link so friends can see your colours and progress."],
-             ["photo", "A photo for every unit", "Keep a picture of each unit as it comes together."],
-             ["points", "Points at a glance", "See your army's total against the limit you're building to."],
+          ${[["box", "Pile of shame", "Log the kits you've bought but haven't started, what they cost and how long they've waited."],
+             ["swap", "Paint swaps", "Out of a paint? Find the closest match from the other ten brands."],
+             ["photo", "Photo gallery", "Up to twelve photos per unit, from bare plastic to finished."],
+             ["print", "Printable guide", "Print your army's colours, recipes and paint list to keep by the brushes."],
              ["cart", "Shopping list", "Every paint your recipes need that you don't own yet, ready to copy."],
+             ["list", "Your roster", "Every unit you own, across all your ledgers, in one list."],
+             ["star", "Starred units", "Star the units you're painting next and find them in a tap."],
+             ["layers", "Batch updates", "Pick several units and set their stage, mark them painted or star them in one go."],
+             ["points", "Points at a glance", "See your army's total against the limit you're building to."],
+             ["share", "Share a link", "Send a read-only link so friends can see your colours and progress."],
              ["backup", "Backups", "Download a ledger any time, and bring it back whenever you like."],
-             ["phone", "At the painting desk", "Made for your phone, so it's there beside the brushes."]]
+             ["phone", "Install it like an app", "Add it to your home screen and it opens full screen, right beside the brushes."]]
             .map(([k, h, t]) => `<div class="panel lp-mini"><span class="lp-ico">${icon(k)}</span><h3>${h}</h3><p>${t}</p></div>`).join("")}
         </div>
       </section>
@@ -684,6 +731,20 @@ Redemptor Dreadnought (210 points)</pre>
           <li><span class="n">2</span><h3>Set your colours</h3><p>Start from the official scheme, then change anything you like.</p></li>
           <li><span class="n">3</span><h3>Paint and track</h3><p>Add your units, follow your recipes and tick off each stage.</p></li>
         </ol>
+      </section>
+
+      <section class="lp-faq" aria-labelledby="lp-faq-h">
+        <div class="lp-head"><p class="eyebrow">Questions</p><h2 id="lp-faq-h">Good to know</h2></div>
+        <div class="lp-faq-list">
+          ${[["Is it free?", "Yes. Every feature is free to use."],
+             online ? ["Do I need an account?", "A free account keeps your ledgers, recipes and photos safe online, so they follow you from your phone to your computer. Sign up with just an email and password."]
+                    : ["Do I need an account?", "Not on this copy. Everything is saved in this browser, so use Backups now and then to keep a copy somewhere safe."],
+             ["Can other people see my ledgers?", "Only if you share them. Ledgers are private until you press Share, and you can stop sharing at any time."],
+             ["Which paints are included?", "Over 3,700 paints from Citadel, Army Painter, Vallejo, Scale75, AK Interactive, Pro Acryl, Reaper, P3, Green Stuff World, Two Thin Coats and Turbo Dork. You can also use any colour of your own."],
+             ["Where do the units come from?", `Unit names, weapons and points come from the community BattleScribe data for 11th edition, covering ${num(nSheets)} datasheets across ${FACTIONS.length} factions and chapters.`],
+             ["Is this made by Games Workshop?", "No. Livery Ledger is an unofficial fan tool and isn't endorsed by Games Workshop."]]
+            .map(([q, a]) => `<details class="lp-q"><summary>${esc(q)}</summary><p>${esc(a)}</p></details>`).join("")}
+        </div>
       </section>
 
       <section class="lp-cta panel">
