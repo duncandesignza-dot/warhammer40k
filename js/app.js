@@ -1130,6 +1130,7 @@
       if(leaders.length > 1) add("lead:" + x.k, `${x.name} is led by ${leaders.map(r => r.name).join(" and ")}.`, "A unit usually has one leader, unless a datasheet says it can have more.");
     });
     // Unit sizes and points from the datasheet: a size outside its range, or points that don't match that size.
+    const ptsOff = {};
     rows.forEach(x => {
       const sh = sheetOf(x); if(!sh) return;
       if(sh.ms && (x.count < sh.ms[0] || x.count > sh.ms[1])){
@@ -1139,7 +1140,14 @@
       if(!sh.ms && !sh.pb && x.count !== 1) return;
       const want = sheetPts(sh, x.count);
       if(want == null || (x.u && x.e.pts != null) || x.base === want) return;
-      add("pts:" + x.k + ":" + want, `${x.name} is ${ptsText(x.base)} here but ${ptsText(want)} in the latest datasheet points${x.count > 1 ? ` for ${x.count} models` : ""}.`, x.u ? "If the points have changed, update the unit." : "If the points have changed, update them with the ⋯ button.");
+      // Several copies at the same wrong cost make one note, not one each.
+      const key = [sh.n, x.count, x.base, want].join(":");
+      (ptsOff[key] = ptsOff[key] || []).push(x);
+    });
+    Object.entries(ptsOff).forEach(([key, xs]) => {
+      const x = xs[0], want = +key.split(":").pop(), many = xs.length > 1;
+      add("pts:" + key, `${many ? `${xs.length} units of ${x.name} are` : `${x.name} is`} ${ptsText(x.base)}${many ? " each" : ""} here but ${ptsText(want)} in the latest datasheet points${x.count > 1 ? ` for ${x.count} models` : ""}.`,
+        xs.some(r => r.u) ? "If the points have changed, update the unit." : "If the points have changed, update them with the ⋯ button.");
     });
     if(l.ptsAsOf){
       const days = Math.floor((Date.now() - new Date(l.ptsAsOf + "T12:00:00")) / DAY_MS);

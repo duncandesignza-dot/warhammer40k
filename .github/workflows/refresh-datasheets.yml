@@ -1,5 +1,6 @@
 # Rebuilds js/data/factions.js from the latest BSData (Warhammer 40,000 11th edition) once a week,
-# and opens a pull request only when units, points, detachments or enhancements have changed.
+# and opens a pull request only when units, points, detachments or enhancements have changed and the
+# tests still pass.
 # Merge the pull request to put the new data live. Run it by hand from the Actions tab any time.
 name: Refresh datasheet data
 
@@ -56,6 +57,23 @@ jobs:
           else
             exit "$code"
           fi
+
+      # Pull requests opened by this workflow don't start the Tests workflow (a GitHub rule),
+      # so the new data is tested here, and nothing is opened if a test fails.
+      - uses: actions/setup-node@v4
+        if: steps.changes.outputs.changed == 'true'
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: tests/package-lock.json
+
+      - name: Test the site with the new data
+        if: steps.changes.outputs.changed == 'true'
+        working-directory: tests
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npx playwright test
 
       - name: Open a pull request
         if: steps.changes.outputs.changed == 'true'

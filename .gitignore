@@ -1,3 +1,8 @@
 # Cloudflare Wrangler local files
 .wrangler
 node_modules
+
+# Test tools and results
+tests/node_modules
+tests/test-results
+tests/playwright-report

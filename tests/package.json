@@ -1,0 +1,12 @@
+{
+  "name": "livery-ledger-tests",
+  "private": true,
+  "description": "Browser tests for Livery Ledger and War Ledger. See README.md.",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1",
+    "axe-core": "4.10.3"
+  }
+}

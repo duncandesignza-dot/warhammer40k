@@ -1592,3 +1592,11 @@ header.top .wh-id h1{margin:0}
   .wtable.cards td.n{text-align:left;display:flex;flex-direction:column;align-items:flex-start;gap:2px;font-weight:600}
   .wtable.cards td.n::before{content:attr(data-label);font-family:var(--mono);font-size:.58rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700}
 }
+/* Battle record tables on the smallest phones: tighter cells, and long names wrap. */
+@media (max-width:380px){
+  .wtable.compact{font-size:.8rem}
+  .wtable.compact th,.wtable.compact td{padding:8px 5px}
+  .wtable.compact th:first-child,.wtable.compact td:first-child{padding-left:10px}
+  .wtable.compact th:last-child,.wtable.compact td:last-child{padding-right:10px}
+  .wtable.compact tbody th{overflow-wrap:anywhere}
+}
