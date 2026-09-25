@@ -259,8 +259,8 @@
     if(location.hash !== "#/") location.hash = "#/";
   }
   const AUTH = {
-    in: {h: "Welcome back", p: "Log in to see your ledgers.", go: "Log in", busy: "Logging in…"},
-    up: {h: "Create your free account", p: "Plan and track every army you paint.", go: "Create account", busy: "Creating your account…"},
+    in: {h: "Welcome back", p: () => isWar() ? "Log in to see your armies." : "Log in to see your ledgers.", go: "Log in", busy: "Logging in…"},
+    up: {h: "Create your free account", p: () => isWar() ? "Track your armies, lists and battles." : "Plan and track every army you paint.", go: "Create account", busy: "Creating your account…"},
     forgot: {h: "Reset your password", p: "Enter the email you signed up with and we'll send you a link to choose a new password.", go: "Send reset link", busy: "Sending…"},
     reset: {h: "Choose a new password", p: "You're nearly done. Pick a new password for your account.", go: "Save new password", busy: "Saving…"}
   };
@@ -301,7 +301,7 @@
       host.dataset.mode = mode;
       q(".auth-tabs").hidden = !pick;
       host.querySelectorAll(".auth-tabs [data-mode]").forEach(b => b.setAttribute("aria-selected", b.dataset.mode === mode));
-      q(".auth-h").textContent = t.h; q(".auth-p").textContent = t.p;
+      q(".auth-h").textContent = t.h; q(".auth-p").textContent = typeof t.p === "function" ? t.p() : t.p;
       q(".af-email").hidden = mode === "reset";
       q(".af-pass").hidden = mode === "forgot";
       q(".af-pass2").hidden = q(".af-hint").hidden = mode !== "up" && mode !== "reset";
@@ -1921,7 +1921,7 @@ Redemptor Dreadnought (210 points)</pre>
       img.addEventListener("error", () => img.remove());
     });
     let heroAuth = null;
-    if($("lp-auth")) heroAuth = authForm($("lp-auth"), "up", {onDone: () => { location.hash = isWar() ? "#/war" : "#/profile"; }});
+    if($("lp-auth")) heroAuth = authForm($("lp-auth"), "in", {onDone: () => { location.hash = isWar() ? "#/war" : "#/profile"; }});
     // Switch the homepage between Livery Ledger and War Ledger without leaving it.
     app.querySelectorAll("[data-lp-mode]").forEach(btn => btn.addEventListener("click", async () => {
       const to = btn.dataset.lpMode, inHero = !!btn.closest(".lp-switch");
