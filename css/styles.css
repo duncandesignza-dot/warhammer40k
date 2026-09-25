@@ -1499,3 +1499,13 @@ dialog.wdlg.wide{max-width:min(760px,calc(100vw - 24px))}
 .war-newform .hint{margin:0;color:var(--muted);font-size:.86rem}
 @media (max-width:640px){.sec-h .sec-acts{width:100%;justify-content:space-between}}
 @media (max-width:640px){.war-tabs{flex-wrap:wrap;overflow:visible}.war-tabs a{flex:1 1 auto;text-align:center}}
+.wt-unit{display:flex;align-items:center;gap:6px}
+.wt-unit>span{display:flex;flex-direction:column;min-width:0}
+.wt-unit .star{margin-left:-6px}
+.seg button svg{width:13px;height:13px;vertical-align:-2px;color:var(--warn)}
+.seg button[aria-pressed="true"] svg{color:inherit}
+.lb-name .star{padding:0;vertical-align:-3px}
+.lb-name .star svg{width:15px;height:15px}
+header.top .wh-id{min-width:0}
+header.top .wh-id .eyebrow{margin-bottom:6px}
+header.top .wh-id h1{margin:0}
