@@ -137,7 +137,8 @@
     // on the army so Shared armies can show it.
     const n = v => Math.min(9999, Math.max(0, parseInt(v, 10) || 0)), rc = s.rec && typeof s.rec === "object" ? s.rec : {};
     const rec = {w: n(rc.w), l: n(rc.l), d: n(rc.d)};
-    return {style: s.style === "roundel" ? "roundel" : "astartes", by, byPic, wonly: s.wonly === true, rec, limit, recipes, colors, slotPaints: cleanSlotPaints(s.slotPaints), splitPauldrons: s.splitPauldrons === true, xareas: cleanXareas(s.xareas), shape: String(s.shape || "cross").slice(0, 160), tiers: tiers.length ? tiers : [{name:"Line", note:"", color:colors.armour}]};
+    // pool: the hidden holder for units in your collection that aren't in an army yet (one per faction).
+    return {style: s.style === "roundel" ? "roundel" : "astartes", by, byPic, wonly: s.wonly === true, pool: s.pool === true, rec, limit, recipes, colors, slotPaints: cleanSlotPaints(s.slotPaints), splitPauldrons: s.splitPauldrons === true, xareas: cleanXareas(s.xareas), shape: String(s.shape || "cross").slice(0, 160), tiers: tiers.length ? tiers : [{name:"Line", note:"", color:colors.armour}]};
   }
   const cleanPaints = list => [...new Set((Array.isArray(list) ? list : []).map(p => String(p).trim().slice(0, 90)).filter(Boolean))].slice(0, 600);
   const day = v => /^\d{4}-\d{2}-\d{2}$/.test(v || "") ? v : new Date().toISOString().slice(0, 10);

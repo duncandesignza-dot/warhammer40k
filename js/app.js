@@ -462,6 +462,13 @@
      (Painting stays in Livery Ledger; both read the same armies and units.)
      ============================================================ */
   const MODE_KEY = "ll-mode";
+  // Units in your collection that aren't in an army live in a hidden holder army, one per faction.
+  const isPool = a => !!(a && a.scheme && a.scheme.pool);
+  async function poolFor(faction, pools){
+    const p = (pools || []).find(a => a.faction === faction); if(p) return p;
+    const f = FBY[faction] || {name: faction};
+    return store.saveArmy({faction, name: `${f.name} (not in an army)`, scheme: {...P.presetFor(faction), pool: true, wonly: true}, public: false});
+  }
   const isWar = () => document.documentElement.dataset.mode === "war";
   function setMode(m){
     if(m === "war") document.documentElement.dataset.mode = "war"; else delete document.documentElement.dataset.mode;
@@ -561,7 +568,7 @@
     games.sort(byNewest);
     const mine = store.session ? store.session.user.id : null;
     const own = armies.filter(a => !mine || !a.owner || a.owner === mine);
-    const D = {armies: own, units, lists, games, kits, warMissing};
+    const D = {armies: own.filter(a => !isPool(a)), pools: own.filter(isPool), units, lists, games, kits, warMissing};
     D.byArmy = id => D.units.filter(u => u.armyId === id);   // reads the current units, so edits show straight away
     return D;
   }
@@ -614,7 +621,7 @@
     app.innerHTML = `
       ${profileHead({war: true,
         stats: [[D.armies.length, D.armies.length === 1 ? "Army" : "Armies"], [num(total), "Models"], [num(all.points), "Points"], [`${pctOf(bk.ready, total)}%`, "Battle ready"]],
-        actions: D.armies.length ? `<a class="btn btn-sm" href="#/war/collection">${LIST_ICON}Your collection<span class="count">${num(D.units.filter(u => D.armies.some(a => a.id === u.armyId)).length)}</span></a>${shameBtn()}${settingsBtn}` : ""})}
+        actions: D.armies.length ? `<a class="btn btn-sm" href="#/war/collection">${LIST_ICON}Your collection<span class="count">${num(D.units.filter(u => D.armies.concat(D.pools).some(a => a.id === u.armyId)).length)}</span></a>${shameBtn()}${settingsBtn}` : ""})}
       ${warTabs("")}
       ${missingBanner(D)}
       ${D.armies.length ? `
@@ -675,8 +682,13 @@
   }
 
   /* ---------- a unit's record ---------- */
-  function openUnit(army, u, done){
+  // army: the unit's army, a holder army, or {faction, pool: true} for a new unit not in an army yet.
+  // opts.armies / opts.pools: offer a choice of army, so a unit can be moved (or kept out of any army).
+  function openUnit(army, u, done, opts){
+    opts = opts || {};
     const r = u ? readiness(u) : {owned: 1, built: 0, painted: 0, ready: 0};
+    const choices = opts.armies ? opts.armies.slice().sort((a, b) => (a.faction === army.faction ? 0 : 1) - (b.faction === army.faction ? 0 : 1) || a.name.localeCompare(b.name)) : null;
+    const curArmy = isPool(army) || !army.id ? "" : army.id;
     const cur = settings.currency;
     const d = modal(u ? esc(u.name) : "Add a unit", `
       <div class="wgrid">
@@ -685,6 +697,7 @@
         <label>Role<select id="w-role">${(u && u.role && !ROLE_ORDER.includes(u.role) ? [u.role, ...ROLE_ORDER] : ROLE_ORDER).map(x => `<option${(u ? u.role || "Infantry" : "Infantry") === x ? " selected" : ""}>${esc(x)}</option>`).join("")}</select></label>
         <label>Models<input id="w-count" type="number" min="1" max="99" inputmode="numeric" value="${r.owned}"></label>
         <label>Points<input id="w-pts" type="number" min="0" max="9999" inputmode="numeric" value="${u ? u.points : 0}"></label>
+        ${choices ? `<label class="span3">Army<select id="w-army"><option value="">Not in an army (just in your collection)</option>${choices.map(a => `<option value="${esc(a.id)}"${a.id === curArmy ? " selected" : ""}>${esc(a.name)}${a.faction !== army.faction ? ` (${esc(factionName(a.faction))})` : ""}</option>`).join("")}</select></label>` : ""}
         <label class="chk span3"><input type="checkbox" id="w-fav"${u && u.fav ? " checked" : ""}><span>Starred <small>(shows with a star here and in Livery Ledger)</small></span></label>
       </div>
       <fieldset class="wfs"><legend>Readiness</legend>
@@ -745,7 +758,15 @@
       if(built === 0 && painted === 0) { const i = st.indexOf("built"); if(i >= 0 && st.length === 1) st.splice(i, 1); }
       row.stages = st;
       const b = e.submitter || d.querySelector("[type=submit]"); b.disabled = true; $("w-msg").textContent = "Saving…";
-      try { await store.saveUnit(army.id, row, u ? u.id : null, null, false, u || null); d.close(); flash(u ? `Saved ${name}` : `Added ${name}`); done(); }
+      try {
+        // Where it goes: the chosen army, or the faction's holder when it isn't in an army.
+        const pick = $("w-army") ? $("w-army").value : curArmy;
+        // A loose unit belongs with its datasheet's faction (a Necron unit moved out of a Tyranid army stays Necron).
+        const ownFaction = row.datasheet && !sheetsOf(army.faction).some(x => x.n === row.datasheet) ? ((FACTIONS.find(f => f.units.some(x => x.n === row.datasheet)) || {}).id || army.faction) : army.faction;
+        const target = pick ? pick : (isPool(army) && army.id && ownFaction === army.faction ? army.id : (await poolFor(ownFaction, opts.pools)).id);
+        await store.saveUnit(target, row, u ? u.id : null, null, false, u || null);
+        d.close(); flash(u ? (target !== army.id && u ? `Moved ${name}` : `Saved ${name}`) : `Added ${name}`); done();
+      }
       catch(err){ console.error(err); $("w-msg").textContent = "Couldn't save: " + errText(err); b.disabled = false; }
     });
     if(u) armButton($("w-del"), "Tap again to delete", async () => {
@@ -844,9 +865,9 @@
     draw();
     onApp(async e => {
       const b = e.target.closest("button"); if(!b) return;
-      if(b.matches("[data-add-unit]")) openUnit(army, null, reload);
+      if(b.matches("[data-add-unit]")) openUnit(army, null, reload, {armies: D.armies, pools: D.pools});
       else if(b.matches("[data-from-list]")) openAddFromList(army, reload);
-      else if(b.matches("[data-unit]")) { const u = D.units.find(x => x.id === b.dataset.unit); if(u) openUnit(army, u, reload); }
+      else if(b.matches("[data-unit]")) { const u = D.units.find(x => x.id === b.dataset.unit); if(u) openUnit(army, u, reload, {armies: D.armies, pools: D.pools}); }
       else if(b.matches("[data-filter]")) { filter = b.dataset.filter; draw(); }
       else if(b.dataset.wstar) toggleWarStar(D, b.dataset.wstar, draw);
       else if(b.matches("[data-new-list]")) openNewList(D, id);
@@ -863,35 +884,61 @@
   }
 
   /* ---------- the whole collection ---------- */
+  // Adding a unit from the collection: pick its faction, and an army only if you want one.
+  function openCollectionAdd(D, armyF, done){
+    const pre = D.armies.find(a => a.id === armyF) || D.pools.find(a => a.id === armyF);
+    const fav = pre ? pre.faction : (D.armies[0] || D.pools[0] || {}).faction || "";
+    const d = modal("Add a unit to your collection", `
+      <p class="sub">Units don't need an army. Keep them in your collection and move them into an army whenever you like.</p>
+      <label>Faction${factionSelect("w-cf", fav, "Choose a faction…")}</label>
+      <label>Army<select id="w-ca"></select></label>
+      <div class="row-actions"><button type="submit" class="primary">Next</button><span class="msg" id="w-msg" role="status"></span></div>`);
+    const fillArmies = () => {
+      const fid = $("w-cf").value, same = D.armies.filter(a => a.faction === fid), other = D.armies.filter(a => a.faction !== fid);
+      $("w-ca").innerHTML = `<option value="">Not in an army</option>${same.map(a => `<option value="${esc(a.id)}"${pre && pre.id === a.id ? " selected" : ""}>${esc(a.name)}</option>`).join("")}${other.length ? `<optgroup label="Other armies">${other.map(a => `<option value="${esc(a.id)}">${esc(a.name)} (${esc(factionName(a.faction))})</option>`).join("")}</optgroup>` : ""}`;
+    };
+    $("w-cf").addEventListener("change", fillArmies); fillArmies();
+    d.querySelector("form").addEventListener("submit", e => {
+      e.preventDefault();
+      const fid = $("w-cf").value; if(!FBY[fid]){ $("w-msg").textContent = "Choose a faction."; $("w-cf").focus(); return; }
+      const aid = $("w-ca").value;
+      // The unit's faction decides its datasheets; with no army it goes to that faction's holder (made on save if needed).
+      const army = D.armies.find(a => a.id === aid) || D.pools.find(a => a.faction === fid) || {id: null, faction: fid, scheme: {...P.presetFor(fid), pool: true}};
+      d.close(); openUnit(army, null, done, {armies: D.armies, pools: D.pools});
+    });
+    $("w-cf").focus();
+  }
   async function viewWarCollection(){
     view.name = "war-collection"; document.title = "Collection · War Ledger";
     let D = await warData(true), q = "", armyF = "", notReady = false, favOnly = false;
-    const armyOf = id => D.armies.find(a => a.id === id);
+    const armyOf = id => D.armies.find(a => a.id === id) || D.pools.find(a => a.id === id);
     async function reload(){ D = await warData(true); draw(); }
     app.innerHTML = `
       <section class="page-head war-head">
-        <div><p class="eyebrow">War Ledger</p><h1>My collection</h1><p class="sub">Everything you own across all your armies.</p></div>
+        <div><p class="eyebrow">War Ledger</p><h1>My collection</h1><p class="sub">Everything you own, in an army or not.</p></div>
+        <div class="war-actions"><button type="button" class="primary" data-coll-add>+ Add unit</button></div>
       </section>
       ${warTabs("collection")}
       <div class="war-filters">
         <input type="search" id="wc-q" placeholder="Search units" aria-label="Search units">
-        <select id="wc-army" aria-label="Army"><option value="">All armies</option>${D.armies.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join("")}</select>
+        <select id="wc-army" aria-label="Army"><option value="">All units</option>${D.armies.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join("")}<option value="__pool">Not in an army</option></select>
         <label class="chk"><input type="checkbox" id="wc-nr"><span>Not battle ready only</span></label>
         <label class="chk"><input type="checkbox" id="wc-fav"><span>Starred only</span></label>
       </div>
       <div id="wc-out"></div>`;
     function draw(){
-      const list = D.units.filter(u => armyOf(u.armyId) && (!armyF || u.armyId === armyF) && (!q || [u.name, u.datasheet, u.role].join(" ").toLowerCase().includes(q))
+      const list = D.units.filter(u => armyOf(u.armyId) && (!armyF || (armyF === "__pool" ? isPool(armyOf(u.armyId)) : u.armyId === armyF)) && (!q || [u.name, u.datasheet, u.role].join(" ").toLowerCase().includes(q))
         && (!notReady || readiness(u).ready < readiness(u).owned) && (!favOnly || u.fav)).sort((a, b) => a.name.localeCompare(b.name));
       const t = sumUp(list), kits = D.kits.filter(k => !armyF || (armyOf(armyF) && k.faction === armyOf(armyF).faction));
+      const armyCell = a => isPool(a) ? `<span class="wc-loose">Not in an army</span><small>${esc(factionName(a.faction))}</small>` : `<a href="#/war/army/${esc(a.id)}">${esc(a.name)}</a>`;
       $("wc-out").innerHTML = `
         <p class="wc-sum">${plural(list.length, "unit")} · ${plural(t.models, "model")} · ${ptsText(t.points)} · ${pctOf(t.ready, t.models)}% battle ready</p>
         ${list.length ? `<div class="wt-scroll"><table class="wtable">
           <thead><tr><th scope="col">Unit</th><th scope="col">Army</th><th scope="col" class="n">Owned</th><th scope="col" class="n">Built</th><th scope="col" class="n">Painted</th><th scope="col" class="n">Ready</th><th scope="col" class="n">Points</th></tr></thead>
           <tbody>${list.map(u => { const r = readiness(u), a = armyOf(u.armyId); return `<tr><th scope="row"><span class="wt-unit">${warStar(u)}<span><button type="button" class="linkish" data-unit="${esc(u.id)}">${esc(u.name)}</button><small>${esc(u.role || "")}</small></span></span></th>
-            <td><a href="#/war/army/${esc(a.id)}">${esc(a.name)}</a></td><td class="n">${r.owned}</td><td class="n">${r.built}</td><td class="n">${r.painted}</td>
+            <td>${armyCell(a)}</td><td class="n">${r.owned}</td><td class="n">${r.built}</td><td class="n">${r.painted}</td>
             <td class="n"><span class="rdy ${r.ready >= r.owned ? "ok" : r.ready ? "part" : "no"}">${r.ready}</span></td><td class="n">${num(r.points)}</td></tr>`; }).join("")}</tbody>
-        </table></div>` : `<p class="hint">${D.units.length ? "No units match." : "No units yet. Add some from one of your armies."}</p>`}
+        </table></div>` : `<p class="hint">${D.units.length ? "No units match." : "No units yet. Add one here, or add them to one of your armies."}</p>`}
         ${kits.length ? `<p class="hint wc-kits"><a href="#/shame">Pile of shame</a>: ${plural(kits.length, "kit")} and ${plural(kits.reduce((a, k) => a + k.models, 0), "model")} still on the sprue.</p>` : ""}`;
     }
     $("wc-q").addEventListener("input", e => { q = e.target.value.trim().toLowerCase(); draw(); });
@@ -901,9 +948,10 @@
     draw();
     onApp(e => {
       const st = e.target.closest("[data-wstar]"); if(st){ toggleWarStar(D, st.dataset.wstar, draw); return; }
+      if(e.target.closest("[data-coll-add]")){ openCollectionAdd(D, armyF, reload); return; }
       const b = e.target.closest("[data-unit]"); if(!b) return;
       const u = D.units.find(x => x.id === b.dataset.unit), a = u && armyOf(u.armyId);
-      if(u && a) openUnit(a, u, reload);
+      if(u && a) openUnit(a, u, reload, {armies: D.armies, pools: D.pools});
     });
   }
 
@@ -1290,7 +1338,7 @@
       catch(err){ console.error(err); armies = []; }
     }
     const mine = store.session ? store.session.user.id : null;
-    armies = armies.filter(a => !mine || !a.owner || a.owner === mine);
+    armies = armies.filter(a => (!mine || !a.owner || a.owner === mine) && !isPool(a));
     const tot = armies.reduce((t, x) => { const s = sum[x.id] || {}; t.units += s.units || 0; t.models += s.models || 0; t.done += s.done || 0; return t; }, {units: 0, models: 0, done: 0});
     return {armies, sum, tot};
   }
@@ -2479,7 +2527,7 @@ Redemptor Dreadnought (210 points)</pre>
     view.name = "shame";
     document.title = "Pile of shame · Livery Ledger";
     let list = await getShame(), armies = [];
-    try { armies = await store.listArmies(); } catch(e){}
+    try { armies = (await store.listArmies()).filter(a => !isPool(a)); } catch(e){}
     const allNames = [...new Set(FACTIONS.flatMap(f => f.units.filter(u => !u.t).map(u => u.n)))].sort();
     app.innerHTML = `
       <div class="crumbs">${isWar() ? `<a href="#/war">War Ledger</a>` : `<a href="#/livery">Livery Ledger</a>`} / Pile of shame</div>

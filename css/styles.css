@@ -1519,3 +1519,5 @@ header.top .wh-id h1{margin:0}
 .r-used a{color:var(--brand)}
 .r-notes{margin:0;font-size:.84rem;color:var(--muted)}
 .pp-body .r-edit.panel{padding:20px}
+.wc-loose{color:var(--muted);font-style:italic}
+.wtable td .wc-loose+small{display:block;color:var(--faint);font-size:.76rem}
