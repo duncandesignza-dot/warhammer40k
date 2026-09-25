@@ -97,6 +97,8 @@
     o.price = Math.min(1e6, Math.max(0, Math.round((parseFloat(r.price) || 0) * 100) / 100));
     o.shop = String(r.shop || "").slice(0, 80);
     o.assembly = String(r.assembly || "").slice(0, 600);
+    // Planned: in your plans but not bought yet. It's never battle ready and isn't counted as owned.
+    o.own = r.own === "planned" ? "planned" : "owned";
     if(!o.name) o.name = o.datasheet || "Unnamed unit";
     return o;
   }
@@ -144,16 +146,41 @@
   const day = v => /^\d{4}-\d{2}-\d{2}$/.test(v || "") ? v : new Date().toISOString().slice(0, 10);
   const int = (v, lo, hi) => Math.min(hi, Math.max(lo, parseInt(v, 10) || 0));
   // An army list: units picked from the collection ({u: unit id}), or units you don't own yet ({n, sheet, ...}).
+  // Each entry has a key (k) so leaders can point at the unit they lead; warlord, enhancement and a
+  // points override (pts) are only stored when set. Nothing here checks the rules: that's left to the player.
+  const slug = v => /^[a-z0-9-]{1,24}$/.test(v || "") ? v : "";
+  const LIST_STATUS = ["draft", "theory", "tournament", "narrative", "archived"];
   function cleanList(l){
     l = l || {};
-    const units = (Array.isArray(l.units) ? l.units : []).slice(0, 200).map(e => {
+    const seen = new Set();
+    const units = (Array.isArray(l.units) ? l.units : []).slice(0, 200).map((e, i) => {
       if(!e || typeof e !== "object") return null;
-      if(e.u) return {u: String(e.u).slice(0, 60)};
-      const n = String(e.n || e.sheet || "").trim().slice(0, 80);
-      return n ? {n, sheet: String(e.sheet || "").slice(0, 80), role: String(e.role || "").slice(0, 40), count: int(e.count, 1, 99) || 1, points: int(e.points, 0, 9999)} : null;
+      let row;
+      if(e.u) row = {u: String(e.u).slice(0, 60)};
+      else {
+        const n = String(e.n || e.sheet || "").trim().slice(0, 80);
+        if(!n) return null;
+        row = {n, sheet: String(e.sheet || "").slice(0, 80), role: String(e.role || "").slice(0, 40), count: int(e.count, 1, 99) || 1, points: int(e.points, 0, 9999)};
+      }
+      let k = /^[\w-]{1,24}$/.test(e.k || "") ? e.k : "e" + i;
+      while(seen.has(k)) k += "x";
+      seen.add(k); row.k = k;
+      if(e.warlord === true) row.warlord = true;
+      const en = e.enh && typeof e.enh === "object" ? String(e.enh.n || "").trim().slice(0, 80) : "";
+      if(en) row.enh = {n: en, p: int(e.enh.p, 0, 999)};
+      if(e.lead && /^[\w-]{1,24}$/.test(e.lead)) row.lead = e.lead;
+      if(e.u && e.pts !== null && e.pts !== undefined && e.pts !== "") row.pts = int(e.pts, 0, 9999);
+      return row;
     }).filter(Boolean);
+    // Leaders only point at units still in the list.
+    units.forEach(r => { if(r.lead && (r.lead === r.k || !seen.has(r.lead))) delete r.lead; });
+    const dets = (Array.isArray(l.detachments) ? l.detachments : [l.detachment]).map(d => String(d || "").trim().slice(0, 80)).filter(Boolean).slice(0, 4);
     return {armyId: String(l.armyId || "").slice(0, 60), name: String(l.name || "Army list").trim().slice(0, 80) || "Army list",
-      limit: int(l.limit, 0, 20000), detachment: String(l.detachment || "").slice(0, 80), notes: String(l.notes || "").slice(0, 600), units};
+      limit: int(l.limit, 0, 20000), size: slug(l.size), detachments: dets, detachment: dets.join(" + "),
+      status: LIST_STATUS.includes(l.status) ? l.status : "draft", ptsAsOf: /^\d{4}-\d{2}-\d{2}$/.test(l.ptsAsOf || "") ? l.ptsAsOf : "",
+      notes: String(l.notes || "").slice(0, 600), units,
+      // "Things to check" the player has looked at and hidden for this list.
+      ignored: [...new Set((Array.isArray(l.ignored) ? l.ignored : []).map(x => String(x).slice(0, 120)).filter(Boolean))].slice(0, 60)};
   }
   // A battle: when, with which list, against whom, and how it went.
   function cleanGame(g){
@@ -248,7 +275,7 @@
       async getArmy(id){ const a = db.armies.find(x => x.id === id); return a ? {...a} : null; },
       async summary(){
         const m = {};
-        db.units.forEach(u => { const s = m[u.armyId] || (m[u.armyId] = {units:0, models:0, done:0, points:0}); s.units++; s.models += +u.count || 0; s.done += Math.min(+u.count || 0, +u.painted || (u.status === "done" ? +u.count || 0 : 0)); s.points += +u.points || 0; });
+        db.units.forEach(u => { const s = m[u.armyId] || (m[u.armyId] = {units:0, models:0, done:0, points:0}); if(u.own === "planned"){ s.units++; s.planned = (s.planned || 0) + 1; return; } s.units++; s.models += +u.count || 0; s.done += Math.min(+u.count || 0, +u.painted || (u.status === "done" ? +u.count || 0 : 0)); s.points += +u.points || 0; });
         return m;
       },
       async saveArmy(a, id){
@@ -329,10 +356,10 @@
       return path;
     }
     const mustOk = ({data, error}) => { if(error) throw error; return data; };
-    const SUM_COLS = "army_id,data->>status,data->>count,data->>painted,data->>points";
+    const SUM_COLS = "army_id,data->>status,data->>count,data->>painted,data->>points,data->>own";
     function totals(rows){
       const m = {};
-      rows.forEach(r => { const s = m[r.army_id] || (m[r.army_id] = {units:0, models:0, done:0, points:0}); const c = parseInt(r.count, 10) || 1; const p = parseInt(r.painted, 10); s.units++; s.models += c; s.done += Math.min(c, Number.isFinite(p) ? p : (r.status === "done" ? c : 0)); s.points += parseInt(r.points, 10) || 0; });
+      rows.forEach(r => { const s = m[r.army_id] || (m[r.army_id] = {units:0, models:0, done:0, points:0}); if(r.own === "planned"){ s.units++; s.planned = (s.planned || 0) + 1; return; } const c = parseInt(r.count, 10) || 1; const p = parseInt(r.painted, 10); s.units++; s.models += c; s.done += Math.min(c, Number.isFinite(p) ? p : (r.status === "done" ? c : 0)); s.points += parseInt(r.points, 10) || 0; });
       return m;
     }
     // War Ledger's tables are added by supabase/features.sql; say so plainly if they're not there yet.
