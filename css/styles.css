@@ -1257,7 +1257,20 @@ html[data-mode="war"] .bw-war{display:inline}
 .mode-switch a:first-child[aria-current]{background:#3ddc84;color:#04140b}
 .mode-switch a:last-child[aria-current]{background:#ec5a5f;color:#1c0405}
 .ms-short{display:none}
+.ms-ico,.ms-sub{display:none}
+.ms-text{display:inline-flex;flex-direction:column;line-height:1.1}
 @media (max-width:520px){.ms-long{display:none}.ms-short{display:inline}.mode-switch a{padding:5px 10px}}
+/* Desktop: a bigger switch with an icon and what each side is for, in each side's own colour. */
+@media (min-width:900px){
+  .mode-switch{padding:4px;gap:4px;border-width:1px;border-color:rgba(var(--brand-rgb),.45);background:rgba(10,13,15,.7);box-shadow:0 0 0 1px rgba(0,0,0,.4),0 8px 28px -12px rgba(var(--brand-rgb),.7)}
+  .mode-switch a{gap:9px;padding:6px 16px 6px 12px;font-size:.92rem;transition:background .2s,color .2s,box-shadow .2s}
+  .ms-ico{display:block;flex:none}
+  .ms-sub{display:block;font-size:.66rem;font-weight:600;letter-spacing:.04em;text-transform:uppercase;margin-top:1px}
+  .mode-switch a:first-child:not([aria-current]):hover{color:#3ddc84;background:rgba(61,220,132,.1)}
+  .mode-switch a:last-child:not([aria-current]):hover{color:#ec5a5f;background:rgba(236,90,95,.1)}
+  .mode-switch a:first-child[aria-current]{box-shadow:0 6px 20px -6px rgba(61,220,132,.8),inset 0 1px 0 rgba(255,255,255,.35)}
+  .mode-switch a:last-child[aria-current]{box-shadow:0 6px 20px -6px rgba(236,90,95,.8),inset 0 1px 0 rgba(255,255,255,.3)}
+}
 .topnav{display:flex;align-items:center;gap:10px}
 
 /* ---------- War Ledger pages ---------- */

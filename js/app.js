@@ -225,9 +225,14 @@
     return true;
   }
   const clearOfflineData = () => { try { navigator.serviceWorker && navigator.serviceWorker.controller && navigator.serviceWorker.controller.postMessage({type: "clear-data"}); } catch(e){} };
+  // Icons for the Livery / War switch (shown on wider screens): a paint drop and crossed swords.
+  const MS_ICON = {
+    livery: `<svg class="ms-ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3s6 6.6 6 11a6 6 0 0 1-12 0c0-4.4 6-11 6-11Z"/><path d="M9.5 14.5a2.5 2.5 0 0 0 2.5 2.5"/></svg>`,
+    war: `<svg class="ms-ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 17.5 3 6V3h3l11.5 11.5"/><path d="m13 19 6-6"/><path d="m16 16 4 4"/><path d="m19 21 2-2"/><path d="M9.5 6.5 21 18v3h-3l-3.5-3.5"/><path d="m5 14 4 4"/><path d="m7 17-3 3"/><path d="m3 19 2 2"/></svg>`
+  };
   function setTop(){
     const nav = $("topnav"), a = store.kind === "supabase" ? acct() : null, war = isWar();
-    const sw = `<div class="mode-switch" role="group" aria-label="Switch between Livery Ledger and War Ledger"><a href="#/livery"${war ? "" : ` aria-current="true"`}><span class="ms-long">Livery</span><span class="ms-short" aria-hidden="true">L</span><span class="sr-only"> Ledger: painting</span></a><a href="#/war"${war ? ` aria-current="true"` : ""}><span class="ms-long">War</span><span class="ms-short" aria-hidden="true">W</span><span class="sr-only"> Ledger: your fighting force</span></a></div>`;
+    const sw = `<div class="mode-switch" role="group" aria-label="Switch between Livery Ledger and War Ledger"><a href="#/livery"${war ? "" : ` aria-current="true"`}>${MS_ICON.livery}<span class="ms-text"><span class="ms-long">Livery</span><span class="ms-sub" aria-hidden="true">Painting</span></span><span class="ms-short" aria-hidden="true">L</span><span class="sr-only"> Ledger: painting</span></a><a href="#/war"${war ? ` aria-current="true"` : ""}>${MS_ICON.war}<span class="ms-text"><span class="ms-long">War</span><span class="ms-sub" aria-hidden="true">Army &amp; battles</span></span><span class="ms-short" aria-hidden="true">W</span><span class="sr-only"> Ledger: your fighting force</span></a></div>`;
     if(store.kind !== "supabase"){ nav.innerHTML = sw; return; }
     if(!a){
       nav.innerHTML = `<button type="button" class="btn-sm ghost" data-auth-open="in">Log in</button><button type="button" class="btn-sm primary" data-auth-open="up">Sign up</button>`;
