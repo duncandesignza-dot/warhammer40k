@@ -99,6 +99,9 @@
     const hd = v.head === "bare" ? `bare head (${cname(v.skin)} skin)` : v.head === "none" ? "no head" : `${cname(v.helmet)} ${PROF.head}`;
     return ART.badge(v, scheme.style, size, `${hd}, ${cname(v.armour)} ${PROF.labels.armour.toLowerCase()} with ${cname(v.trim)} ${PROF.labels.trim.toLowerCase()}`);
   }
+  // Livery pages show just the shoulder pad and emblem (the right half of a badge). The head and helmet
+  // colours still belong to each unit and show in the unit editor and colour setup.
+  const soloBadge = (html, size) => html.replace('class="mini"', 'class="mini solo"').replace(/width="\d+" height="\d+" viewBox="0 0 2000 960"/, `width="${size}" height="${size}" viewBox="1040 0 960 960"`);
   /* Suggestion dropdown for a text input, styled like the paint picker (the browser's own datalist
      popup can't be styled). getList() returns the options; typing filters them, and any other
      text is still allowed. */
@@ -796,10 +799,11 @@
   }
   // Where a unit lives, for list builder rows from another army.
   const homeOf = (D, u, listArmyId) => { if(u.armyId === listArmyId) return ""; const a = armyById(D, u.armyId); return !a ? "" : isPool(a) ? "Not in an army" : "From " + a.name; };
+  // An army's badge on any page: its shoulder pad and emblem (no helmet preview).
   function armyBadge(a, size){
     const keep = PROF; PROF = P.profileFor(a.faction);
     const html = a.scheme && a.scheme.tiers ? tierBadge(a.scheme, a.scheme.tiers[0], size) : factionBadge(a.faction, size);
-    PROF = keep; return html;
+    PROF = keep; return soloBadge(html, size);
   }
   function armyCard(a, D){
     const t = sumUp(D.byArmy(a.id)), gs = D.games.filter(g => g.armyId === a.id), r = recordOf(gs), p = pctOf(t.ready, t.models);
@@ -963,6 +967,7 @@
     const curArmy = isPool(army) || !army.id ? "" : army.id;
     const cur = settings.currency;
     const d = modal(u ? esc(u.name) : "Add a unit", `
+      <div class="wu-cols"><div class="wu-col">
       <div class="wgrid">
         <label class="span2">Datasheet<select id="w-sheet"><option value="">Custom unit (not in the list)</option>${sheetOptions(army.faction, u ? u.datasheet : "")}</select></label>
         <label class="span2">Name<input id="w-uname" maxlength="80" value="${esc(u ? u.name : "")}" placeholder="Leave blank to use the datasheet name"></label>
@@ -983,6 +988,7 @@
         </div>
         <p class="hint">Painted is shared with Livery Ledger, so painting progress there updates this too.</p>
       </fieldset>
+      </div><div class="wu-col">
       <fieldset class="wfs"><legend>Wargear</legend>
         <div class="wgrid">
           <label class="span3">Ranged weapons<input id="w-ranged" maxlength="600" value="${esc(u ? u.ranged : "")}" placeholder="e.g. Bolt rifles, Astartes grenade launcher"></label>
@@ -998,7 +1004,8 @@
       </fieldset>
       <label>Assembly notes<textarea id="w-asm" rows="2" maxlength="600" placeholder="e.g. magnetised arms, built with the heavy bolter">${esc(u ? u.assembly : "")}</textarea></label>
       <label>Notes<textarea id="w-notes" rows="2" maxlength="600">${esc(u ? u.notes : "")}</textarea></label>
-      <div class="row-actions"><button type="submit" class="primary">${u ? "Save unit" : "Add unit"}</button>${u ? `<button type="button" class="danger" id="w-del">Delete unit</button>` : ""}<span class="msg" id="w-msg" role="status"></span></div>`, "wide");
+      </div></div>
+      <div class="row-actions"><button type="submit" class="primary">${u ? "Save unit" : "Add unit"}</button>${u ? `<button type="button" class="danger" id="w-del">Delete unit</button>` : ""}<span class="msg" id="w-msg" role="status"></span></div>`, "wide xwide");
     const v = id => $(id).value, n = (id, max) => Math.min(max, Math.max(0, parseInt(v(id), 10) || 0));
     const syncReady = () => {
       const auto = $("w-auto").checked, count = Math.max(1, n("w-count", 99));
@@ -2756,7 +2763,7 @@
         <div class="fgroup" data-group>
           <h2 class="fg-h">${esc(g)}</h2>
           <div class="fgrid">${list.map(f => `<a class="fcard" href="${href(f.id)}" data-fname="${esc(f.name.toLowerCase())}">
-            ${factionBadge(f.id, 34)}<span><strong>${esc(f.name)}</strong><small>${f.units.filter(u => !u.t).length} datasheets</small></span></a>`).join("")}</div>
+            ${soloBadge(factionBadge(f.id, 34), 34)}<span><strong>${esc(f.name)}</strong><small>${f.units.filter(u => !u.t).length} datasheets</small></span></a>`).join("")}</div>
         </div>`).join("")}</div>
       <p class="source">Unit and weapon names come from the community BattleScribe data for Warhammer 40,000 11th edition (${esc(DATA.source || "BSData")}${DATA.commit ? ", " + esc(DATA.commit) : ""}). Emblem icons from <a href="https://github.com/Certseeds/wh40k-icon" target="_blank" rel="noopener">wh40k-icon</a> by shitake, farvig, 夜行漫记 and Certseeds (<a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a>), recoloured for this site. Paint names and colours from <a href="https://github.com/Arcturus5404/miniature-paints" target="_blank" rel="noopener">miniature-paints</a> by Rick Fleuren (MIT). Starting colours are suggestions you can change.</p>`;
     const fq = $("fq");
@@ -2798,7 +2805,7 @@
     view.name = "war-new"; document.title = `New ${f.name} army · War Ledger`;
     app.innerHTML = `
       <div class="crumbs"><a href="#/war">War Ledger</a> / <a href="#/war/new">New army</a> / ${esc(f.name)}</div>
-      <section class="page-head war-head"><div class="wh-id">${factionBadge(fid, 64)}<div><p class="eyebrow">War Ledger · ${esc(f.group || "")}</p><h1>New ${esc(f.name)} army</h1><p class="sub">Name your force. You can add units straight after.</p></div></div></section>
+      <section class="page-head war-head"><div class="wh-id">${soloBadge(factionBadge(fid, 64), 64)}<div><p class="eyebrow">War Ledger · ${esc(f.group || "")}</p><h1>New ${esc(f.name)} army</h1><p class="sub">Name your force. You can add units straight after.</p></div></div></section>
       <form class="panel war-newform" id="wn-form" novalidate>
         <label>Army name<input id="w-name" maxlength="80" placeholder="e.g. ${esc(f.name)} Strike Force" autocomplete="off"></label>
         <label><span>Points you're building to <span class="opt">(optional)</span></span><input id="w-lim" type="number" min="0" max="20000" step="250" inputmode="numeric" placeholder="e.g. 2000"></label>
@@ -3611,7 +3618,7 @@ Redemptor Dreadnought (210 points)</pre>
     return `<div class="lcard shcard">
       ${a.owner ? `<a class="sh-owner" href="#/painter/${esc(a.owner)}" aria-label="${esc(ownerOf(a).you ? "Your profile" : `${ownerOf(a).name}'s profile`)}">${ownerLine(a)}</a>` : ownerLine(a)}
       <a class="sh-open" href="#/army/${esc(a.id)}">
-        <div class="card-top">${tierBadge(a.scheme, a.scheme.tiers[0], 56)}<div><h3>${esc(a.name)}</h3><div class="meta">${esc(f ? f.name : a.faction)}${(a.scheme.rec.w + a.scheme.rec.l + a.scheme.rec.d) ? ` · <span class="rec-chip" title="Battle record: wins–losses${a.scheme.rec.d ? "–draws" : ""}">${recText(a.scheme.rec)}</span>` : ""}</div></div></div>
+        <div class="card-top">${soloBadge(tierBadge(a.scheme, a.scheme.tiers[0], 56), 56)}<div><h3>${esc(a.name)}</h3><div class="meta">${esc(f ? f.name : a.faction)}${(a.scheme.rec.w + a.scheme.rec.l + a.scheme.rec.d) ? ` · <span class="rec-chip" title="Battle record: wins–losses${a.scheme.rec.d ? "–draws" : ""}">${recText(a.scheme.rec)}</span>` : ""}</div></div></div>
         <div class="prog" aria-hidden="true"><i style="width:${pct}%"></i></div>
         <div class="foot"><span>${plural(s.units, "unit")} · ${plural(s.models, "model")}</span><span>${pct}% painted</span></div>
       </a>
@@ -3807,7 +3814,7 @@ Redemptor Dreadnought (210 points)</pre>
       const models = kits.reduce((n, k) => n + k.models, 0), value = kits.reduce((n, k) => n + k.price, 0);
       $("sh-stats").innerHTML = `<div class="stat"><b>${kits.length}</b><span>${kits.length === 1 ? "Kit" : "Kits"}</span></div><div class="stat"><b>${num(models)}</b><span>Models</span></div><div class="stat"><b>${esc(money(value))}</b><span>Value</span></div><div class="stat"><b>${kits.length ? esc(ageOf(kits[0].added).replace(" ago", "")) : "—"}</b><span>Oldest kit</span></div>`;
       $("shame-list").innerHTML = kits.length ? `<div class="kits">${kits.map(k => `<article class="panel kit" data-kit="${esc(k.id)}">
-          <div class="kit-top">${k.faction ? factionBadge(k.faction, 40) : `<span class="kit-box" aria-hidden="true"></span>`}
+          <div class="kit-top">${k.faction ? soloBadge(factionBadge(k.faction, 40), 40) : `<span class="kit-box" aria-hidden="true"></span>`}
             <div><h3>${esc(k.name)}</h3><small>${esc([k.faction ? FBY[k.faction].name : "", plural(k.models, "model"), k.price ? money(k.price) : ""].filter(Boolean).join(" · "))}</small></div>
             <button type="button" class="kit-rm" data-rmkit="${esc(k.id)}" aria-label="Remove ${esc(k.name)} from the pile" title="Remove">×</button></div>
           <div class="kit-foot"><span class="kit-age">On the pile ${esc(ageOf(k.added))}</span><button type="button" class="btn-sm primary" data-start="${esc(k.id)}">Start painting</button></div>
@@ -4503,7 +4510,21 @@ Redemptor Dreadnought (210 points)</pre>
           <p class="sub">${canWrite ? `<a href="#/war/army/${esc(army.id)}">Open in War Ledger</a> to plan its lists and battles.`
             : (army.scheme.rec.w + army.scheme.rec.l + army.scheme.rec.d) ? `<span class="rec-chip">${recText(army.scheme.rec)}</span> battle record` : "Colours, units and painting progress."}</p>
         </div></div>
-        ${canWrite ? `<div class="war-actions"><button type="button" class="primary" id="b-add">+ Add unit</button><button type="button" id="b-list">Add from a list</button></div>` : ""}
+        <div class="war-actions">
+          ${canWrite ? `<button type="button" class="primary" id="b-add">+ Add unit</button><button type="button" id="b-list">Add from a list</button>
+          <button type="button" class="share-btn${army.public ? " on" : ""}" id="b-share"><span class="dot${army.public ? " on" : ""}"></span><span id="share-label">${army.public ? "Shared" : "Share"}</span></button>
+          <a class="btn" href="#/army/${esc(army.id)}/colours">Edit colours</a>` : ""}
+          <div class="more">
+            <button type="button" id="b-more" aria-expanded="false" aria-controls="more-menu">More</button>
+            <div class="more-menu" id="more-menu" hidden>
+              <a href="#/army/${esc(army.id)}/guide">Painting guide (print)</a>
+              <button type="button" id="b-export">Export backup</button>
+              ${canWrite ? `<button type="button" id="b-import">Import backup</button>` : ""}
+              ${canWrite ? `<hr><button type="button" class="menu-danger" id="b-delarmy">Delete ledger</button>` : ""}
+            </div>
+          </div>
+          ${canWrite ? `<input type="file" id="f-import" accept="application/json,.json" hidden>` : ""}
+        </div>
       </section>
       ${canWrite ? livTabs("ledgers") : ""}
       <section class="war-stats five liv-stats" aria-label="Ledger overview" aria-live="polite">
@@ -4520,28 +4541,11 @@ Redemptor Dreadnought (210 points)</pre>
         <button type="button" class="primary btn-sm" id="lim-save">Save</button>
         <button type="button" class="btn-sm" id="lim-cancel">Cancel</button>
       </div>
-      <div class="toolbar">
-        ${canWrite ? noteHtml() : "<span></span>"}
-        <div class="tools">
-          ${canWrite ? `<button type="button" class="btn-sm share-btn${army.public ? " on" : ""}" id="b-share"><span class="dot${army.public ? " on" : ""}"></span><span id="share-label">${army.public ? "Shared" : "Share"}</span></button>` : ""}
-          <button type="button" class="btn-sm" id="b-paints">Paints &amp; recipes<span class="buy-badge" id="buy-badge" hidden></span></button>
-          ${canWrite ? `<a class="btn btn-sm" href="#/army/${esc(army.id)}/colours">Edit colours</a>` : ""}
-          <div class="more">
-            <button type="button" class="btn-sm" id="b-more" aria-expanded="false" aria-controls="more-menu">More</button>
-            <div class="more-menu" id="more-menu" hidden>
-              <a href="#/army/${esc(army.id)}/guide">Painting guide (print)</a>
-              <button type="button" id="b-export">Export backup</button>
-              ${canWrite ? `<button type="button" id="b-import">Import backup</button>` : ""}
-              ${canWrite ? `<hr><button type="button" class="menu-danger" id="b-delarmy">Delete ledger</button>` : ""}
-            </div>
-          </div>
-          ${canWrite ? `<input type="file" id="f-import" accept="application/json,.json" hidden>` : ""}
-        </div>
-      </div>
+      ${canWrite && store.note() ? `<div class="toolbar">${noteHtml()}</div>` : ""}
 
       ${canWrite && scheme.wonly ? `<div class="banner colours-prompt" id="wonly-banner"><span class="dot"></span><span><strong>This army was set up in War Ledger</strong>, so it's using the official ${esc(f.name)} colours. Choose your own scheme before you start painting, or keep these.</span><span class="cp-acts"><a class="btn btn-sm primary" href="#/army/${esc(army.id)}/colours">Choose your colours</a><button type="button" class="btn-sm" id="b-keepcol">Keep these colours</button></span></div>` : ""}
       ${!canWrite ? `<div class="banner viewonly"><span class="dot on"></span><span>You're viewing a shared ledger. You can look but not change anything.</span>${store.kind === "supabase" && !store.session ? `<button type="button" class="btn-sm" data-signin>Sign in</button>` : `<span class="vo-social" id="vo-social"></span>`}</div>` : ""}
-      <section class="key" id="key" aria-label="Rank colours">${scheme.tiers.map(t => `<div>${tierBadge(scheme, t, 44)}<span><strong>${esc(t.name)}</strong><small>${esc(t.note || cname(t.color) + " " + PROF.head)}</small></span></div>`).join("")}</section>
+      <section class="key" id="key" aria-label="Rank colours">${scheme.tiers.map(t => `<div><span class="rank-sw" style="background:${ART.hexOk(t.color) ? t.color : "#1f1f22"}" aria-hidden="true"></span><span><strong>${esc(t.name)}</strong><small>${esc(t.note || cname(t.color) + " " + PROF.head)}</small></span></div>`).join("")}</section>
 
         <section class="list" aria-labelledby="army-h">
           <div class="list-head">
@@ -5053,7 +5057,7 @@ Redemptor Dreadnought (210 points)</pre>
         ${selecting ? `<span class="pick" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg></span>` : ""}
         ${img ? `<div class="photo"><img src="${esc(img)}" alt="" loading="lazy" decoding="async"></div>` : ""}
         <div class="body">
-          <div class="card-top">${unitBadge(u, scheme, 60)}<div><h3><button type="button" class="card-open" ${selecting ? `aria-pressed="${pk}" aria-label="Select ${esc(u.name)}"` : `aria-label="View ${esc(u.name)}"`}>${esc(u.name)}</button>${u.own === "planned" ? PLANNED_TAG : ""}</h3><div class="type">${esc([u.datasheet && u.datasheet !== u.name ? u.datasheet : "", u.role].filter(Boolean).join(" · ") || "Unit")}</div></div>${u.points ? `<span class="pts">${num(u.points)}<small>pts</small></span>` : ""}${starBtn(u)}</div>
+          <div class="card-top">${soloBadge(unitBadge(u, scheme, 60), 60)}<div><h3><button type="button" class="card-open" ${selecting ? `aria-pressed="${pk}" aria-label="Select ${esc(u.name)}"` : `aria-label="View ${esc(u.name)}"`}>${esc(u.name)}</button>${u.own === "planned" ? PLANNED_TAG : ""}</h3><div class="type">${esc([u.datasheet && u.datasheet !== u.name ? u.datasheet : "", u.role].filter(Boolean).join(" · ") || "Unit")}</div></div>${u.points ? `<span class="pts">${num(u.points)}<small>pts</small></span>` : ""}${starBtn(u)}</div>
           <dl>
             <dt>Rank</dt><dd>${esc(tier.name || "—")}</dd>
             ${u.head === "none" ? "" : `<dt>${u.head === "bare" ? "Face" : esc(LB.helmet)}</dt><dd>${u.head === "bare" ? chip(u.skin) + "Bare head" : chip(u.helmet) + esc(nameOf(u, "helmet"))}${u.hdetail ? ", " + esc(u.hdetail) : ""}</dd>`}
@@ -5133,7 +5137,7 @@ Redemptor Dreadnought (210 points)</pre>
         <div class="media">${(() => {
           const shots = [img ? {src: img, main: true} : null, ...(u.photos || []).map(p => ({src: photoSrc(p), path: p}))].filter(x => x && x.src);
           const first = shots[0];
-          return `<div class="media-main" id="dt-main">${first ? `<img src="${esc(first.src)}" alt="Photo of ${esc(u.name)}">` : unitBadge(u, scheme, 180)}</div>
+          return `<div class="media-main" id="dt-main">${first ? `<img src="${esc(first.src)}" alt="Photo of ${esc(u.name)}">` : soloBadge(unitBadge(u, scheme, 180), 180)}</div>
             ${shots.length > 1 || canWrite ? `<div class="gallery" role="group" aria-label="Photos of ${esc(u.name)}">
               ${shots.map((x, i) => `<div class="g-item${i === 0 ? " on" : ""}"><button type="button" class="g-thumb" data-show="${esc(x.src)}" aria-label="Show photo ${i + 1}"><img src="${esc(x.src)}" alt="" loading="lazy"></button>${canWrite && x.path ? `<button type="button" class="g-rm" data-rmphoto="${esc(x.path)}" aria-label="Remove this photo" title="Remove photo">×</button>` : ""}</div>`).join("")}
               ${canWrite && (u.photos || []).length < S.MAX_PHOTOS ? `<label class="g-add" title="Add photos"><input type="file" accept="image/*" multiple data-addphoto="${esc(u.id)}" hidden><span aria-hidden="true">+</span><small>Add photo</small></label>` : ""}
@@ -5143,7 +5147,7 @@ Redemptor Dreadnought (210 points)</pre>
           <div><h2 id="dt-name">${esc(u.name)}</h2>
             <div class="meta">${esc(u.datasheet || "Unit")}${u.role ? " · " + esc(u.role) : ""} · ${plural(u.count, "model")}${u.points ? " · " + num(u.points) + "\u00a0pts" : ""}</div>
             ${u.own === "planned" ? `<p class="plan-note">${PLANNED_TAG}<span>Not bought yet. Plan its colours now; it counts towards your totals once you buy it.</span>${canWrite ? `<button type="button" class="btn-sm" data-bought="${esc(u.id)}">I bought it</button>` : ""}</p>` : ""}</div>
-          <div class="row">${img ? unitBadge(u, scheme, 64) : ""}<span class="row-end">${starBtn(u, true)}<span class="pill s-${esc(u.status)}">${esc(u.status === "done" ? "Painted" : stageLabel(u))}</span></span></div>
+          <div class="row">${img ? soloBadge(unitBadge(u, scheme, 64), 64) : ""}<span class="row-end">${starBtn(u, true)}<span class="pill s-${esc(u.status)}">${esc(u.status === "done" ? "Painted" : stageLabel(u))}</span></span></div>
           ${box("painting", "Painting", `<div class="stage-list">${STAGES.map(([k, l]) => `<span class="${(u.stages || []).includes(k) ? "on" : ""}">${l}</span>`).join("")}</div>
             <p class="prose" style="margin-top:10px">${u.painted} of ${plural(u.count, "model")} painted</p>
             ${unitMins(u) || canWrite ? `<p class="pt-line"><span>Painting time <b>${hm(unitMins(u))}</b></span>${canWrite ? (t => `<button type="button" class="btn-sm${t && t.unitId === u.id ? " on" : ""}" data-timer="${esc(u.id)}">${t && t.unitId === u.id ? "Stop timer" : "Start timer"}</button>`)(getTimer()) : ""}</p>` : ""}`)}
@@ -5580,7 +5584,7 @@ Redemptor Dreadnought (210 points)</pre>
     if(canWrite && "IntersectionObserver" in window){
       const seen = new Set();
       fabIo = new IntersectionObserver(es => { es.forEach(e => e.isIntersecting ? seen.add(e.target) : seen.delete(e.target)); $("b-fab").classList.toggle("fab-off", seen.size > 0); });
-      [app.querySelector(".toolbar .tools"), $("b-add")].filter(Boolean).forEach(el => fabIo.observe(el));
+      [app.querySelector(".liv-head .war-actions"), $("b-add")].filter(Boolean).forEach(el => fabIo.observe(el));
     }
     const before = view.cleanup;
     view.cleanup = () => {
@@ -5916,7 +5920,7 @@ Redemptor Dreadnought (210 points)</pre>
     function confirmDropRecipe(){ return true; }
     $("pd-close").addEventListener("click", () => $("paintdlg").close());
     $("paintdlg").addEventListener("close", () => { editingRecipe = null; suggesting = null; renderRecipePicks(); });
-    $("b-paints").addEventListener("click", () => openPaints("recipes"));
+
     $("f-manage-recipes").addEventListener("click", () => openPaints("recipes"));
     $("f-recipes").addEventListener("change", () => { setDirty(true); preview(); });
 
@@ -5995,7 +5999,7 @@ Redemptor Dreadnought (210 points)</pre>
       PROF = P.profileFor(a.faction);
       const sub = [u.datasheet && u.datasheet !== u.name ? u.datasheet : "", by === "role" ? "" : u.role, by === "army" ? (isPool(a) ? factionName(a.faction) : "") : (isPool(a) ? "Not in a ledger" : a.name)].filter(Boolean).join(" · ");
       return `<a class="ro-row" href="#/army/${esc(a.id)}/unit/${esc(u.id)}">
-        <span class="ro-badge">${unitBadge(u, a.scheme, 44)}</span>
+        <span class="ro-badge">${soloBadge(unitBadge(u, a.scheme, 44), 44)}</span>
         <span class="ro-name"><strong>${u.fav ? `<span class="star on" title="Starred">${STAR(true)}</span>` : ""}${esc(u.name || u.datasheet || "Unit")}${u.own === "planned" ? " " + PLANNED_TAG : ""}</strong><small>${esc(sub || "Unit")}</small></span>
         <span class="ro-prog"><span class="ro-bar"><i style="width:${pct}%"></i></span><small>${dn}/${c} painted</small></span>
         <span class="ro-pts">${u.points ? num(u.points) + "\u00a0pts" : "—"}</span>
@@ -6005,7 +6009,7 @@ Redemptor Dreadnought (210 points)</pre>
     $("ro-body").innerHTML = groups.filter(g => g.units.length).map(g => {
       const m = g.units.reduce((n, u) => n + (+u.count || 0), 0), dn = g.units.reduce((n, u) => n + unitDone(u), 0);
       let head = "";
-      if(g.army){ PROF = P.profileFor(g.army.faction); head = tierBadge(g.army.scheme, g.army.scheme.tiers[0], 34); }
+      if(g.army){ PROF = P.profileFor(g.army.faction); head = soloBadge(tierBadge(g.army.scheme, g.army.scheme.tiers[0], 34), 34); }
       const f = g.army && FBY[g.army.faction];
       return `<section class="ro-group" aria-label="${esc(g.title)}">
         <div class="ro-gh">${head}<div><h3>${esc(g.title)}</h3><small>${f ? esc(f.name) + " · " : ""}${plural(g.units.length, "unit")} · ${m ? Math.round(dn / m * 100) : 0}% painted</small></div>${g.army ? `<a class="btn btn-sm" href="#/army/${esc(g.army.id)}" aria-label="Open ${esc(g.army.name)}"><span class="lbl-long">Open ledger</span><span class="lbl-short">Open</span></a>` : ""}</div>
