@@ -490,6 +490,7 @@
     }
     lastHash = location.hash;
     if(view.cleanup){ try { view.cleanup(); } catch(e){} view.cleanup = null; }
+    view.seq = (view.seq || 0) + 1;   // pages still loading from before can tell they've been left
     const parts = (location.hash.replace(/^#\/?/, "") || "").split("/").filter(Boolean);
     // War Ledger pages are red, Livery Ledger's own pages green; shared pages keep the last one used.
     // Old links to the profile page now open Livery Ledger's overview.
@@ -532,12 +533,13 @@
         else await viewShared();
       }
       else if(parts[0] === "livery"){
-        // Livery Ledger: your profile, ledgers, roster and painting activity; logged out, the homepage with the log in form open.
+        // Livery Ledger: your profile, ledgers, collection and painting activity; logged out, the homepage with the log in form open.
         if(store.kind === "supabase" && !store.session){ await viewLanding(); setTimeout(() => openAuth("in", "Log in to see your ledgers."), 0); }
         else if(parts[1] === "new" && FBY[parts[2]]) await viewSetup({factionId: parts[2]});
         else if(parts[1] === "new") await viewLiveryNew();
         else if(parts[1] === "ledgers") await viewLiveryLedgers();
-        else if(parts[1] === "roster") await viewLiveryRoster();
+        else if(parts[1] === "collection") await viewLiveryRoster();
+        else if(parts[1] === "roster"){ history.replaceState(null, "", "#/livery/collection"); lastHash = location.hash; await viewLiveryRoster(); }
         else if(parts[1] === "activity") await viewLiveryActivity();
         else if(parts[1] === "paints") await viewLiveryPaints();
         else if(!parts[1]) await viewLivery();
@@ -647,8 +649,8 @@
     swords: '<path d="m4 4 11 11M20 4 9 15M7 14l-3 3 3 3 3-3M17 14l3 3-3 3-3-3"/>'
   };
   const BOTNAV = {
-    livery: {label: "Livery Ledger", items: [["", "Overview", "home"], ["ledgers", "Ledgers", "book"], ["roster", "Roster", "list"], ["paints", "Paints", "drop"], ["activity", "Activity", "chart"]]},
-    war: {label: "War Ledger", items: [["", "Overview", "home"], ["armies", "Armies", "shield"], ["collection", "Collection", "grid"], ["lists", "Lists", "clip"], ["battles", "Battles", "swords"]]}
+    livery: {label: "Livery Ledger", items: [["", "Overview", "home"], ["ledgers", "Ledgers", "book"], ["collection", "Collection", "list"], ["paints", "Paints", "drop"], ["activity", "Activity", "chart"]]},
+    war: {label: "War Ledger", items: [["", "Overview", "home"], ["armies", "Armies", "shield"], ["collection", "Collection", "list"], ["lists", "Lists", "clip"], ["battles", "Battles", "swords"]]}
   };
   // Which section a page belongs to, so its tab is lit (a ledger counts as Ledgers, an army list as Lists).
   function navSection(parts){
@@ -1089,17 +1091,82 @@
       return;
     }
     view.name = "war-army"; document.title = `${army.name} · War Ledger`;
-    let D = await warData(false), filter = "all", by = "role", sortBy = "name";
+    let D = await warData(false), filter = "all", by = "role", sortBy = "name", selecting = false;
+    const picked = new Set();
     try { by = localStorage.getItem("ll-army-group") || by; sortBy = localStorage.getItem("ll-army-sort") || sortBy; } catch(e){}
     if(!ARMY_GROUPS.some(g => g[0] === by)) by = "role";
     if(!ARMY_SORTS.some(g => g[0] === sortBy)) sortBy = "name";
     async function reload(){ army = await store.getArmy(id) || army; D = await warData(false); draw(); }
+    /* Select units: tick rows, then act on them all at once. */
+    const pickedUnits = () => D.byArmy(id).filter(u => picked.has(u.id));
+    function batchBar(){
+      const others = D.armies.filter(a => a.id !== id && a.faction === army.faction);
+      const lists = D.lists.filter(l => { const a = D.armies.find(x => x.id === l.armyId); return a && a.faction === army.faction; });
+      return `<div class="batch-bar" id="wa-bar" role="toolbar" aria-label="Update the selected units">
+        <span class="bb-count" id="wa-count" aria-live="polite">0 selected</span>
+        <button type="button" class="btn-sm" data-bb="all">Select all</button>
+        <span class="bb-sep" aria-hidden="true"></span>
+        <button type="button" class="btn-sm" data-bb="ready">Battle ready</button>
+        <button type="button" class="btn-sm" data-bb="bought">I bought these</button>
+        <button type="button" class="btn-sm" data-bb="star">${STAR(true).replace('width="18" height="18"', 'width="14" height="14"')}Star</button>
+        <button type="button" class="btn-sm" data-bb="unstar">Unstar</button>
+        <label class="bb-stage"><span>Move to</span><select id="wa-move"><option value="">Choose…</option>${others.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join("")}<option value="__pool">Not in an army</option></select></label>
+        ${lists.length && !D.warMissing ? `<label class="bb-stage"><span>Add to list</span><select id="wa-list"><option value="">Choose…</option>${lists.map(l => `<option value="${esc(l.id)}">${esc(l.name)}${isCrusade(l) ? " (Crusade)" : ""}</option>`).join("")}</select></label>` : ""}
+        <button type="button" class="btn-sm danger" data-bb="del">Delete</button>
+        <button type="button" class="btn-sm primary" data-bb="done">Done</button>
+      </div>`;
+    }
+    function updateBar(){
+      const c = $("wa-count"); if(!c) return;
+      const us = pickedUnits(), n = us.length;
+      c.textContent = `${n} selected`;
+      app.querySelectorAll("#wa-bar [data-bb]").forEach(b => { if(!["all", "done"].includes(b.dataset.bb)) b.disabled = !n; });
+      const bought = app.querySelector('[data-bb="bought"]'); if(bought) bought.disabled = !us.some(u => u.own === "planned");
+      ["wa-move", "wa-list"].forEach(k => { if($(k)) $(k).disabled = !n; });
+      const del = app.querySelector('[data-bb="del"]'); if(del && del.dataset.armed !== "1") del.textContent = "Delete";
+    }
+    function setSelecting(on){ selecting = on; picked.clear(); draw(); if(!on) document.body.classList.remove("selecting"); }
+    // Run one change over every selected unit, then reload and say how it went.
+    async function batch(change, done){
+      const us = pickedUnits(); if(!us.length) return;
+      let ok = 0;
+      for(const u of us){ try { if(await change(u) !== false) ok++; } catch(err){ console.error(err); } }
+      await reload(); updateBar();
+      flash(ok === us.length ? done(ok) : `${done(ok)} ${us.length - ok} couldn't be changed.`);
+    }
+    const saveU = (u, changes) => store.saveUnit(u.armyId, mergeUnit(u, changes), u.id, null, false, u);
+    async function barAction(k){
+      if(k === "all"){ D.byArmy(id).forEach(u => picked.add(u.id)); draw(); return; }
+      if(k === "done"){ setSelecting(false); return; }
+      if(k === "ready") return batch(u => u.own === "planned" ? false : saveU(u, {ready: u.count}), n => `${plural(n, "unit")} marked battle ready.`);
+      if(k === "bought") return batch(u => u.own !== "planned" ? false : saveU(u, {own: "owned"}), n => `${plural(n, "unit")} now in your collection.`);
+      if(k === "star" || k === "unstar") return batch(u => saveU(u, {fav: k === "star"}), n => `${plural(n, "unit")} ${k === "star" ? "starred" : "unstarred"}.`);
+      if(k === "del"){
+        const b = app.querySelector('[data-bb="del"]');
+        if(b.dataset.armed !== "1"){ b.dataset.armed = "1"; b.textContent = `Press again to delete ${picked.size}`; setTimeout(() => { if(b.isConnected){ b.dataset.armed = ""; updateBar(); } }, 4000); return; }
+        const n = picked.size;
+        await batch(async u => { await store.removeUnit(u); picked.delete(u.id); }, m => `Deleted ${plural(m, "unit")}.`);
+        if(!n) return;
+      }
+    }
+    async function moveTo(v){
+      let target = v, name = (D.armies.find(a => a.id === v) || {}).name || "";
+      if(v === "__pool"){ try { target = (await poolFor(army.faction, D.pools)).id; name = "your collection (not in an army)"; } catch(err){ flash("Couldn't move: " + errText(err)); return; } }
+      await batch(async u => { await store.saveUnit(target, u, u.id, null, false, u); picked.delete(u.id); }, n => `Moved ${plural(n, "unit")} to ${name}.`);
+    }
+    async function addToList(lid){
+      const l = D.lists.find(x => x.id === lid); if(!l) return;
+      const have = new Set(l.units.filter(e => e.u).map(e => e.u)), add = pickedUnits().filter(u => !have.has(u.id));
+      if(!add.length){ flash(`They're all in ${l.name} already.`); return; }
+      try { await store.saveList({...l, units: l.units.concat(add.map(u => ({u: u.id, k: entryKey()})))}, l.id); await reload(); flash(`Added ${plural(add.length, "unit")} to ${l.name}.`); }
+      catch(err){ flash("Couldn't add them: " + errText(err)); }
+    }
     // The current force as one table, or a table per group, each sorted the way chosen.
     function forceGroups(list, t){
       const r = u => readiness(u), sorted = list.slice().sort(ARMY_SORT_FN[sortBy]);
       const table = (us, total) => `<div class="wt-scroll"><table class="wtable wt-cards" role="table">
             <thead><tr><th scope="col">Unit</th><th scope="col">Role</th><th scope="col" class="n">Owned</th><th scope="col" class="n">Built</th><th scope="col" class="n">Painted</th><th scope="col" class="n">Ready</th><th scope="col" class="n">Points</th></tr></thead>
-            <tbody>${us.map(u => `<tr><th scope="row"><span class="wt-unit">${warStar(u)}<span><button type="button" class="linkish" data-unit="${esc(u.id)}">${esc(u.name)}</button>${u.own === "planned" ? PLANNED_TAG : ""}${u.datasheet && u.datasheet !== u.name ? `<small>${esc(u.datasheet)}</small>` : ""}</span></span></th>
+            <tbody>${us.map(u => `<tr${selecting && picked.has(u.id) ? ` class="picked"` : ""}><th scope="row"><span class="wt-unit">${selecting ? `<input type="checkbox" class="wa-pick" data-pick="${esc(u.id)}"${picked.has(u.id) ? " checked" : ""} aria-label="Select ${esc(u.name)}">` : warStar(u)}<span><button type="button" class="linkish" data-unit="${esc(u.id)}">${esc(u.name)}</button>${u.own === "planned" ? PLANNED_TAG : ""}${u.datasheet && u.datasheet !== u.name ? `<small>${esc(u.datasheet)}</small>` : ""}</span></span></th>
               <td class="wt-sub">${esc(u.role || "—")}</td>${statCells(r(u))}</tr>`).join("")}</tbody>
             ${total ? `<tfoot><tr><th scope="row">Total</th><td class="wt-sub"></td><td class="n" data-label="Models">${total.models}</td><td class="n" data-label="Built">${total.built}</td><td class="n" data-label="Painted">${total.painted}</td><td class="n" data-label="Ready">${total.ready}</td><td class="n" data-label="Points">${num(total.points)}</td></tr></tfoot>` : ""}
           </table></div>`;
@@ -1138,6 +1205,7 @@
         <section class="war-sec" aria-labelledby="cf-h">
           <h2 id="cf-h" class="sr-only">Current force</h2>
           <div class="list-tools tools-fill wa-tools">
+            <button type="button" class="btn-sm b-select" data-select aria-pressed="${selecting}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="m8 12 3 3 5-6"/></svg>Select units</button>
             <div class="seg" role="group" aria-label="Show"><button type="button" data-filter="all" aria-pressed="${filter === "all"}">All units</button><button type="button" data-filter="notready" aria-pressed="${filter === "notready"}">Not battle ready</button><button type="button" data-filter="fav" aria-pressed="${filter === "fav"}">${STAR(true)} Starred</button></div>
             <label class="inline">Group by<select id="wa-g">${ARMY_GROUPS.map(([k, l]) => `<option value="${k}"${k === by ? " selected" : ""}>${l}</option>`).join("")}</select></label>
             <label class="inline">Sort by<select id="wa-s">${ARMY_SORTS.map(([k, l]) => `<option value="${k}"${k === sortBy ? " selected" : ""}>${l}</option>`).join("")}</select></label>
@@ -1151,6 +1219,9 @@
         <section class="war-sec danger-zone" aria-labelledby="dz-h"><h2 id="dz-h" class="sr-only">Manage army</h2>
           <p class="hint dz-note">Deleting removes this army from War Ledger and Livery Ledger: its ${plural(units.length, "unit")} and their photos, colours and recipes${ls.length ? `, ${plural(ls.length, "army list")}` : ""}${gs.length ? `, ${plural(gs.length, "battle report")}` : ""}. It can't be undone.</p>
           <div class="row-actions"><button type="button" class="btn-sm" data-rename>Rename army</button><button type="button" class="btn-sm danger" id="w-delarmy">Delete army</button><span class="msg" id="w-amsg" role="status"></span></div></section>`;
+      if(selecting) app.insertAdjacentHTML("beforeend", batchBar());
+      document.body.classList.toggle("selecting", selecting);
+      updateBar();
       tableRoles(app);
       $("w-delarmy").addEventListener("click", () => confirmDeleteArmy(army, units, () => { location.hash = "#/war/armies"; }));
       const keep = (k, v) => { try { localStorage.setItem(k, v); } catch(err){} };
@@ -1158,8 +1229,22 @@
       if($("wa-s")) $("wa-s").addEventListener("change", e => { sortBy = e.target.value; keep("ll-army-sort", sortBy); draw(); $("wa-s").focus(); });
     }
     draw();
+    // The move and add-to-list boxes act as soon as something is chosen.
+    const onPickChange = e => {
+      if(e.target.id === "wa-move" && e.target.value) moveTo(e.target.value);
+      else if(e.target.id === "wa-list" && e.target.value) addToList(e.target.value);
+    };
+    app.addEventListener("change", onPickChange);
+    const onKey = e => { if(e.key === "Escape" && selecting && !document.querySelector("dialog[open]")) setSelecting(false); };
+    document.addEventListener("keydown", onKey);
+    const before = view.cleanup;
+    view.cleanup = () => { app.removeEventListener("change", onPickChange); document.removeEventListener("keydown", onKey); document.body.classList.remove("selecting"); if(before) before(); };
     onApp(async e => {
+      const pk = e.target.closest("[data-pick]");
+      if(pk){ if(pk.checked) picked.add(pk.dataset.pick); else picked.delete(pk.dataset.pick); pk.closest("tr").classList.toggle("picked", pk.checked); updateBar(); return; }
       const b = e.target.closest("button"); if(!b) return;
+      if(b.matches("[data-select]")){ setSelecting(!selecting); return; }
+      if(b.dataset.bb){ barAction(b.dataset.bb); return; }
       if(b.matches("[data-add-unit]")) openUnit(army, null, reload, {armies: D.armies, pools: D.pools});
       else if(b.matches("[data-from-list]")) openAddFromList(army, reload);
       else if(b.matches("[data-unit]")) { const u = D.units.find(x => x.id === b.dataset.unit); if(u) openUnit(army, u, reload, {armies: D.armies, pools: D.pools}); }
@@ -1203,7 +1288,7 @@
     });
     $("w-cf").focus();
   }
-  // The whole collection, laid out like Livery Ledger's roster: a summary under the title, quick filters,
+  // The whole collection, laid out like Livery Ledger's: a summary under the title, quick filters,
   // and units grouped by army, role or readiness.
   let collFilter = "all";
   const COLL_FILTERS = [["all", "All"], ["notready", "Not ready"], ["ready", "Ready"], ["planned", "Planned"], ["fav", "Starred"]];
@@ -2314,7 +2399,7 @@
   const shameBtn = () => `<a class="btn btn-sm" href="#/shame">Pile of shame${shameCount() ? `<span class="count">${shameCount()}</span>` : ""}</a>`;
   const settingsBtn = `<a class="btn btn-sm" href="#/settings">Settings</a>`;
 
-  const LIV_TABS = [["", "Overview"], ["ledgers", "Ledgers"], ["roster", "Roster"], ["paints", "Paints & recipes"], ["activity", "Painting activity"]];
+  const LIV_TABS = [["", "Overview"], ["ledgers", "Ledgers"], ["collection", "Collection"], ["paints", "Paints & recipes"], ["activity", "Painting activity"]];
   const livTabs = on => `<nav class="war-tabs" aria-label="Livery Ledger">${LIV_TABS.map(([k, l]) => `<a href="#/livery${k ? "/" + k : ""}"${k === on ? ` aria-current="page"` : ""}>${esc(l)}</a>`).join("")}</nav>`;
   // A page's heading on the tab pages (the overview has the profile header instead).
   const tabHead = (eyebrow, title, sub, actions) => `<section class="page-head war-head">
@@ -2352,6 +2437,23 @@
     </section>`;
 
   /* ---------- Livery overview ---------- */
+  // Every owned model across your ledgers, by how far its painting has got (planned units aren't counted).
+  const PAINT_BUCKETS = [["sprue", "Not started"], ["built", "Built"], ["primed", "Primed"], ["painting", "In progress"], ["ready", "Painted"]];
+  function paintStatus(units){
+    const bk = {sprue: 0, built: 0, primed: 0, painting: 0, ready: 0};
+    units.filter(u => u.own !== "planned").forEach(u => {
+      const n = +u.count || 0, done = Math.min(n, +u.painted || 0), rest = n - done;
+      bk.ready += done;
+      bk[{unbuilt: "sprue", built: "built", primed: "primed"}[u.status] || (u.status === "done" ? "ready" : "painting")] += rest;
+    });
+    const total = Object.values(bk).reduce((a, b) => a + b, 0);
+    if(!total) return "";
+    return `<section class="panel war-status liv-status" aria-labelledby="ps-h">
+        <h2 class="ph" id="ps-h">Painting status <small class="ws-rule">${num(bk.ready)} of ${plural(total, "model")} painted · ${Math.round(bk.ready / total * 100)}%</small></h2>
+        <div class="stack" role="img" aria-label="${esc(PAINT_BUCKETS.map(([k, l]) => `${l}: ${bk[k]}`).join(", "))}">${PAINT_BUCKETS.map(([k]) => bk[k] ? `<i class="b-${k}" style="flex:${bk[k]}"></i>` : "").join("")}</div>
+        <ul class="stack-key">${PAINT_BUCKETS.map(([k, l]) => `<li><span class="sw b-${k}"></span><span><b>${num(bk[k])}</b><small>${l}</small></span></li>`).join("")}</ul>
+      </section>`;
+  }
   async function viewLivery(){
     view.name = "home"; document.title = "Overview · Livery Ledger";
     const {armies, sum, tot} = await liveryData();
@@ -2360,8 +2462,9 @@
     app.innerHTML = `
       ${profileHead({war: false,
         stats: [[armies.length, armies.length === 1 ? "Ledger" : "Ledgers"], [num(tot.units), "Units"], [`${num(tot.done)}/${num(tot.models)}`, "Models painted"], [`${tot.models ? Math.round(tot.done / tot.models * 100) : 0}%`, "Complete"]],
-        actions: armies.length ? `<a class="btn btn-sm" href="#/livery/roster">${LIST_ICON}Your roster<span class="count">${num(tot.units)}</span></a>${shameBtn()}${settingsBtn}` : ""})}
+        actions: armies.length ? `<a class="btn btn-sm" href="#/livery/collection">${LIST_ICON}Your collection<span class="count">${num(tot.units)}</span></a>${shameBtn()}${settingsBtn}` : ""})}
       ${livTabs("")}
+      <div id="paint-status"></div>
       ${signedOut ? `<div class="banner"><span class="dot"></span>Log in to create a ledger and see the ones you've made. <button type="button" class="btn-sm" data-signin>Log in</button></div>` : ""}
       ${armies.length ? `
       <section class="war-sec" aria-labelledby="yl-h"><div class="sec-h"><h2 id="yl-h">Your ledgers</h2><div class="sec-acts">${armies.length > shown.length ? `<a href="#/livery/ledgers">All ${armies.length} ledgers</a>` : ""}${newLedgerBtn("primary btn-sm")}</div></div>
@@ -2371,6 +2474,7 @@
       : signedOut ? "" : livEmpty()}`;
     wireProfileHead();
     if(armies.length) store.listAllUnits().then(us => {
+      const ps = $("paint-status"); if(ps) ps.innerHTML = paintStatus(us.filter(u => armies.some(a => a.id === u.armyId)));
       const box = $("act-sum"); if(!box) return;
       const A = activityOf(us), goal = getGoal();
       box.innerHTML = `<div class="war-stats" aria-label="Painting activity">
@@ -2391,11 +2495,11 @@
       ${armies.length ? `<h2 class="sr-only">Ledgers</h2><div class="ledgers">${armies.map(a => ledgerCard(a, sum)).join("")}</div>` : livEmpty()}`;
   }
   async function viewLiveryRoster(){
-    view.name = "liv-roster"; document.title = "Roster · Livery Ledger";
-    app.innerHTML = `${tabHead("Livery Ledger", "Your roster", `<span id="ro-sum">Every unit across all your ledgers.</span>`, "")}
-      ${livTabs("roster")}
+    view.name = "liv-roster"; document.title = "Collection · Livery Ledger";
+    app.innerHTML = `${tabHead("Livery Ledger", "Your collection", `<span id="ro-sum">Every unit you have, in a ledger or not.</span>`, `<button type="button" class="primary" id="ro-add">+ Add unit</button>`)}
+      ${livTabs("collection")}
       <div class="ro-tools war-filters">
-        <input type="search" id="ro-q" placeholder="Search your units" aria-label="Search your roster">
+        <input type="search" id="ro-q" placeholder="Search your units" aria-label="Search your collection">
         <div class="filters" id="ro-f" role="group" aria-label="Filter by status">
           ${[["all", "All"], ["todo", "To paint"], ["progress", "In progress"], ["done", "Painted"], ["fav", "Starred"]].map(([k, l]) => `<button type="button" data-rf="${k}" aria-pressed="${rosterFilter === k}">${l}</button>`).join("")}
         </div>
@@ -2405,6 +2509,7 @@
       <div class="ro-page" id="ro-body"><p class="hint">Loading your units…</p></div>`;
     try { $("ro-g").value = localStorage.getItem("ll-roster-group") || "army"; } catch(e){}
     if(!$("ro-g").value) $("ro-g").value = "army";
+    $("ro-add").addEventListener("click", () => addToLedger(roster ? roster.armies : null));
     $("ro-q").addEventListener("input", drawRoster);
     $("ro-g").addEventListener("change", () => { try { localStorage.setItem("ll-roster-group", $("ro-g").value); } catch(e){} drawRoster(); });
     $("ro-f").addEventListener("click", e => {
@@ -2414,11 +2519,27 @@
       drawRoster();
     });
     try {
-      const {armies} = await liveryData(), units = await store.listAllUnits();
-      const byId = Object.fromEntries(armies.map(a => [a.id, a]));
-      roster = {armies, byId, units: units.filter(u => byId[u.armyId])};
+      // Units not in a ledger (War Ledger's collection holders) are listed too.
+      const [{armies}, units, all] = await Promise.all([liveryData(), store.listAllUnits(), store.listArmies()]);
+      const me = store.session ? store.session.user.id : null, pools = all.filter(a => isPool(a) && (!me || !a.owner || a.owner === me));
+      const byId = Object.fromEntries(armies.concat(pools).map(a => [a.id, a]));
+      roster = {armies, pools, byId, units: units.filter(u => byId[u.armyId])};
       if($("ro-body")) drawRoster();
-    } catch(err){ console.error(err); if($("ro-body")) $("ro-body").innerHTML = `<p class="hint">Couldn't load your roster: ${esc(errText(err))}</p>`; }
+    } catch(err){ console.error(err); if($("ro-body")) $("ro-body").innerHTML = `<p class="hint">Couldn't load your collection: ${esc(errText(err))}</p>`; }
+  }
+  // + Add unit from the collection: pick the ledger (straight there when there's only one), and its unit editor opens.
+  let addOnOpen = "";
+  async function addToLedger(armies){
+    if(!armies) armies = (await liveryData()).armies;
+    armies = armies.filter(a => !isPool(a));
+    const go = id => { addOnOpen = id; location.hash = `#/army/${id}`; };
+    if(!armies.length){ location.hash = "#/livery/new"; return; }
+    if(armies.length === 1){ go(armies[0].id); return; }
+    const d = modal("Add a unit", `
+      <label>Which ledger?<select id="ra-army">${armies.map(a => `<option value="${esc(a.id)}">${esc(a.name)} (${esc(factionName(a.faction))})</option>`).join("")}</select></label>
+      <div class="row-actions"><button type="submit" class="primary">Add unit</button></div>`);
+    d.querySelector("form").addEventListener("submit", e => { e.preventDefault(); const id = $("ra-army").value; d.close(); go(id); });
+    $("ra-army").focus();
   }
   async function viewLiveryActivity(){
     view.name = "liv-activity"; document.title = "Painting activity · Livery Ledger";
@@ -2443,12 +2564,15 @@
         <button type="button" data-pt="recipes">Recipes</button><button type="button" data-pt="owned">My paints</button><button type="button" data-pt="buy">To buy <span class="buy-badge" id="pp-buy" hidden></span></button>
       </div>
       <div id="pp-body" class="pp-body"><p class="hint">Loading…</p></div>`;
+    const seq = view.seq, left = () => view.seq !== seq || !$("pp-body");
     try {
       const res = await Promise.all([liveryData(), store.listAllUnits(), store.getPaints().catch(() => []), PU.load()]);
       armies = res[0].armies; units = res[1]; ownedList = res[2] || [];
-    } catch(err){ console.error(err); $("pp-body").innerHTML = `<p class="hint">Couldn't load your paints: ${esc(errText(err))}</p>`; return; }
+    } catch(err){ console.error(err); if(!left()) $("pp-body").innerHTML = `<p class="hint">Couldn't load your paints: ${esc(errText(err))}</p>`; return; }
+    if(left()) return;
     try { library = store.getLibrary ? await store.getLibrary() : []; }
     catch(err){ library = null; libMsg = err.code === "nolib" ? "To keep a recipe library, add the recipes table to Supabase: run supabase/recipes.sql in the SQL editor." : "Couldn't load your recipe library."; }
+    if(left()) return;
     const owned = () => new Set(ownedList.map(PU.norm));
     const isOwned = p => owned().has(PU.norm(p));
     const live = () => (library || []).filter(r => !r.deleted);
@@ -3034,7 +3158,7 @@ Redemptor Dreadnought (210 points)</pre>
              ["photo", "Photo gallery", "Up to twelve photos per unit, from bare plastic to finished."],
              ["print", "Printable guide", "Print your army's colours, recipes and paint list to keep by the brushes."],
              ["cart", "Shopping list", "Every paint your recipes need that you don't own yet, ready to copy."],
-             ["list", "Your roster", "Every unit you own, across all your ledgers, in one list."],
+             ["list", "Your collection", "Every unit you own, across all your ledgers, in one list."],
              ["star", "Starred units", "Star the units you're painting next and find them in a tap."],
              ["layers", "Batch updates", "Pick several units and set their stage, mark them painted or star them in one go."],
              ["points", "Points at a glance", "See your army's total against the limit you're building to."],
@@ -5797,7 +5921,8 @@ Redemptor Dreadnought (210 points)</pre>
     loadLibrary();
     if($("vo-social")) viewerSocial();
     drawComments(army);
-    // Came from the roster: show that unit, and tidy the address back to the ledger's.
+    if(addOnOpen === army.id){ addOnOpen = ""; if(canWrite) openNew(); }
+    // Came from the collection: show that unit, and tidy the address back to the ledger's.
     if(openUnit){
       history.replaceState(null, "", "#/army/" + army.id); lastHash = location.hash;
       if(units.some(u => u.id === openUnit)) openDetail(openUnit);
@@ -5811,7 +5936,7 @@ Redemptor Dreadnought (210 points)</pre>
   const unitDone = u => { const c = +u.count || 0; return Math.min(c, +u.painted || (u.status === "done" ? c : 0)); };
   function drawRoster(){
     if(!roster) return;
-    const {armies, byId, units} = roster;
+    const {armies, pools, byId, units} = roster;
     const q = $("ro-q").value.trim().toLowerCase(), by = $("ro-g").value;
     const models = units.reduce((n, u) => n + (+u.count || 0), 0), done = units.reduce((n, u) => n + unitDone(u), 0), pts = units.reduce((n, u) => n + (+u.points || 0), 0);
     const list = units.filter(u => {
@@ -5831,12 +5956,13 @@ Redemptor Dreadnought (210 points)</pre>
     let groups;
     if(by === "role") groups = ROLE_ORDER.concat([...new Set(list.map(u => u.role || "Other"))].filter(r => !ROLE_ORDER.includes(r))).map(r => ({key: r, title: r, units: list.filter(u => (u.role || "Other") === r)}));
     else if(by === "status") groups = ["progress", "primed", "built", "unbuilt", "done"].map(k => ({key: k, title: STATUS[k], units: list.filter(u => (u.status || "unbuilt") === k)}));
-    else groups = armies.map(a => ({key: a.id, army: a, title: a.name, units: list.filter(u => u.armyId === a.id)}));
+    else groups = armies.map(a => ({key: a.id, army: a, title: a.name, units: list.filter(u => u.armyId === a.id)}))
+      .concat({key: "loose", title: "Not in a ledger", units: list.filter(u => pools.some(p => p.id === u.armyId))});
     const keep = PROF;
     const row = u => {
       const a = byId[u.armyId], c = +u.count || 0, dn = unitDone(u), pct = c ? Math.round(dn / c * 100) : 0, st = u.status || "unbuilt";
       PROF = P.profileFor(a.faction);
-      const sub = [u.datasheet && u.datasheet !== u.name ? u.datasheet : "", by === "role" ? "" : u.role, by === "army" ? "" : a.name].filter(Boolean).join(" · ");
+      const sub = [u.datasheet && u.datasheet !== u.name ? u.datasheet : "", by === "role" ? "" : u.role, by === "army" ? (isPool(a) ? factionName(a.faction) : "") : (isPool(a) ? "Not in a ledger" : a.name)].filter(Boolean).join(" · ");
       return `<a class="ro-row" href="#/army/${esc(a.id)}/unit/${esc(u.id)}">
         <span class="ro-badge">${unitBadge(u, a.scheme, 44)}</span>
         <span class="ro-name"><strong>${u.fav ? `<span class="star on" title="Starred">${STAR(true)}</span>` : ""}${esc(u.name || u.datasheet || "Unit")}${u.own === "planned" ? " " + PLANNED_TAG : ""}</strong><small>${esc(sub || "Unit")}</small></span>

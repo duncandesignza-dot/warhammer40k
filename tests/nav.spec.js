@@ -49,3 +49,13 @@ test("shared links show a preview picture", () => {
   expect([b[0], b[1]]).toEqual([0xff, 0xd8]);   // a JPEG
   expect(b.length).toBeLessThan(300 * 1024);
 });
+
+test("leaving Paints & recipes before it has loaded doesn't break the next page", async ({page}) => {
+  await seed(page);
+  // A slow paint catalogue: the page is left long before it arrives.
+  await page.route("**/js/data/paints.js", async r => { await new Promise(res => setTimeout(res, 1500)); await r.continue(); });
+  await page.goto("/#/livery/paints");
+  await page.goto("/#/livery/new");
+  await page.waitForTimeout(2000);
+  await expect(page.locator("#app h1, #app h2").first()).toBeVisible();
+});

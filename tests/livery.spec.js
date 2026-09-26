@@ -117,3 +117,35 @@ test("on a phone, the floating Add unit button waits until the page's own button
   await page.mouse.wheel(0, 600);
   await expect(page.locator("#b-fab")).not.toHaveClass(/fab-off/);
 });
+
+test("+ Add unit on the collection page asks which ledger, then opens its unit editor", async ({page}) => {
+  await seed(page);
+  await open(page, "#/livery/collection");
+  await page.click("#ro-add");
+  await page.selectOption("#ra-army", "a2");
+  await page.click("dialog[open] [type=submit]");
+  await expect(page).toHaveURL(/#\/army\/a2$/);
+  await expect(page.locator("#editdlg")).toBeVisible();
+  await expect(page.locator("#ed-title")).toHaveText("New unit");
+});
+
+test("the Livery overview shows every model's painting status", async ({page}) => {
+  await seed(page);
+  await open(page, "#/livery");
+  const ps = page.locator(".liv-status");
+  await expect(ps).toContainText("8 of 38 models painted");
+  await expect(ps.locator(".stack-key li")).toHaveText([/1\s*Not started/, /20\s*Built/, /5\s*Primed/, /4\s*In progress/, /8\s*Painted/]);
+});
+
+test("the Livery collection (once the roster) lists units not in a ledger too, and old links still work", async ({page}) => {
+  await seed(page, `db.armies.push({id: "p1", faction: "ultramarines", name: "Ultramarines (not in an army)", scheme: {...window.LEDGER_PRESETS.presetFor("ultramarines"), pool: true}, public: false});
+    db.units.push({id: "u10", armyId: "p1", name: "Lieutenant", datasheet: "Lieutenant", role: "Character", count: 1, points: 65, painted: 0, stages: []});`);
+  await page.goto("/#/livery/roster");
+  await expect(page).toHaveURL(/#\/livery\/collection$/);
+  await expect(page.locator("h1")).toHaveText("Your collection");
+  await page.selectOption("#ro-g", "army");
+  const loose = page.locator('.ro-group[aria-label="Not in a ledger"]');
+  await expect(loose).toContainText("Lieutenant");
+  await expect(loose).toContainText("Ultramarines");
+  await expect(page.locator('.war-tabs a[aria-current="page"]')).toHaveText("Collection");
+});
