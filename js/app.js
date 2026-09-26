@@ -238,16 +238,7 @@
       <div class="acct-menu" id="acct-menu" role="menu" hidden>
         <div class="acct-head">${avatarHtml(a, "lg")}<span><strong>${esc(a.name)}</strong><small>${esc(a.email)}</small></span></div>
         <a role="menuitem" href="#/">Home</a>
-        ${war ? `<a role="menuitem" href="#/war">Overview</a>
-        <a role="menuitem" href="#/war/armies">My armies</a>
-        <a role="menuitem" href="#/war/collection">My collection</a>
-        <a role="menuitem" href="#/war/lists">Army lists</a>
-        <a role="menuitem" href="#/war/battles">Battle reports</a>`
-        : `<a role="menuitem" href="#/livery">Overview</a>
-        <a role="menuitem" href="#/livery/ledgers">My ledgers</a>
-        <a role="menuitem" href="#/livery/roster">Your roster</a>
-        <a role="menuitem" href="#/livery/paints">Paints &amp; recipes</a>
-        <a role="menuitem" href="#/livery/activity">Painting activity</a>`}
+        ${(war ? WAR_TABS : LIV_TABS).map(([k, l]) => `<a role="menuitem" href="#/${war ? "war" : "livery"}${k ? "/" + k : ""}">${esc(l)}</a>`).join("")}
         <a role="menuitem" href="#/shame">Pile of shame</a>
         <a role="menuitem" href="#/shared">Shared armies</a>
         <a role="menuitem" href="#/settings">Settings</a>
@@ -378,6 +369,33 @@
       const keep = x => !armyIds || armyIds.includes(x.armyId);
       return {lists: ls.filter(keep).map(({createdAt, updatedAt, ...l}) => l), games: gs.filter(keep).map(({createdAt, updatedAt, ...g}) => g)};
     } catch(e){ return {lists: [], games: []}; }
+  }
+  // One army's backup: its units and photos, and its army lists and battle reports.
+  async function downloadArmyBackup(army, units){
+    const war = await warRecords([army.id]);
+    downloadJSON({app: "livery-ledger", kind: "army", version: 6, exported: new Date().toISOString(),
+      army: {id: army.id, faction: army.faction, name: army.name, scheme: army.scheme},
+      units: units.map(backupUnit), lists: war.lists, games: war.games}, `livery-${slug(army.name)}-${new Date().toISOString().slice(0, 10)}.json`);
+  }
+  // An army is the same in both tools, so deleting it from either asks the same way: exactly what goes, and a
+  // chance to download a backup first.
+  async function confirmDeleteArmy(army, units, onDeleted){
+    const [ls, gs] = await Promise.all([store.listLists().catch(() => []), store.listGames().catch(() => [])]);
+    const nl = ls.filter(l => l.armyId === army.id).length, ng = gs.filter(g => g.armyId === army.id).length;
+    const goes = [units.length ? `its ${plural(units.length, "unit")}, with their photos, colours and recipes` : "", nl ? plural(nl, "army list") : "", ng ? plural(ng, "battle report") : ""].filter(Boolean);
+    const d = modal(`Delete ${esc(army.name)}?`, `
+      <p>This deletes ${esc(army.name)} from Livery Ledger and War Ledger${goes.length ? `: ${esc(goes.join(", ").replace(/, ([^,]*)$/, " and $1"))}` : ""}. It can't be undone.</p>
+      <p class="dl-tip">Want a copy first? <button type="button" class="linkish" id="dl-export">Download a backup</button> before you delete.</p>
+      <div class="row-actions"><button type="submit" class="danger armed" id="dl-go">Delete everything</button><span class="spacer"></span><button type="button" id="dl-cancel">Cancel</button><span class="msg" id="dl-msg" role="status"></span></div>`);
+    $("dl-cancel").addEventListener("click", () => d.close());
+    $("dl-export").addEventListener("click", async () => { await downloadArmyBackup(army, units); $("dl-msg").textContent = "Backup downloaded."; });
+    d.querySelector("form").addEventListener("submit", async e => {
+      e.preventDefault();
+      const b = $("dl-go"); b.disabled = true; b.textContent = "Deleting…";
+      try { await store.removeArmy(army); d.close(); flash(`Deleted ${army.name}`); onDeleted(); }
+      catch(err){ $("dl-msg").textContent = "Couldn't delete: " + errText(err); b.disabled = false; b.textContent = "Delete everything"; }
+    });
+    $("dl-cancel").focus();
   }
   // Any backup file (everything, one ledger, or older versions) as {ledgers, lists, games, ...}.
   function readBackup(d){
@@ -533,7 +551,7 @@
   // An address that isn't a page here: say so, and offer the way back.
   function viewNotFound(){
     view.name = "notfound";
-    const war = isWar(), tool = war ? "War Ledger" : "Livery Ledger";
+    const war = isWar(), tool = toolName();
     document.title = `Page not found · ${tool}`;
     app.innerHTML = `<section class="panel nf" aria-labelledby="nf-h">
       <p class="eyebrow">${tool}</p><h1 id="nf-h">Page not found</h1>
@@ -556,6 +574,7 @@
     return store.saveArmy({faction, name: `${f.name} (not in an army)`, scheme: {...P.presetFor(faction), pool: true, wonly: true}, public: false});
   }
   const isWar = () => document.documentElement.dataset.mode === "war";
+  const toolName = () => isWar() ? "War Ledger" : "Livery Ledger";
   function setMode(m){
     if(m === "war") document.documentElement.dataset.mode = "war"; else delete document.documentElement.dataset.mode;
     try { localStorage.setItem(MODE_KEY, m === "war" ? "war" : "livery"); } catch(e){}
@@ -599,7 +618,7 @@
   const ptsText = n => num(n) + " pts";
   const factionName = id => (FBY[id] || {}).name || id || "Unknown";
   const byNewest = (a, b) => (b.date || "").localeCompare(a.date || "") || (b.createdAt || "").localeCompare(a.createdAt || "");
-  const dayText = d => { const t = new Date(d + "T12:00:00"); return isNaN(t) ? d : t.toLocaleDateString("en-GB", {day: "numeric", month: "short", year: "numeric"}); };
+  const dayText = d => { if(!d) return ""; const t = new Date(d + "T12:00:00"); return isNaN(t) ? d : t.toLocaleDateString("en-GB", {day: "numeric", month: "short", year: "numeric"}); };
 
   // A star you can click, shared with Livery Ledger's starred units.
   const warStar = u => `<button type="button" class="star wstar${u.fav ? " on" : ""}" data-wstar="${esc(u.id)}" aria-pressed="${!!u.fav}" aria-label="${u.fav ? "Unstar" : "Star"} ${esc(u.name)}" title="${u.fav ? "Starred" : "Star this unit"}">${STAR(u.fav)}</button>`;
@@ -783,7 +802,7 @@
     let D = null;
     const render = async () => { D = await warData(false); app.innerHTML = `
       <section class="page-head war-head">
-        <div><p class="eyebrow">War Ledger</p><h1>My armies</h1><p class="sub">Every force you own, how ready it is and how it has fared.</p></div>
+        <div><p class="eyebrow">War Ledger</p><h1>Your armies</h1><p class="sub">Every force you own, how ready it is and how it has fared.</p></div>
         <div class="war-actions"><a class="btn primary" href="#/war/new">+ New army</a></div>
       </section>
       ${warTabs("armies")}
@@ -801,7 +820,8 @@
     const scheme = army.scheme, c = scheme.colors, role = sh ? sh.r : ((extra && extra.role) || "Infantry");
     const keep = PROF; PROF = P.profileFor(army.faction);
     const tierIdx = (role === "Epic Hero" || role === "Character") ? Math.min(2, scheme.tiers.length - 1) : 0;
-    const row = {datasheet: sh ? sh.n : "", role, name: sh ? sh.n : "", count: 1, points: sh ? sh.p || 0 : 0, stages: [], painted: 0, tier: tierIdx,
+    const def = sh ? sheetDefaults(sh) : {count: 1, points: 0};
+    const row = {datasheet: sh ? sh.n : "", role, name: sh ? sh.n : "", count: def.count, points: def.points, stages: [], painted: 0, tier: tierIdx,
       helmet: scheme.tiers[tierIdx].color, head: autoHead(role), skin: c.skin, lens: c.lens, armour: c.armour, secondary: c.secondary, trim: c.trim, emblem: c.emblem, shape: "",
       cloth: c.cloth, metal: c.metal, ...(extra || {})};
     PROF = keep; return row;
@@ -951,7 +971,7 @@
       }
       catch(err){ console.error(err); $("w-msg").textContent = "Couldn't save: " + errText(err); b.disabled = false; }
     });
-    if(u) armButton($("w-del"), "Tap again to delete", async () => {
+    if(u) armButton($("w-del"), "Press again to delete", async () => {
       try { await store.removeUnit(u); d.close(); flash(`Deleted ${u.name}`); done(); }
       catch(err){ $("w-msg").textContent = "Couldn't delete: " + errText(err); }
     });
@@ -1040,10 +1060,7 @@
           <p class="hint dz-note">Deleting removes this army from War Ledger and Livery Ledger: its ${plural(units.length, "unit")} and their photos, colours and recipes${ls.length ? `, ${plural(ls.length, "army list")}` : ""}${gs.length ? `, ${plural(gs.length, "battle report")}` : ""}. It can't be undone.</p>
           <div class="row-actions"><button type="button" class="btn-sm" data-rename>Rename army</button><button type="button" class="btn-sm danger" id="w-delarmy">Delete army</button><span class="msg" id="w-amsg" role="status"></span></div></section>`;
       tableRoles(app);
-      armButton($("w-delarmy"), "Tap again to delete it everywhere", async () => {
-        try { await store.removeArmy(army); flash(`Deleted ${army.name}`); location.hash = "#/war/armies"; }
-        catch(err){ $("w-amsg").textContent = "Couldn't delete: " + errText(err); }
-      });
+      $("w-delarmy").addEventListener("click", () => confirmDeleteArmy(army, units, () => { location.hash = "#/war/armies"; }));
     }
     draw();
     onApp(async e => {
@@ -1104,7 +1121,7 @@
     if(!["army", "role", "ready"].includes(by)) by = "army";
     const armyOf = id => D.armies.find(a => a.id === id) || D.pools.find(a => a.id === id);
     async function reload(){ D = await warData(true); draw(); }
-    app.innerHTML = `${tabHead("War Ledger", "My collection", `<span id="wc-sum">Everything you own, in an army or not.</span>`, `<button type="button" class="primary" data-coll-add>+ Add unit</button>`)}
+    app.innerHTML = `${tabHead("War Ledger", "Your collection", `<span id="wc-sum">Everything you own, in an army or not.</span>`, `<button type="button" class="primary" data-coll-add>+ Add unit</button>`)}
       ${warTabs("collection")}
       <div class="ro-tools war-filters">
         <input type="search" id="wc-q" placeholder="Search your units" aria-label="Search your collection">
@@ -1193,7 +1210,6 @@
   const detText = l => (l.detachments || []).join(" + ");
   const entryKey = () => "k" + Math.random().toString(36).slice(2, 10);
   const isCharRole = role => role === "Character" || role === "Epic Hero";
-  const niceDay = d => { const t = d && new Date(d + "T12:00:00"); return t && !isNaN(t) ? t.toLocaleDateString(undefined, {day: "numeric", month: "short", year: "numeric"}) : ""; };
   const DOTS = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="5" cy="12" r="2" fill="currentColor"/><circle cx="12" cy="12" r="2" fill="currentColor"/><circle cx="19" cy="12" r="2" fill="currentColor"/></svg>`;
   // Enhancement and leader pairings for a row in the list, as a short line.
   function entryNotes(x, rows){
@@ -1283,7 +1299,7 @@
     });
     if(l.ptsAsOf){
       const days = Math.floor((Date.now() - new Date(l.ptsAsOf + "T12:00:00")) / DAY_MS);
-      if(days > 90) add("date:" + l.ptsAsOf, `Points last checked ${niceDay(l.ptsAsOf)}.`, "Points change a few times a year, so check they're still current.");
+      if(days > 90) add("date:" + l.ptsAsOf, `Points last checked ${dayText(l.ptsAsOf)}.`, "Points change a few times a year, so check they're still current.");
     } else if(l.status === "tournament") add("date", "No points date set.", "Note when you checked the points in Edit details, so you know they're current.");
     return out;
   }
@@ -1361,7 +1377,7 @@
         <label class="span2">Status<select id="w-lst">${LIST_STATUS.map(([id, n]) => `<option value="${id}"${(l.status || "draft") === id ? " selected" : ""}>${n}</option>`).join("")}</select></label>
         <label>Points as of<input id="w-lpd" type="date" value="${esc(l.ptsAsOf || "")}" max="${isoDay(new Date())}"></label>
       </div>
-      <p class="hint">Points change when Games Workshop updates them, so note when you last checked this list's.${built ? ` Datasheet points in War Ledger were last updated ${esc(niceDay(built))}.` : ""}</p>`;
+      <p class="hint">Points change when Games Workshop updates them, so note when you last checked this list's.${built ? ` Datasheet points in War Ledger were last updated ${esc(dayText(built))}.` : ""}</p>`;
   }
   const detRow = (v, i) => `<div class="det-row"><input class="w-det" list="w-det-dl" maxlength="80" value="${esc(v)}" aria-label="Detachment ${i + 1}" placeholder="e.g. Gladius Task Force"><button type="button" class="btn-sm icon-x" data-det-rm aria-label="Remove this detachment">×</button></div>`;
   // Detachment Points against what the battle size allows. Only detachments in the datasheet data count.
@@ -1457,7 +1473,7 @@
         <section class="page-head war-head">
           <div class="wh-id">${armyBadge(army, 56)}<div><p class="eyebrow"><a href="#/war/army/${esc(army.id)}">${esc(army.name)}</a> · ${esc(factionName(army.faction))}</p><h1>${esc(list.name)}</h1>
             <p class="sub">${esc([sizeName(list), detText(list), list.limit ? ptsText(list.limit) + " limit" : "No points limit", gs.length ? `${recText(rec)} record` : ""].filter(Boolean).join(" · "))}</p>
-            <p class="lst-meta">${statusTag(list)}<span>${list.ptsAsOf ? `Points as of ${esc(niceDay(list.ptsAsOf))}` : "Points date not set"}</span></p></div></div>
+            <p class="lst-meta">${statusTag(list)}<span>${list.ptsAsOf ? `Points as of ${esc(dayText(list.ptsAsOf))}` : "Points date not set"}</span></p></div></div>
           <div class="war-actions"><button type="button" class="primary" data-log="${esc(army.id)}" data-list="${esc(list.id)}">Log a battle</button><button type="button" data-import>Paste a list</button><button type="button" data-details>Edit details</button></div>
         </section>
         ${warTabs("lists")}
@@ -1496,7 +1512,7 @@
         <section class="war-sec danger-zone"><div class="row-actions"><button type="button" class="btn-sm" data-copy>Copy as text</button><button type="button" class="btn-sm" data-dup>Duplicate list</button><button type="button" class="btn-sm danger" id="w-dellist">Delete list</button></div></section>`;
       const inp = $("lb-q");
       inp.addEventListener("input", () => { q = inp.value.trim().toLowerCase(); const pos = inp.selectionStart; draw(); const n = $("lb-q"); n.focus(); n.setSelectionRange(pos, pos); });
-      armButton($("w-dellist"), "Tap again to delete", async () => {
+      armButton($("w-dellist"), "Press again to delete", async () => {
         try { await chain; await store.removeList(list.id); flash(`Deleted ${list.name}`); location.hash = "#/war/lists"; }
         catch(err){ flash("Couldn't delete: " + errText(err)); }
       });
@@ -1599,7 +1615,7 @@
       else if(b.matches("[data-copy]")) {
         const s = listState(list, D);
         const text = [`${list.name} (${ptsText(s.points)}${list.limit ? ` of ${num(list.limit)}` : ""})`, [sizeName(list), detText(list)].filter(Boolean).join(" · "),
-          `${army.name} · ${factionName(army.faction)}`, list.ptsAsOf ? `Points as of ${niceDay(list.ptsAsOf)}` : "", ""].filter((x, i) => x || i === 4)
+          `${army.name} · ${factionName(army.faction)}`, list.ptsAsOf ? `Points as of ${dayText(list.ptsAsOf)}` : "", ""].filter((x, i) => x || i === 4)
           .concat(...byRole(s.rows.filter(x => !x.gone)).map(([role, rows]) => [role.toUpperCase(), ...rows.flatMap(x => {
             const lead = x.lead && (s.rows.find(r => r.k === x.lead && !r.gone) || {}).name;
             return [`  ${x.name}${x.count > 1 ? ` (${x.count} models)` : ""} · ${x.points} pts${x.warlord ? " · Warlord" : ""}`,
@@ -1702,7 +1718,7 @@
       try { await store.saveGame(row, edit ? g.id : null); await syncRecords([row.armyId, edit ? g.armyId : ""]); d.close(); flash(edit ? "Battle saved." : `${RES[row.result]} logged.`); again(); }
       catch(err){ console.error(err); $("w-msg").textContent = "Couldn't save: " + errText(err); b.disabled = false; }
     });
-    if(edit) armButton($("w-gdel"), "Tap again to delete", async () => {
+    if(edit) armButton($("w-gdel"), "Press again to delete", async () => {
       try { await store.removeGame(g.id); await syncRecords([g.armyId]); d.close(); flash("Battle deleted."); again(); }
       catch(err){ $("w-msg").textContent = "Couldn't delete: " + errText(err); }
     });
@@ -1839,7 +1855,7 @@
 
   /* ---------- Livery overview ---------- */
   async function viewLivery(){
-    view.name = "home"; document.title = "Livery Ledger";
+    view.name = "home"; document.title = "Overview · Livery Ledger";
     const {armies, sum, tot} = await liveryData();
     const signedOut = store.kind === "supabase" && !store.session;
     const shown = armies.slice(0, 6);
@@ -1970,7 +1986,7 @@
             <div class="row-actions">${live().length > 6 ? `<input type="search" id="pp-q" placeholder="Search recipes" aria-label="Search recipes" value="${esc(q)}">` : ""}<button type="button" class="primary btn-sm" data-pa="new">+ New recipe</button></div></div>
           ${list.length ? `<div class="recipes">${list.map(r => { const us = usedIn(r.id); return `<article class="recipe">
             <header><div><h3>${esc(r.name)}</h3><small>${esc([r.area, plural(r.steps.length, "step")].filter(Boolean).join(" · "))}</small></div>
-              <div class="row-actions"><button type="button" class="btn-sm" data-pa="edit" data-id="${esc(r.id)}">Edit</button><button type="button" class="btn-sm" data-pa="dup" data-id="${esc(r.id)}">Duplicate</button><button type="button" class="btn-sm danger${delArmed === r.id ? " armed" : ""}" data-pa="del" data-id="${esc(r.id)}">${delArmed === r.id ? "Tap again to delete" : "Delete"}</button></div></header>
+              <div class="row-actions"><button type="button" class="btn-sm" data-pa="edit" data-id="${esc(r.id)}">Edit</button><button type="button" class="btn-sm" data-pa="dup" data-id="${esc(r.id)}">Duplicate</button><button type="button" class="btn-sm danger${delArmed === r.id ? " armed" : ""}" data-pa="del" data-id="${esc(r.id)}">${delArmed === r.id ? "Press again to delete" : "Delete"}</button></div></header>
             ${steps(r)}
             ${r.notes ? `<p class="prose r-notes">${esc(r.notes)}</p>` : ""}
             <p class="r-used">${us.length ? `Used in ${us.map(a => `<a href="#/army/${esc(a.id)}">${esc(a.name)}</a>`).join(", ")}` : "Not in any ledger yet"}</p>
@@ -2878,7 +2894,7 @@ Redemptor Dreadnought (210 points)</pre>
      ============================================================ */
   async function viewShared(){
     view.name = "shared";
-    document.title = "Shared armies · Livery Ledger";
+    document.title = `Shared armies · ${toolName()}`;
     const mine = store.session ? store.session.user.id : null;
     app.innerHTML = `
       <section class="page-head">
@@ -3016,7 +3032,7 @@ Redemptor Dreadnought (210 points)</pre>
   }
   async function viewShame(){
     view.name = "shame";
-    document.title = "Pile of shame · Livery Ledger";
+    document.title = `Pile of shame · ${toolName()}`;
     let list = await getShame(), armies = [];
     try { armies = (await store.listArmies()).filter(a => !isPool(a)); } catch(e){}
     const allNames = [...new Set(FACTIONS.flatMap(f => f.units.filter(u => !u.t).map(u => u.n)))].sort();
@@ -3044,13 +3060,20 @@ Redemptor Dreadnought (210 points)</pre>
       const pool = fid ? FBY[fid].units.filter(u => !u.t).map(u => u.n) : q.length >= 2 ? allNames : [];
       return pool.filter(n => !q || n.toLowerCase().includes(q)).slice(0, 60);
     });
-    // Picking a datasheet fills in its usual model count.
-    $("kit-name").addEventListener("change", () => {
+    // Naming a datasheet fills in its usual model count (as soon as the name matches, so it's done before you
+    // move on), unless you've typed a count yourself. Tapping into the count selects it, so typing replaces it.
+    let modelsTouched = false;
+    const kitSheet = () => {
       const fid = $("kit-fac").value, name = $("kit-name").value.trim().toLowerCase();
-      const sh = (fid ? FBY[fid].units : FACTIONS.flatMap(f => f.units)).find(u => u.n.toLowerCase() === name);
-      if(sh && $("kit-models").value === "1") $("kit-models").value = sh.ms ? sh.ms[0] : minModels(sh) === 5 ? 1 : minModels(sh);
-      if(sh && !fid){ const f = FACTIONS.find(f => f.units.includes(sh)); if(f) $("kit-fac").value = f.id; }
-    });
+      const sh = name && (fid ? FBY[fid].units : FACTIONS.flatMap(f => f.units)).find(u => u.n.toLowerCase() === name);
+      if(!sh) return;
+      if(!modelsTouched) $("kit-models").value = sh.ms ? sh.ms[0] : minModels(sh) === 5 ? 1 : minModels(sh);
+      if(!fid){ const f = FACTIONS.find(f => f.units.includes(sh)); if(f) $("kit-fac").value = f.id; }
+    };
+    $("kit-name").addEventListener("input", kitSheet);
+    $("kit-name").addEventListener("change", kitSheet);
+    $("kit-models").addEventListener("input", () => { modelsTouched = true; });
+    $("kit-models").addEventListener("focus", e => e.target.select());
     function draw(){
       const kits = list.slice().sort((a, b) => a.added.localeCompare(b.added));
       const models = kits.reduce((n, k) => n + k.models, 0), value = kits.reduce((n, k) => n + k.price, 0);
@@ -3070,7 +3093,7 @@ Redemptor Dreadnought (210 points)</pre>
       const name = $("kit-name").value.trim();
       if(!name){ $("kit-msg").textContent = "Give the kit a name."; $("kit-name").focus(); return; }
       const kit = {id: S.newId(), name, faction: $("kit-fac").value, models: $("kit-models").value, price: $("kit-price").value, added: $("kit-date").value || isoDay(new Date())};
-      try { list = await putShame(list.concat(kit)); $("kit-name").value = ""; $("kit-models").value = "1"; $("kit-price").value = ""; $("kit-date").value = isoDay(new Date()); $("kit-msg").textContent = `Added ${name}.`; draw(); $("kit-name").focus(); }
+      try { list = await putShame(list.concat(kit)); $("kit-name").value = ""; $("kit-models").value = "1"; modelsTouched = false; $("kit-price").value = ""; $("kit-date").value = isoDay(new Date()); $("kit-msg").textContent = `Added ${name}.`; draw(); $("kit-name").focus(); }
       catch(err){ $("kit-msg").textContent = "Couldn't save: " + errText(err); }
     });
     $("shame-list").addEventListener("click", async e => {
@@ -3094,11 +3117,11 @@ Redemptor Dreadnought (210 points)</pre>
       const mv = e.target.closest("[data-move]");
       if(mv){
         const k = list.find(x => x.id === mv.dataset.move), armyId = mv.closest(".kit").querySelector("[data-to]").value, army = armies.find(a => a.id === armyId);
-        const units = (FBY[army.faction] || {units: []}).units, low = k.name.toLowerCase();
-        const sh = units.find(u => !u.t && u.n.toLowerCase() === low) || units.find(u => u.n.toLowerCase() === low);
+        const low = k.name.toLowerCase(), sh = sheetByName(army.faction, sheetsOf(army.faction).map(u => u.n).find(n => n.toLowerCase() === low));
         mv.disabled = true; mv.textContent = "Adding…";
         try {
-          await store.importUnits(army.id, [{datasheet: sh ? sh.n : k.name, role: sh ? sh.r : "", name: k.name, count: k.models, points: sh && sh.p ? sh.p : 0, stages: [], painted: 0, tier: 0, notes: k.note || ""}]);
+          // A new unit coloured from the ledger's scheme, priced for the kit's number of models.
+          await store.saveUnit(army.id, mergeUnit(null, unitRow(army, sh, {datasheet: sh ? sh.n : k.name, name: k.name, count: k.models, points: sh ? sheetPts(sh, k.models) ?? 0 : 0, notes: k.note || ""})), null, null, false, null);
           list = await putShame(list.filter(x => x.id !== k.id)); draw();
           alertBanner(`${k.name} is now in ${army.name}. Open the ledger to start painting.`);
         } catch(err){ mv.disabled = false; mv.textContent = "Add as a unit"; alertBanner("Couldn't add it: " + errText(err)); }
@@ -3116,7 +3139,7 @@ Redemptor Dreadnought (210 points)</pre>
     const real = b.ledgers.map((L, i) => ({L, i})).filter(x => !(x.L.scheme && x.L.scheme.pool)), loose = b.ledgers.filter(L => L.scheme && L.scheme.pool);
     const count = (arr, fn) => arr.filter(fn).length;
     const d = modal("Restore from a file", `
-      <p class="sub">${b.exported ? `This backup was made on ${esc(niceDay(String(b.exported).slice(0, 10)))}. ` : ""}What you pick is added alongside what's already here. Nothing is replaced or deleted.</p>
+      <p class="sub">${b.exported ? `This backup was made on ${esc(dayText(String(b.exported).slice(0, 10)))}. ` : ""}What you pick is added alongside what's already here. Nothing is replaced or deleted.</p>
       ${real.length ? `<fieldset class="wfs"><legend>Ledgers</legend><div class="rs-list">${real.map(({L, i}) => { const dup = have.has(String(L.name || "").trim().toLowerCase());
         return `<label class="chk"><input type="checkbox" data-rs="${i}"${dup ? "" : " checked"}><span>${esc(L.name || "Untitled")} <small>${esc(factionName(L.faction))} · ${plural((L.units || []).length, "unit")}${count(b.lists, l => l.armyId === L.id) ? ` · ${plural(count(b.lists, l => l.armyId === L.id), "list")}` : ""}${count(b.games, g => g.armyId === L.id) ? ` · ${plural(count(b.games, g => g.armyId === L.id), "battle")}` : ""}${dup ? " · you already have a ledger with this name" : ""}</small></span></label>`; }).join("")}</div></fieldset>` : ""}
       ${loose.length ? (() => { const dup = loose.some(L => havePool.has(L.faction)); return `<label class="chk"><input type="checkbox" id="rs-loose"${dup ? "" : " checked"}><span>Units not in an army <small>${plural(loose.reduce((n, L) => n + (L.units || []).length, 0), "unit")}${dup ? " · you already have units not in an army, so these could double up" : ""}</small></span></label>`; })() : ""}
@@ -3147,7 +3170,7 @@ Redemptor Dreadnought (210 points)</pre>
   }
   async function viewSettings(){
     view.name = "settings";
-    document.title = `Settings · ${isWar() ? "War" : "Livery"} Ledger`;
+    document.title = `Settings · ${toolName()}`;
     const me = acct(), online = store.kind === "supabase";
     let listPrefs = {group: "role", sort: "rank"};
     try { listPrefs = {...listPrefs, ...JSON.parse(localStorage.getItem("ll-list-prefs") || "{}")}; } catch(e){}
@@ -3671,7 +3694,7 @@ Redemptor Dreadnought (210 points)</pre>
         return;
       }
       if(t.id === "s-del"){
-        if(!armed){ armed = true; t.classList.add("armed"); t.textContent = "Click again to delete ledger and all its units"; return; }
+        if(!armed){ armed = true; t.classList.add("armed"); t.textContent = "Press again to delete ledger and all its units"; return; }
         t.disabled = true;
         try { await store.removeArmy(army); setupDirty = false; location.hash = "#/livery"; }
         catch(err){ $("s-msg").textContent = "Couldn't delete: " + errText(err); t.disabled = false; }
@@ -3714,7 +3737,6 @@ Redemptor Dreadnought (210 points)</pre>
     const sheetIcons = suggestedIcons(FBY[army.faction] || {id: army.faction, name: f.name}).slice(0, 250);
     if(String(scheme.shape).startsWith("icon:") && !sheetIcons.some(i => "icon:" + i.id === scheme.shape) && P.ICON_BY_ID[scheme.shape.slice(5)]) sheetIcons.unshift(P.ICON_BY_ID[scheme.shape.slice(5)]);
 
-    const fmt = n => Number(n || 0).toLocaleString("en");
 
     // A paint picker per colour area (the hidden input #f-<id> holds the colour).
     const colorField = (id, label) => `<label>${label}<span data-slot="${id}"></span></label>`;
@@ -3733,7 +3755,7 @@ Redemptor Dreadnought (210 points)</pre>
             : (army.scheme.rec.w + army.scheme.rec.l + army.scheme.rec.d) ? `<span class="rec-chip">${recText(army.scheme.rec)}</span> battle record` : "Colours, units and painting progress."}</p>
         </div></div>
         <div class="stats" aria-live="polite">
-          <div class="stat stat-pts"><b><span id="st-pts">0</span><small class="lim"${!canWrite && !scheme.limit ? " hidden" : ""}> / <button type="button" id="b-limit" class="lim-btn" ${canWrite ? "" : "disabled"} aria-label="Change points limit">${scheme.limit ? fmt(scheme.limit) : "set limit"}</button></small></b><span>Points</span><i class="pts-bar" aria-hidden="true"><i id="pts-bar"></i></i></div>
+          <div class="stat stat-pts"><b><span id="st-pts">0</span><small class="lim"${!canWrite && !scheme.limit ? " hidden" : ""}> / <button type="button" id="b-limit" class="lim-btn" ${canWrite ? "" : "disabled"} aria-label="Change points limit">${scheme.limit ? num(scheme.limit) : "set limit"}</button></small></b><span>Points</span><i class="pts-bar" aria-hidden="true"><i id="pts-bar"></i></i></div>
           <div class="stat"><b id="st-units">0</b><span>Units</span></div>
           <div class="stat"><b id="st-done">0/0</b><span>Models painted</span></div>
           <div class="stat"><b id="st-pct">0%</b><span>Complete</span></div>
@@ -3741,7 +3763,7 @@ Redemptor Dreadnought (210 points)</pre>
       </header>
       <div class="limit-edit" id="limit-edit" hidden>
         <span>Points limit</span>
-        <div class="seg">${[500, 1000, 1500, 2000, 2500, 3000].map(v => `<button type="button" data-lim="${v}">${fmt(v)}</button>`).join("")}</div>
+        <div class="seg">${[500, 1000, 1500, 2000, 2500, 3000].map(v => `<button type="button" data-lim="${v}">${num(v)}</button>`).join("")}</div>
         <input type="number" id="lim-custom" min="0" max="20000" step="5" placeholder="Other" aria-label="Custom points limit">
         <button type="button" class="primary btn-sm" id="lim-save">Save</button>
         <button type="button" class="btn-sm" id="lim-cancel">Cancel</button>
@@ -3751,7 +3773,7 @@ Redemptor Dreadnought (210 points)</pre>
         ${canWrite ? noteHtml() : "<span></span>"}
         <div class="tools">
           ${canWrite ? `<button type="button" class="btn-sm share-btn${army.public ? " on" : ""}" id="b-share"><span class="dot${army.public ? " on" : ""}"></span><span id="share-label">${army.public ? "Shared" : "Share"}</span></button>` : ""}
-          ${canWrite ? `<button type="button" class="btn-sm primary" id="b-list">Import army list</button>` : ""}
+          ${canWrite ? `<button type="button" class="btn-sm primary" id="b-list">Add from a list</button>` : ""}
           <button type="button" class="btn-sm" id="b-paints">Paints &amp; recipes<span class="buy-badge" id="buy-badge" hidden></span></button>
           ${canWrite ? `<a class="btn btn-sm" href="#/army/${esc(army.id)}/colours">Edit colours</a>` : ""}
           <div class="more">
@@ -3930,19 +3952,7 @@ Redemptor Dreadnought (210 points)</pre>
         </div>
       </dialog>
 
-      ${canWrite ? `<dialog id="deldlg" class="small" aria-labelledby="dl-h">
-        <div class="leavebox">
-          <h2 id="dl-h">Delete this ledger?</h2>
-          <p id="dl-text"></p>
-          <p class="dl-tip">Want a copy first? <button type="button" class="linkish" id="dl-export">Export a backup</button> before you delete.</p>
-          <div class="msg" id="dl-msg" role="status"></div>
-          <div class="row-actions">
-            <button type="button" class="danger armed" id="dl-go">Delete ledger</button>
-            <span class="spacer"></span>
-            <button type="button" id="dl-cancel">Cancel</button>
-          </div>
-        </div>
-      </dialog>` : ""}
+
 
       <dialog id="sharedlg" class="small" aria-labelledby="sh-h">
         <div class="dlg-close"><button type="button" data-close>Close</button></div>
@@ -3960,7 +3970,7 @@ Redemptor Dreadnought (210 points)</pre>
       <dialog id="listdlg" aria-labelledby="ld-h">
         <div class="dlg-close"><button type="button" data-close>Close</button></div>
         <div class="listimp">
-          <h2 id="ld-h">Import army list</h2>
+          <h2 id="ld-h">Add units from a list</h2>
           <p class="hint">Paste the text export from the Warhammer 40,000 app, New Recruit or BattleScribe, or a list code or share link from a list-building site. Units are matched to ${esc(f.name)} datasheets.</p>
           <textarea id="ld-text" rows="10" spellcheck="false" placeholder="Marshal (80 points)&#10;  • Warlord&#10;  • 1x Master-crafted power weapon&#10;&#10;Crusader Squad (150 points)&#10;  • 5x Initiate&#10;  • 5x Neophyte"></textarea>
           <div class="row-actions"><button type="button" class="btn-sm" id="ld-read">Read list</button><span class="hint" id="ld-sum"></span></div>
@@ -4275,7 +4285,7 @@ Redemptor Dreadnought (210 points)</pre>
         ${selecting ? `<span class="pick" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg></span>` : ""}
         ${img ? `<div class="photo"><img src="${esc(img)}" alt="" loading="lazy" decoding="async"></div>` : ""}
         <div class="body">
-          <div class="card-top">${unitBadge(u, scheme, 60)}<div><h3><button type="button" class="card-open" ${selecting ? `aria-pressed="${pk}" aria-label="Select ${esc(u.name)}"` : `aria-label="View ${esc(u.name)}"`}>${esc(u.name)}</button>${u.own === "planned" ? PLANNED_TAG : ""}</h3><div class="type">${esc([u.datasheet && u.datasheet !== u.name ? u.datasheet : "", u.role].filter(Boolean).join(" · ") || "Unit")}</div></div>${u.points ? `<span class="pts">${fmt(u.points)}<small>pts</small></span>` : ""}${starBtn(u)}</div>
+          <div class="card-top">${unitBadge(u, scheme, 60)}<div><h3><button type="button" class="card-open" ${selecting ? `aria-pressed="${pk}" aria-label="Select ${esc(u.name)}"` : `aria-label="View ${esc(u.name)}"`}>${esc(u.name)}</button>${u.own === "planned" ? PLANNED_TAG : ""}</h3><div class="type">${esc([u.datasheet && u.datasheet !== u.name ? u.datasheet : "", u.role].filter(Boolean).join(" · ") || "Unit")}</div></div>${u.points ? `<span class="pts">${num(u.points)}<small>pts</small></span>` : ""}${starBtn(u)}</div>
           <dl>
             <dt>Rank</dt><dd>${esc(tier.name || "—")}</dd>
             ${u.head === "none" ? "" : `<dt>${u.head === "bare" ? "Face" : esc(LB.helmet)}</dt><dd>${u.head === "bare" ? chip(u.skin) + "Bare head" : chip(u.helmet) + esc(nameOf(u, "helmet"))}${u.hdetail ? ", " + esc(u.hdetail) : ""}</dd>`}
@@ -4297,13 +4307,13 @@ Redemptor Dreadnought (210 points)</pre>
       // Units saved before points existed pick up their datasheet cost (kept when the unit is next saved).
       units.forEach(u => { if(!u.points && u.datasheet){ const p = sheetPts(sheetFor(u.datasheet), u.count); if(p) u.points = p; } });
       const list = visible(), c = $("cards");
-      if(!list.length){ c.innerHTML = `<div class="empty">${units.length ? (filter === "fav" && !query ? "No starred units yet. Tap the star on a unit to keep it here." : "No units match.") : canWrite ? "No units yet. Pick a datasheet in the form, or import your army list." : "No units in this ledger yet."}</div>`; }
+      if(!list.length){ c.innerHTML = `<div class="empty">${units.length ? (filter === "fav" && !query ? "No starred units yet. Tap the star on a unit to keep it here." : "No units match.") : canWrite ? "No units yet. Add one with + Add unit, or paste an army list with Add from a list." : "No units in this ledger yet."}</div>`; }
       else {
         // Each group sizes to its cards, so small groups sit side by side instead of one card per row.
         const groups = groupsOf(list), grouped = !!groups[0][0];
         c.classList.toggle("grouped", grouped);
         c.innerHTML = grouped ? groups.map(([name, us]) => `<section class="grp" style="--n:${Math.min(us.length, 4)}">
-            <h3 class="group-h"><span>${esc(name)}</span><small>${plural(us.length, "unit")} · ${fmt(us.reduce((a, u) => a + (u.points || 0), 0))} pts · ${us.reduce((a, u) => a + u.painted, 0)}/${us.reduce((a, u) => a + u.count, 0)} painted</small></h3>
+            <h3 class="group-h"><span>${esc(name)}</span><small>${plural(us.length, "unit")} · ${num(us.reduce((a, u) => a + (u.points || 0), 0))} pts · ${us.reduce((a, u) => a + u.painted, 0)}/${us.reduce((a, u) => a + u.count, 0)} painted</small></h3>
             <div class="grp-cards">${us.map(cardHtml).join("")}</div></section>`).join("")
           : list.map(cardHtml).join("");
       }
@@ -4313,11 +4323,11 @@ Redemptor Dreadnought (210 points)</pre>
       const pts = units.reduce((a, u) => a + (+u.points || 0), 0);
       const pct = models ? Math.round(done / models * 100) : 0;
       $("st-units").textContent = units.length; $("st-done").textContent = `${done}/${models}`; $("st-pct").textContent = pct + "%";
-      $("st-pts").textContent = fmt(pts);
+      $("st-pts").textContent = num(pts);
       const lim = scheme.limit || 0, sp = app.querySelector(".stat-pts");
       $("pts-bar").style.width = lim ? Math.min(100, pts / lim * 100) + "%" : "0";
       sp.classList.toggle("over", !!lim && pts > lim);
-      sp.title = lim ? (pts > lim ? `${fmt(pts - lim)} pts over your ${fmt(lim)} limit` : `${fmt(lim - pts)} pts left of ${fmt(lim)}`) : "No points limit set";
+      sp.title = lim ? (pts > lim ? `${num(pts - lim)} pts over your ${num(lim)} limit` : `${num(lim - pts)} pts left of ${num(lim)}`) : "No points limit set";
       $("bar").style.width = pct + "%";
       updateBuyBadge();
     }
@@ -4357,7 +4367,7 @@ Redemptor Dreadnought (210 points)</pre>
         })()}</div>
         <div class="info">
           <div><h2 id="dt-name">${esc(u.name)}</h2>
-            <div class="meta">${esc(u.datasheet || "Unit")}${u.role ? " · " + esc(u.role) : ""} · ${plural(u.count, "model")}${u.points ? " · " + fmt(u.points) + "\u00a0pts" : ""}</div>
+            <div class="meta">${esc(u.datasheet || "Unit")}${u.role ? " · " + esc(u.role) : ""} · ${plural(u.count, "model")}${u.points ? " · " + num(u.points) + "\u00a0pts" : ""}</div>
             ${u.own === "planned" ? `<p class="plan-note">${PLANNED_TAG}<span>Not bought yet. Plan its colours now; it counts towards your totals once you buy it.</span>${canWrite ? `<button type="button" class="btn-sm" data-bought="${esc(u.id)}">I bought it</button>` : ""}</p>` : ""}</div>
           <div class="row">${img ? unitBadge(u, scheme, 64) : ""}<span class="row-end">${starBtn(u, true)}<span class="pill s-${esc(u.status)}">${esc(u.status === "done" ? "Painted" : stageLabel(u))}</span></span></div>
           ${box("painting", "Painting", `<div class="stage-list">${STAGES.map(([k, l]) => `<span class="${(u.stages || []).includes(k) ? "on" : ""}">${l}</span>`).join("")}</div>
@@ -4489,7 +4499,7 @@ Redemptor Dreadnought (210 points)</pre>
     $("b-del").addEventListener("click", async () => {
       const cur = currentUnit(); if(!cur || busy) return;
       const b = $("b-del");
-      if(!armed){ armed = true; b.classList.add("armed"); b.textContent = "Click again to delete"; return; }
+      if(!armed){ armed = true; b.classList.add("armed"); b.textContent = "Press again to delete"; return; }
       busy = true; b.disabled = true;
       try { await deleteUnit(cur); setDirty(false); $("editdlg").close(); newUnit(false); }
       catch(err){ msg("Couldn't delete: " + errText(err), true); }
@@ -4571,7 +4581,7 @@ Redemptor Dreadnought (210 points)</pre>
       $("bb-unstar").addEventListener("click", () => batchSave("Unstarred", () => ({fav: false})));
       $("bb-del").addEventListener("click", async () => {
         const b = $("bb-del"), list = units.filter(u => picked.has(u.id)); if(!list.length || busy) return;
-        if(!b.classList.contains("armed")){ b.classList.add("armed"); b.textContent = `Click again to delete ${list.length}`; return; }
+        if(!b.classList.contains("armed")){ b.classList.add("armed"); b.textContent = `Press again to delete ${list.length}`; return; }
         busy = true; updateBatch(); $("bb-count").textContent = `Deleting ${plural(list.length, "unit")}…`;
         let ok = 0;
         for(const u of list){ try { await store.removeUnit(u, false); units = units.filter(x => x.id !== u.id); picked.delete(u.id); ok++; } catch(err){ console.error(err); } }
@@ -4608,7 +4618,7 @@ Redemptor Dreadnought (210 points)</pre>
       try {
         army = await store.saveArmy({faction: army.faction, name: army.name, scheme: {...army.scheme, limit: v}, public: army.public}, army.id);
         scheme.limit = army.scheme.limit;
-        $("b-limit").textContent = scheme.limit ? fmt(scheme.limit) : "set limit";
+        $("b-limit").textContent = scheme.limit ? num(scheme.limit) : "set limit";
         render();
       } catch(err){ msg("Couldn't save the limit: " + errText(err), true); }
     }
@@ -4637,7 +4647,7 @@ Redemptor Dreadnought (210 points)</pre>
       }
       if(del){
         const u = units.find(x => x.id === del.dataset.del); if(!u || busy) return;
-        if(!del.classList.contains("armed")){ del.classList.add("armed"); del.textContent = "Click again to delete"; return; }
+        if(!del.classList.contains("armed")){ del.classList.add("armed"); del.textContent = "Press again to delete"; return; }
         busy = true; del.disabled = true;
         try { await deleteUnit(u); $("detail").close(); }
         catch(err){ del.disabled = false; del.textContent = "Couldn't delete. Try again"; }
@@ -4701,7 +4711,7 @@ Redemptor Dreadnought (210 points)</pre>
       const box = $("ld-out");
       if(!parsed){ box.innerHTML = ""; return; }
       const us = parsed.units;
-      $("ld-sum").textContent = us.length ? [parsed.detachment, plural(us.length, "unit"), fmt(us.reduce((a, u) => a + (u.include ? u.points : 0), 0)) + "\u00a0pts"].filter(Boolean).join(" · ") : "";
+      $("ld-sum").textContent = us.length ? [parsed.detachment, plural(us.length, "unit"), num(us.reduce((a, u) => a + (u.include ? u.points : 0), 0)) + "\u00a0pts"].filter(Boolean).join(" · ") : "";
       box.innerHTML = (us.length ? `<div class="ld-table">
           <div class="ld-row ld-head" aria-hidden="true"><span></span><span>Datasheet</span><span>Models</span><span>Points</span><span>Weapons</span></div>
           ${us.map((u, i) => `<label class="ld-row"><span><input type="checkbox" data-inc="${i}" ${u.include ? "checked" : ""} aria-label="Include ${esc(u.name)}"></span><span><strong>${esc(u.name)}</strong><small>${esc(u.sheet.r)}${u.notes.length ? " · " + esc(u.notes.join(", ")) : ""}</small></span><span><input type="number" min="1" max="99" data-cnt="${i}" value="${u.count}" aria-label="Models in ${esc(u.name)}"></span><span>${u.points}</span><span>${esc([...u.melee, ...u.ranged].slice(0, 3).join(", ") || "—")}</span></label>`).join("")}
@@ -4711,7 +4721,7 @@ Redemptor Dreadnought (210 points)</pre>
       $("ld-actions").hidden = !us.length;
       $("ld-add").textContent = `Add ${plural(us.filter(u => u.include).length, "unit")}`;
       $("ld-lim-wrap").hidden = !parsed.limit || parsed.limit === scheme.limit;
-      $("ld-lim-text").textContent = `Set points limit to ${fmt(parsed.limit)}`;
+      $("ld-lim-text").textContent = `Set points limit to ${num(parsed.limit)}`;
     }
     if(canWrite){
       $("b-list").addEventListener("click", () => { $("ld-msg").textContent = ""; $("listdlg").showModal(); $("ld-text").focus(); });
@@ -4752,10 +4762,8 @@ Redemptor Dreadnought (210 points)</pre>
     });
     // One ledger, with its photos and the army's lists and battle reports from War Ledger.
     $("b-export").addEventListener("click", async () => {
-      const war = canWrite ? await warRecords([army.id]) : {lists: [], games: []};
-      downloadJSON({app: "livery-ledger", kind: "army", version: 6, exported: new Date().toISOString(),
-        army: {id: army.id, faction: army.faction, name: army.name, scheme: army.scheme},
-        units: units.map(backupUnit), lists: war.lists, games: war.games}, `livery-${slug(army.name)}-${new Date().toISOString().slice(0, 10)}.json`);
+      if(canWrite) await downloadArmyBackup(army, units);
+      else downloadJSON({app: "livery-ledger", kind: "army", version: 6, exported: new Date().toISOString(), army: {faction: army.faction, name: army.name, scheme: army.scheme}, units: units.map(backupUnit)}, `livery-${slug(army.name)}.json`);
       msg("Backup downloaded.");
     });
     if(canWrite){
@@ -4774,34 +4782,7 @@ Redemptor Dreadnought (210 points)</pre>
       });
     }
     if(canWrite){
-      // Delete the whole ledger, after a confirmation that says exactly what goes with it.
-      const dd = $("deldlg");
-      $("b-delarmy").addEventListener("click", () => {
-        const n = units.length, photos = units.filter(u => u.image).length;
-        const base = `This permanently deletes ${army.name}` +
-          (n ? ` and its ${plural(n, "unit")}${photos ? `, including ${plural(photos, "photo")}` : ""}` : "");
-        $("dl-text").textContent = base + ". It can't be undone.";
-        // The same army is in War Ledger, so its army lists and battle reports go with it.
-        Promise.all([store.listLists().catch(() => []), store.listGames().catch(() => [])]).then(([ls, gs]) => {
-          const nl = ls.filter(l => l.armyId === army.id).length, ng = gs.filter(g => g.armyId === army.id).length;
-          if(dd.open) $("dl-text").textContent = base + `. It's the same army in War Ledger, so it goes from there too${nl || ng ? `, along with its ${[nl ? plural(nl, "army list") : "", ng ? plural(ng, "battle report") : ""].filter(Boolean).join(" and ")}` : ""}. It can't be undone.`;
-        });
-        $("dl-msg").textContent = ""; $("dl-go").disabled = false;
-        dd.showModal(); $("dl-cancel").focus();
-      });
-      $("dl-cancel").addEventListener("click", () => dd.close());
-      dd.addEventListener("click", e => { if(e.target === dd) dd.close(); });
-      $("dl-export").addEventListener("click", () => $("b-export").click());
-      $("dl-go").addEventListener("click", async () => {
-        const b = $("dl-go"); b.disabled = true; b.textContent = "Deleting…";
-        try {
-          await store.removeArmy(army);
-          setDirty(false); view.guard = null; dd.close(); location.hash = "#/livery";
-        } catch(err){
-          $("dl-msg").textContent = "Couldn't delete: " + errText(err); $("dl-msg").classList.add("err");
-          b.disabled = false; b.textContent = "Delete ledger";
-        }
-      });
+      $("b-delarmy").addEventListener("click", () => confirmDeleteArmy(army, units, () => { setDirty(false); view.guard = null; location.hash = "#/livery"; }));
     }
     const onBeforeUnload = e => { if(dirty && canWrite){ e.preventDefault(); e.returnValue = ""; } };
     window.addEventListener("beforeunload", onBeforeUnload);
@@ -4900,7 +4881,7 @@ Redemptor Dreadnought (210 points)</pre>
         <p class="hint">Recipes from your other ledgers. Add one to use it here. Changes to a recipe carry across to every ledger that has it.</p>
         <div class="recipes">${list.map(r => `<article class="recipe lib-r">
           <header><div><h3>${esc(r.name)}</h3><small>${esc([r.area, plural(r.steps.length, "step")].filter(Boolean).join(" · "))}</small></div>
-          <div class="row-actions"><button type="button" class="btn-sm primary" data-act="lib-add" data-id="${esc(r.id)}">Add</button><button type="button" class="btn-sm danger${libDelArmed === r.id ? " armed" : ""}" data-act="lib-del" data-id="${esc(r.id)}">${libDelArmed === r.id ? "Click again to delete" : "Delete"}</button></div></header>
+          <div class="row-actions"><button type="button" class="btn-sm primary" data-act="lib-add" data-id="${esc(r.id)}">Add</button><button type="button" class="btn-sm danger${libDelArmed === r.id ? " armed" : ""}" data-act="lib-del" data-id="${esc(r.id)}">${libDelArmed === r.id ? "Press again to delete" : "Delete"}</button></div></header>
           <p class="lib-steps">${r.steps.filter(st => st.p).map(st => `<span>${PU.swatch(st.p)}${esc(st.p)}</span>`).join(`<i aria-hidden="true">→</i>`) || "No paints yet."}</p>
         </article>`).join("")}</div></section>`;
     }
@@ -5049,7 +5030,7 @@ Redemptor Dreadnought (210 points)</pre>
     }
     async function addOwned(){
       const inp = $("op-add"); const v = inp.value.trim(); if(!v) return;
-      const cat = await PU.load(); const hit = PU.find(v) || PU.search(v, [], 1)[0];
+      await PU.load(); const hit = PU.find(v) || PU.search(v, [], 1)[0];
       const label = hit && PU.norm(hit.label) === PU.norm(v) ? hit.label : v;
       if(isOwned(label)){ inp.value = ""; return; }
       try { await saveOwned(ownedList.concat(label)); renderPaints(); $("op-add").focus(); }
@@ -5111,7 +5092,7 @@ Redemptor Dreadnought (210 points)</pre>
         refreshRecipes();
       }
       else if(act === "del-recipe"){
-        if(!delArmed){ delArmed = true; b.classList.add("armed"); b.textContent = library ? "Click again to remove" : "Click again to delete"; return; }
+        if(!delArmed){ delArmed = true; b.classList.add("armed"); b.textContent = library ? "Press again to remove" : "Press again to delete"; return; }
         const gone = editingRecipe, kept = libLive().some(x => x.id === gone.id);
         try {
           await saveRecipes((scheme.recipes || []).filter(x => x.id !== gone.id)); editingRecipe = null; delArmed = false; renderPaints();
@@ -5209,7 +5190,7 @@ Redemptor Dreadnought (210 points)</pre>
     });
     $("ro-sum").textContent = units.length ? [plural(units.length, "unit"), plural(models, "model"), num(pts) + "\u00a0pts", (models ? Math.round(done / models * 100) : 0) + "% painted"].join(" · ") + (list.length !== units.length ? ` · showing ${list.length}` : "") : "";
     if(!units.length){
-      $("ro-body").innerHTML = `<div class="ro-empty"><strong>No units yet</strong><p>Open a ledger and add your units, or import your army list, and they'll all show up here.</p></div>`;
+      $("ro-body").innerHTML = `<div class="ro-empty"><strong>No units yet</strong><p>Open a ledger and add your units, or paste an army list, and they'll all show up here.</p></div>`;
       return;
     }
     if(!list.length){ $("ro-body").innerHTML = `<p class="hint">No units match. Try a different search or filter.</p>`; return; }

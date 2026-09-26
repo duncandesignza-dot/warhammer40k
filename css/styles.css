@@ -179,7 +179,6 @@ header.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:spac
 @media (max-width:900px){.layout{grid-template-columns:1fr}}
 .editor{padding:20px;position:sticky;top:76px;max-height:calc(100vh - 92px);overflow:auto;scroll-margin-top:76px;scrollbar-color:var(--line-strong) transparent}
 @media (max-width:900px){.editor{position:static;max-height:none}}
-.ed-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
 .dirty{font-family:var(--mono);font-size:.66rem;color:var(--warn);padding:2px 8px;border:1px solid rgba(251,191,36,.3);border-radius:99px}
 .preview{display:flex;flex-direction:column;align-items:center;gap:10px;margin-bottom:18px;padding:18px 10px;border-radius:var(--r);background:radial-gradient(260px 140px at 50% 30%,rgba(var(--brand-rgb),.12),transparent 70%),var(--surface-2);border:1px solid var(--line);text-align:center}
 .pv-name{font-weight:700;font-size:1.2rem;line-height:1.2;overflow-wrap:anywhere}
@@ -259,8 +258,6 @@ dialog.small{max-width:min(460px,calc(100vw - 32px))}
 .list,[id]{scroll-margin-top:84px}
 
 /* ---------- points, painting stages, grouping, import, toast ---------- */
-.cpair{display:flex;gap:8px;align-items:center}
-.cpair input[type=color]{width:56px;flex:none}
 .cname{font-family:var(--mono);font-size:.68rem;color:var(--muted)}
 label.check{flex-direction:row;align-items:center;gap:8px;color:var(--ink);font-size:.86rem}
 label.check input{width:auto}
@@ -732,10 +729,6 @@ dialog{overflow-x:hidden}
 .profile-head h1{overflow-wrap:anywhere}
 .profile-head .sub{margin-top:6px;overflow-wrap:anywhere}
 .profile-head .ph-note{margin-top:14px}
-.first-run{display:flex;gap:14px;align-items:center;padding:16px 18px;margin-top:24px;border-color:var(--brand-line);background:linear-gradient(135deg,rgba(var(--brand-rgb),.1),rgba(var(--brand-2-rgb),.04))}
-.first-run strong{display:block;font-size:1rem}
-.first-run p{margin:2px 0 0;color:var(--muted);font-size:.9rem}
-.fr-num{display:grid;place-items:center;width:34px;height:34px;border-radius:50%;flex:none;background:var(--brand);color:var(--brand-ink);font-weight:800}
 
 /* ============================================================
    Homepage
@@ -879,7 +872,6 @@ button.lg,.btn.lg{padding:13px 22px;font-size:1rem;border-radius:12px}
 .ph-actions{margin-top:14px;display:flex;gap:8px;flex-wrap:wrap}
 .ph-actions .btn-sm{gap:8px;padding:8px 14px;font-weight:600}
 .ph-actions .count{font-family:var(--mono);font-size:.72rem;padding:1px 7px;border-radius:99px;background:var(--brand-soft);color:var(--brand)}
-.rosterdlg .ed-titles p{margin:3px 0 0;font-family:var(--mono);font-size:.72rem;color:var(--muted)}
 .ro-tools{display:flex;gap:10px;flex-wrap:wrap;align-items:center;padding:14px 22px 0;flex:none}
 .ro-tools input[type=search]{flex:1 1 240px;width:auto}
 .ro-by{flex-direction:row;align-items:center;gap:8px;font-size:.82rem;white-space:nowrap}
@@ -916,7 +908,6 @@ button.lg,.btn.lg{padding:13px 22px;font-size:1rem;border-radius:12px}
   .ro-gh h3{font-size:.95rem}
   .ro-prog,.ro-pts{display:none}
 }
-.rosterdlg .ed-titles{flex-direction:column;align-items:flex-start;gap:0}
 
 /* Starred units */
 .star{background:transparent;border:0;padding:5px;border-radius:9px;color:var(--faint);line-height:0;display:inline-grid;place-items:center;flex:none}
