@@ -1342,7 +1342,7 @@ html[data-mode="war"] .bw-war{display:inline}
 .wtable .linkish{color:var(--ink);text-decoration-color:var(--line-strong);text-align:left}
 .wtable .linkish:hover{color:var(--brand)}
 .rdy{display:inline-block;min-width:28px;padding:2px 8px;border-radius:99px;text-align:center;font-weight:700}
-.rdy.ok{background:rgba(74,222,128,.14);color:var(--good)}.rdy.part{background:rgba(251,191,36,.14);color:var(--warn)}.rdy.no{background:rgba(248,113,113,.12);color:var(--bad)}
+.rdy.ok{background:rgba(74,222,128,.24);color:var(--good);box-shadow:inset 0 0 0 1px rgba(74,222,128,.45)}.rdy.part{background:rgba(74,222,128,.14);color:var(--good)}.rdy.no{background:rgba(248,113,113,.12);color:var(--bad)}
 .comp{list-style:none;padding:0;margin:0;display:flex;flex-wrap:wrap;gap:10px}
 .comp li{display:flex;flex-direction:column;min-width:108px;padding:12px 14px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface-2)}
 .comp b{font-size:1.5rem;font-weight:800;line-height:1.1}.comp span{font-weight:600;font-size:.9rem}.comp small{color:var(--muted);font-size:.78rem}
