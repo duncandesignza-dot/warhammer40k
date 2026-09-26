@@ -1725,6 +1725,8 @@
     const render = async () => { D = await warData(); drawWarLists(D); };
     await render();
     onApp(e => {
+      // Import a list makes its army too, so it works before you have one.
+      if(e.target.closest("[data-import-army]")){ openImportArmy(); return; }
       const b = e.target.closest("[data-new-list]");
       if(b) openNewList(D, b.dataset.newList || "", b.dataset.kind || ""); else warClicks(e, D, render);
     });
@@ -1734,7 +1736,7 @@
     app.innerHTML = `
       <section class="page-head war-head">
         <div><p class="eyebrow">War Ledger</p><h1>Army lists</h1><p class="sub">Your collection is every unit you've added, owned or not. A list is what you take to a particular game, and a Crusade force is the Order of Battle you grow over a campaign.</p></div>
-        <div class="war-actions">${D.armies.length && !D.warMissing ? `<button type="button" class="primary" data-new-list="">+ New list</button><button type="button" data-new-list="" data-kind="crusade">+ New Crusade force</button>` : ""}</div>
+        <div class="war-actions">${D.warMissing ? "" : `${D.armies.length ? `<button type="button" class="primary" data-new-list="">+ New list</button><button type="button" data-new-list="" data-kind="crusade">+ New Crusade force</button>` : ""}<button type="button"${D.armies.length ? "" : ` class="primary"`} data-import-army>Import a list</button>`}</div>
       </section>
       ${warTabs("lists")}
       ${missingBanner(D)}
@@ -3012,7 +3014,7 @@
     view.name = "war-new"; document.title = "New army · War Ledger";
     factionPage({war: true, crumbs: `<a href="#/war">War Ledger</a> / New army`, title: "Muster a new army",
       sub: "Choose your faction. You'll name your army next, then add your units. Or import a list you've built elsewhere.", href: id => `#/war/new/${id}`,
-      actions: `<button type="button" class="primary" data-import-army>Import an army</button>`});
+      actions: `<button type="button" class="primary" data-import-army>Import an army</button><a class="btn" href="#/war/armies">Back</a>`});
     onApp(e => { if(e.target.closest("[data-import-army]")) openImportArmy(); });
   }
   // A faction's hero picture for the new army pages, where there is one: img/heroes/<faction>.webp, then <faction>-2.webp and so on.
@@ -3068,8 +3070,10 @@
         ${factionHero(fid)}
         <label><span>Points you're building to <span class="opt">(optional)</span></span><input id="w-lim" type="number" min="0" max="20000" step="250" inputmode="numeric" placeholder="e.g. 2000"></label>
         <p class="hint">War Ledger uses the faction's official colours behind the scenes. If you start painting, you can choose your own in Livery Ledger.</p>
-        <div class="row-actions"><button type="submit" class="primary">Create army</button><a class="btn" href="#/war/new">Back</a><span class="msg" id="w-msg" role="status"></span></div>
+        <div class="row-actions"><button type="submit" class="primary">Create army</button><button type="button" id="wn-import">Import from a list</button><a class="btn" href="#/war/new">Back</a><span class="msg" id="w-msg" role="status"></span></div>
       </form>`;
+    // Already built it somewhere else: paste the list and War Ledger makes the army and a list together.
+    $("wn-import").addEventListener("click", () => openImportArmy({fid, name: $("w-name").value.trim(), limit: parseInt($("w-lim").value, 10) || 0}));
     $("w-name").focus();
     $("wn-form").addEventListener("submit", async e => {
       e.preventDefault();
@@ -3104,7 +3108,8 @@
   }
   // Import an army: paste a list and War Ledger makes the army (its units planned, so they stay out of Livery
   // Ledger until you own them) and an army list of the same units, with its detachment, warlord, enhancements and leaders.
-  function openImportArmy(){
+  // pre: {fid, name, limit} from the new army page, so the faction (and anything already typed) is filled in.
+  function openImportArmy(pre = {}){
     const d = modal("Import an army", `
       <p class="sub">Paste a list from the Warhammer 40,000 app, New Recruit, BattleScribe or a list-builder share code. War Ledger makes the army and an army list to test it with. The units are planned, not owned, so they only show in Livery Ledger once you say you own them.</p>
       <label>Army list<textarea id="ia-text" rows="9" placeholder="Paste the whole list, including the points"></textarea></label>
@@ -3115,7 +3120,10 @@
       </div>
       <div id="ia-found" class="w-found ia-found" aria-live="polite"></div>
       <div class="row-actions"><button type="submit" class="primary" id="ia-go" disabled>Import army</button><span class="msg" id="w-msg" role="status"></span></div>`, "wide");
-    let parsed = null, fidPicked = false, limTyped = false, nameTyped = false;
+    let parsed = null, fidPicked = !!FBY[pre.fid], limTyped = !!pre.limit, nameTyped = !!pre.name;
+    if(fidPicked) $("ia-f").value = pre.fid;
+    if(limTyped) $("ia-lim").value = pre.limit;
+    if(nameTyped) $("ia-name").value = pre.name;
     const read = (detect) => {
       const t = $("ia-text").value;
       if(detect && !fidPicked){ const fid = detectFaction(t); if(fid) $("ia-f").value = fid; }
