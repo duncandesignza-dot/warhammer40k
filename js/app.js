@@ -963,6 +963,7 @@
     const curArmy = isPool(army) || !army.id ? "" : army.id;
     const cur = settings.currency;
     const d = modal(u ? esc(u.name) : "Add a unit", `
+      <div class="wu-cols"><div class="wu-col">
       <div class="wgrid">
         <label class="span2">Datasheet<select id="w-sheet"><option value="">Custom unit (not in the list)</option>${sheetOptions(army.faction, u ? u.datasheet : "")}</select></label>
         <label class="span2">Name<input id="w-uname" maxlength="80" value="${esc(u ? u.name : "")}" placeholder="Leave blank to use the datasheet name"></label>
@@ -983,6 +984,7 @@
         </div>
         <p class="hint">Painted is shared with Livery Ledger, so painting progress there updates this too.</p>
       </fieldset>
+      </div><div class="wu-col">
       <fieldset class="wfs"><legend>Wargear</legend>
         <div class="wgrid">
           <label class="span3">Ranged weapons<input id="w-ranged" maxlength="600" value="${esc(u ? u.ranged : "")}" placeholder="e.g. Bolt rifles, Astartes grenade launcher"></label>
@@ -998,7 +1000,8 @@
       </fieldset>
       <label>Assembly notes<textarea id="w-asm" rows="2" maxlength="600" placeholder="e.g. magnetised arms, built with the heavy bolter">${esc(u ? u.assembly : "")}</textarea></label>
       <label>Notes<textarea id="w-notes" rows="2" maxlength="600">${esc(u ? u.notes : "")}</textarea></label>
-      <div class="row-actions"><button type="submit" class="primary">${u ? "Save unit" : "Add unit"}</button>${u ? `<button type="button" class="danger" id="w-del">Delete unit</button>` : ""}<span class="msg" id="w-msg" role="status"></span></div>`, "wide");
+      </div></div>
+      <div class="row-actions"><button type="submit" class="primary">${u ? "Save unit" : "Add unit"}</button>${u ? `<button type="button" class="danger" id="w-del">Delete unit</button>` : ""}<span class="msg" id="w-msg" role="status"></span></div>`, "wide xwide");
     const v = id => $(id).value, n = (id, max) => Math.min(max, Math.max(0, parseInt(v(id), 10) || 0));
     const syncReady = () => {
       const auto = $("w-auto").checked, count = Math.max(1, n("w-count", 99));
