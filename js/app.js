@@ -808,6 +808,21 @@
   }
 
   /* ---------- dashboard ---------- */
+  // Where the points go across every army, by broad kind of unit (the War version of Livery's painting status).
+  const COMP_KINDS = [["chars", "Characters", ["Epic Hero", "Character"]], ["line", "Battleline", ["Battleline"]], ["inf", "Infantry", ["Infantry", "Mounted", "Beast", "Swarm"]],
+    ["mon", "Monsters", ["Monster"]], ["veh", "Vehicles", ["Vehicle"]], ["trans", "Transports", ["Dedicated Transport"]], ["other", "Other", []]];
+  function forceStatus(units){
+    const bk = Object.fromEntries(COMP_KINDS.map(([k]) => [k, {pts: 0, models: 0}]));
+    units.forEach(u => { const k = (COMP_KINDS.find(c => c[2].includes(u.role)) || ["other"])[0]; bk[k].pts += +u.points || 0; bk[k].models += modelsOf(u); });
+    const t = sumUp(units);
+    if(!units.length) return "";
+    const size = k => t.points ? bk[k].pts : bk[k].models;
+    return `<section class="panel war-status war-comp" aria-labelledby="ws-h">
+        <h2 class="ph" id="ws-h">Force composition <small class="ws-rule">${num(t.points)} pts across ${plural(t.models, "model")}</small></h2>
+        <div class="stack" role="img" aria-label="${esc(COMP_KINDS.map(([k, l]) => `${l}: ${num(bk[k].pts)} points, ${plural(bk[k].models, "model")}`).join("; "))}">${COMP_KINDS.map(([k]) => size(k) ? `<i class="c-${k}" style="flex:${size(k)}"></i>` : "").join("")}</div>
+        <ul class="stack-key">${COMP_KINDS.filter(([k]) => bk[k].models).map(([k, l]) => `<li><span class="sw c-${k}"></span><span><b>${num(bk[k].pts)}<small class="sk-u"> pts</small></b><small>${l} · ${pctOf(bk[k].pts, t.points)}%</small></span></li>`).join("")}</ul>
+      </section>`;
+  }
   async function viewWarDash(){
     view.name = "war"; document.title = "Overview · War Ledger";
     let D = null;
@@ -819,7 +834,7 @@
     onApp(e => warClicks(e, D, render));
   }
   function drawWarDash(D){
-    const all = sumUp(D.units.filter(u => D.armies.concat(D.pools).some(a => a.id === u.armyId)));
+    const mine = D.units.filter(u => D.armies.concat(D.pools).some(a => a.id === u.armyId)), all = sumUp(mine);
     const rec = recordOf(D.games), shown = D.armies.slice(0, 6);
     app.innerHTML = `
       ${profileHead({war: true,
@@ -829,6 +844,7 @@
       ${missingBanner(D)}
       <div id="wd-tag"></div>
       ${D.armies.length ? `
+      ${forceStatus(mine)}
       <section class="war-sec" aria-labelledby="wa-h"><div class="sec-h"><h2 id="wa-h">Your armies</h2><div class="sec-acts">${D.armies.length > shown.length ? `<a href="#/war/armies">All ${D.armies.length} armies</a>` : ""}<a class="btn primary btn-sm" href="#/war/new">+ New army</a></div></div>
         <div class="ledgers">${shown.map(a => armyCard(a, D)).join("")}</div></section>
       <section class="war-sec" aria-labelledby="wb-h"><div class="sec-h"><h2 id="wb-h">Recent battles</h2><div class="sec-acts">${D.games.length ? `<a href="#/war/battles">All battles · ${recText(rec)}</a>` : ""}${D.warMissing ? "" : `<button type="button" class="btn-sm" data-log="">Log a battle</button>`}</div></div>

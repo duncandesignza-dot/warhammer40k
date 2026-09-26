@@ -87,6 +87,9 @@ test("lists and armies work with units you don't own: no readiness or ownership 
   // And the overview and settings don't mention it.
   await open(page, "#/war");
   await expect(page.locator("main")).not.toContainText(/battle ready|Collection status/i);
+  // Instead it shows where the points go: every unit counts, owned or not (the planned Gladiator Lancer is a vehicle).
+  await expect(page.locator(".war-comp .ws-rule")).toHaveText("1,070 pts across 39 models");
+  expect(await page.locator(".war-comp .stack-key li").allTextContents()).toEqual(["295 ptsCharacters · 28%", "260 ptsBattleline · 24%", "160 ptsInfantry · 15%", "355 ptsVehicles · 33%"]);
   await open(page, "#/settings");
   await expect(page.locator("#set-ready")).toHaveCount(0);
 });
