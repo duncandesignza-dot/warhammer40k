@@ -3017,7 +3017,12 @@
     "astra-militarum": "Astra Militarum: Guardsmen advance under a regimental banner",
     "adepta-sororitas": "Adepta Sororitas: a Canoness leads Battle Sisters against Tyranids",
     "adeptus-custodes": "Adeptus Custodes: Trajann Valoris and a Shield-Captain in golden armour",
-    "imperial-knights": "Imperial Knights: blue and gold Knights of a noble house stride out to war"
+    "imperial-knights": "Imperial Knights: blue and gold Knights of a noble house stride out to war",
+    "emperors-children": "Emperor's Children: Fulgrim and a pink Land Raider lead the legion into battle",
+    "chaos-space-marines": "Chaos Space Marines: Abaddon the Despoiler leads the Black Legion against Ultramarines",
+    "death-guard": "Death Guard: Plague Marines and their daemon engines advance through a poisoned swamp",
+    "chaos-knights": "Chaos Knights: dark Knights and War Dogs stride against the Aeldari",
+    "chaos-daemons": "Chaos Daemons: a Great Unclean One, a Keeper of Secrets and their daemons"
   };
   const factionHero = fid => FACTION_HEROES[fid] ? `<figure class="faction-hero"><img src="img/heroes/${esc(fid)}.webp" alt="${esc(FACTION_HEROES[fid])}" width="800" height="250" decoding="async"></figure>` : "";
   // Second step of a new army: its name and the points you're building to.
