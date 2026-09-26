@@ -527,3 +527,18 @@ test("the eye on army and collection tables shows a unit's datasheet, and the un
   await page.click('[aria-label="Datasheet for Intercessor Squad"]');
   await expect(page.locator("#ds-body .ds-kws")).toContainText("Battleline");
 });
+
+test("new army pages show the faction's picture under the army name, where there is one", async ({page}) => {
+  await seed(page);
+  for(const f of ["black-templars", "blood-angels", "deathwatch", "grey-knights", "imperial-fists", "iron-hands"]){
+    await open(page, "#/war/new/" + f);
+    const img = page.locator("#wn-form .faction-hero img");
+    await expect(img).toHaveAttribute("alt", /.+/);
+    await expect.poll(() => img.evaluate(i => i.complete && i.naturalWidth)).toBe(800);
+  }
+  await open(page, "#/livery/new/black-templars");
+  await expect(page.locator(".setup .faction-hero img")).toBeVisible();
+  // Factions without a picture just have the form.
+  await open(page, "#/war/new/orks");
+  await expect(page.locator(".faction-hero")).toHaveCount(0);
+});

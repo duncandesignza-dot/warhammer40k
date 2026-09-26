@@ -3000,7 +3000,14 @@
     onApp(e => { if(e.target.closest("[data-import-army]")) openImportArmy(); });
   }
   // A faction's hero picture for the new army pages, where there is one (img/heroes/<faction>.webp).
-  const FACTION_HEROES = {"black-templars": "Black Templars: the High Marshal leads a crusade of Primaris and Firstborn Templars"};
+  const FACTION_HEROES = {
+    "black-templars": "Black Templars: the High Marshal leads a crusade of Primaris and Firstborn Templars",
+    "blood-angels": "Blood Angels: the Sanguinor and the Sanguinary Guard charge a Necron line",
+    "deathwatch": "Deathwatch: a kill team in black armour fights Genestealer Cult hybrids",
+    "grey-knights": "Grey Knights: silver-armoured Grey Knights and their Rhinos face the Death Guard",
+    "imperial-fists": "Imperial Fists: yellow-armoured Terminators, a tank and a Dreadnought hold the walls",
+    "iron-hands": "Iron Hands: an Iron Father leads a line of black-armoured Space Marines"
+  };
   const factionHero = fid => FACTION_HEROES[fid] ? `<figure class="faction-hero"><img src="img/heroes/${esc(fid)}.webp" alt="${esc(FACTION_HEROES[fid])}" width="800" height="250" decoding="async"></figure>` : "";
   // Second step of a new army: its name and the points you're building to.
   async function viewWarNewFaction(fid){
