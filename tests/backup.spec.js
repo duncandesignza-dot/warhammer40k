@@ -69,3 +69,19 @@ test("a file that isn't a backup is turned away politely", async ({page}, info) 
   await page.setInputFiles("#set-restore-f", file);
   await expect(page.locator("#set-rmsg")).toHaveText("That file isn't a Livery Ledger backup.");
 });
+
+test("photos saved in the browser move to its photo store, show after a reload and still go into backups", async ({page}, info) => {
+  await seed(page, EXTRA);
+  await expect.poll(async () => JSON.stringify(await saved(page)).includes("data:image")).toBe(false);
+  const d = await saved(page);
+  expect(d.units.find(u => u.id === "u1").image).toMatch(/^idb:/);
+  expect(d.units.find(u => u.id === "u2").photos[0]).toMatch(/^idb:/);
+  await page.reload();
+  await open(page, "#/army/a1");
+  await expect(page.locator(".card img[src^='blob:']").first()).toBeVisible();
+  await open(page, "#/settings");
+  const j = await download(page, "#set-export", info.outputPath("photos.json"));
+  const units = j.ledgers.flatMap(l => l.units);
+  expect(units.find(u => u.name === "Captain").image).toMatch(/^data:image\//);
+  expect(units.find(u => u.name === "Intercessor Squad").photos[0]).toMatch(/^data:image\//);
+});

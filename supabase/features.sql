@@ -1,6 +1,7 @@
 -- Livery Ledger: database setup for newer features.
 -- Run this once in Supabase: SQL Editor -> New query -> paste all of this -> Run.
 -- It's safe to run again; it only adds what's missing.
+-- On a brand-new Supabase project, run supabase/setup.sql first.
 
 -- 1. Delete account (Settings -> Delete my account)
 --    Lets a logged-in painter delete their own account and everything saved with it.
@@ -110,3 +111,35 @@ alter table public.games enable row level security;
 drop policy if exists "Your own games" on public.games;
 create policy "Your own games" on public.games for all to authenticated using (owner = auth.uid())
   with check (owner = auth.uid() and exists (select 1 from public.armies a where a.id = army_id and a.owner = auth.uid()));
+
+-- 8. Comments on shared armies
+--    Anyone can read the comments on a shared army; logged-in painters can comment. You can delete your own
+--    comments, and any comment on your own army. by_name and by_pic are the commenter's display name and
+--    picture when they posted (never their email).
+create table if not exists public.comments (
+  id uuid primary key default gen_random_uuid(),
+  army_id uuid not null references public.armies(id) on delete cascade,
+  owner uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  body text not null check (char_length(body) between 1 and 1000),
+  by_name text not null default '' check (char_length(by_name) <= 40),
+  by_pic text not null default '' check (char_length(by_pic) <= 600),
+  created_at timestamptz not null default now()
+);
+create index if not exists comments_army_idx on public.comments(army_id, created_at);
+alter table public.comments enable row level security;
+drop policy if exists "Read comments on shared armies and your own" on public.comments;
+create policy "Read comments on shared armies and your own" on public.comments for select to anon, authenticated
+  using (exists (select 1 from public.armies a where a.id = army_id and (a.public or a.owner = auth.uid())));
+drop policy if exists "Comment as yourself on shared armies" on public.comments;
+create policy "Comment as yourself on shared armies" on public.comments for insert to authenticated
+  with check (owner = auth.uid() and exists (select 1 from public.armies a where a.id = army_id and (a.public or a.owner = auth.uid())));
+drop policy if exists "Delete your comments, or any on your army" on public.comments;
+create policy "Delete your comments, or any on your army" on public.comments for delete to authenticated
+  using (owner = auth.uid() or exists (select 1 from public.armies a where a.id = army_id and a.owner = auth.uid()));
+
+-- 9. War Ledger: battles against a friend
+--    Tag a painter you follow as your opponent and they can see that battle, then add it to their own record.
+alter table public.games add column if not exists opp_user uuid references auth.users(id) on delete set null;
+create index if not exists games_opp_user_idx on public.games(opp_user) where opp_user is not null;
+drop policy if exists "See battles you were tagged in" on public.games;
+create policy "See battles you were tagged in" on public.games for select to authenticated using (opp_user = auth.uid());

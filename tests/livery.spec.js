@@ -77,3 +77,43 @@ test("a kit from the pile of shame keeps the model count you type, and joins a l
   const u = (await saved(page)).units.filter(x => x.name === "Intercessor Squad").pop();
   expect([u.armyId, u.count, u.points, u.role]).toEqual(["a1", 10, 150, "Battleline"]);
 });
+
+test("painting time: a timer that survives a reload, time added by hand, and the totals on Painting activity", async ({page}) => {
+  await seed(page);
+  await open(page, "#/army/a1");
+  await page.getByRole("button", {name: "View Captain"}).click();
+  await page.click("[data-timer]");
+  await expect(page.locator("#ptimer")).toContainText("Painting Captain");
+  // Pretend it has been running for 50 minutes, then come back to the page.
+  await page.evaluate(() => { const t = JSON.parse(localStorage.getItem("ll-timer")); t.start -= 50 * 60000; localStorage.setItem("ll-timer", JSON.stringify(t)); });
+  await page.reload();
+  await expect(page.locator("#ptimer .pt-clock")).toContainText("0:50:");
+  await page.click("[data-tstop]");
+  await expect(page.locator("#pt-m")).toHaveValue("50");
+  await page.click("dialog[open] [type=submit]");
+  await expect(page.locator("#ptimer")).toHaveCount(0);
+  await expect.poll(async () => (await saved(page)).units.find(u => u.id === "u1").tlog).toEqual([{d: expect.any(String), m: 50}]);
+  // Add more by hand from the editor.
+  await page.getByRole("button", {name: "View Captain"}).click();
+  await page.click("[data-edit]");
+  await expect(page.locator("#f-ptime")).toContainText("Painting time 50m");
+  await page.click("#pt-add"); await page.fill("#pt-h", "1"); await page.fill("#pt-m", "10");
+  await page.click("form:has(#pt-h) [type=submit]");
+  await expect(page.locator("#f-ptime")).toContainText("Painting time 2h");
+  // Saving the editor keeps the time.
+  await page.click("#b-save");
+  await expect.poll(async () => (await saved(page)).units.find(u => u.id === "u1").tlog.reduce((a, e) => a + e.m, 0)).toBe(120);
+  await open(page, "#/livery/activity");
+  await expect(page.locator(".act-time")).toContainText("2h");
+  await expect(page.locator(".at-top li").first()).toContainText("Captain");
+});
+
+test("on a phone, the floating Add unit button waits until the page's own buttons scroll away", async ({page}) => {
+  await page.setViewportSize({width: 390, height: 844});
+  await seed(page);
+  await open(page, "#/army/a1");
+  await expect(page.locator("#b-fab")).toHaveClass(/fab-off/);
+  await page.locator("#cards .card").last().scrollIntoViewIfNeeded();
+  await page.mouse.wheel(0, 600);
+  await expect(page.locator("#b-fab")).not.toHaveClass(/fab-off/);
+});
