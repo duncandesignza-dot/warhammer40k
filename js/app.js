@@ -2999,6 +2999,9 @@
       actions: `<button type="button" class="primary" data-import-army>Import an army</button>`});
     onApp(e => { if(e.target.closest("[data-import-army]")) openImportArmy(); });
   }
+  // A faction's hero picture for the new army pages, where there is one (img/heroes/<faction>.webp).
+  const FACTION_HEROES = {"black-templars": "Black Templars: the High Marshal leads a crusade of Primaris and Firstborn Templars"};
+  const factionHero = fid => FACTION_HEROES[fid] ? `<figure class="faction-hero"><img src="img/heroes/${esc(fid)}.webp" alt="${esc(FACTION_HEROES[fid])}" width="800" height="250" decoding="async"></figure>` : "";
   // Second step of a new army: its name and the points you're building to.
   async function viewWarNewFaction(fid){
     const f = FBY[fid];
@@ -3006,6 +3009,7 @@
     app.innerHTML = `
       <div class="crumbs"><a href="#/war">War Ledger</a> / <a href="#/war/new">New army</a> / ${esc(f.name)}</div>
       <section class="page-head war-head"><div class="wh-id">${soloBadge(factionBadge(fid, 64), 64)}<div><p class="eyebrow">War Ledger · ${esc(f.group || "")}</p><h1>New ${esc(f.name)} army</h1><p class="sub">Name your force. You can add units straight after.</p></div></div></section>
+      ${factionHero(fid)}
       <form class="panel war-newform" id="wn-form" novalidate>
         <label>Army name<input id="w-name" maxlength="80" placeholder="e.g. ${esc(f.name)} Strike Force" autocomplete="off"></label>
         <label><span>Points you're building to <span class="opt">(optional)</span></span><input id="w-lim" type="number" min="0" max="20000" step="250" inputmode="numeric" placeholder="e.g. 2000"></label>
@@ -4514,6 +4518,7 @@ Redemptor Dreadnought (210 points)</pre>
         <div><h1>${editing ? "Your colours" : esc(f.name)}</h1>
         <p class="sub">${editing ? "Change your army's colours. Units that use the scheme colours update to match." : "Name your army and choose its colours. These become the starting colours for every unit you add."}</p></div>
       </div>
+      ${editing ? "" : factionHero(f.id)}
       ${locked ? `<div class="banner"><span class="dot"></span>Sign in to create a ledger. <button type="button" class="btn-sm" data-signin>Sign in</button></div>` : ""}
       <div class="setup">
         <div>

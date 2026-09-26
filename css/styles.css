@@ -1837,3 +1837,5 @@ dialog.wdlg.xwide{max-width:min(1120px,calc(100vw - 24px))}
 @media (max-width:640px){.lp-parade{grid-template-columns:repeat(5,minmax(0,1fr));justify-items:center}.lp-parade>span{padding:4px}.lp-parade>span:nth-child(n+7){display:grid}}
 @media (max-width:370px){.lp-parade{grid-template-columns:repeat(5,minmax(0,1fr))}.lp-parade svg{width:40px;height:40px}}
 @media (min-width:641px){.lp-parade{display:grid;grid-template-columns:repeat(5,max-content)}}
+.faction-hero{margin:0 0 22px;max-width:800px;border-radius:14px;overflow:hidden;border:1px solid var(--line);background:var(--surface)}
+.faction-hero img{display:block;width:100%;height:auto;aspect-ratio:16/5;object-fit:cover}
