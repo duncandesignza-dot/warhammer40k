@@ -2475,7 +2475,7 @@
   }
   async function viewLiveryRoster(){
     view.name = "liv-roster"; document.title = "Roster · Livery Ledger";
-    app.innerHTML = `${tabHead("Livery Ledger", "Your roster", `<span id="ro-sum">Every unit across all your ledgers.</span>`, "")}
+    app.innerHTML = `${tabHead("Livery Ledger", "Your roster", `<span id="ro-sum">Every unit across all your ledgers.</span>`, `<button type="button" class="primary" id="ro-add">+ Add unit</button>`)}
       ${livTabs("roster")}
       <div class="ro-tools war-filters">
         <input type="search" id="ro-q" placeholder="Search your units" aria-label="Search your roster">
@@ -2488,6 +2488,7 @@
       <div class="ro-page" id="ro-body"><p class="hint">Loading your units…</p></div>`;
     try { $("ro-g").value = localStorage.getItem("ll-roster-group") || "army"; } catch(e){}
     if(!$("ro-g").value) $("ro-g").value = "army";
+    $("ro-add").addEventListener("click", () => addToLedger(roster ? roster.armies : null));
     $("ro-q").addEventListener("input", drawRoster);
     $("ro-g").addEventListener("change", () => { try { localStorage.setItem("ll-roster-group", $("ro-g").value); } catch(e){} drawRoster(); });
     $("ro-f").addEventListener("click", e => {
@@ -2502,6 +2503,20 @@
       roster = {armies, byId, units: units.filter(u => byId[u.armyId])};
       if($("ro-body")) drawRoster();
     } catch(err){ console.error(err); if($("ro-body")) $("ro-body").innerHTML = `<p class="hint">Couldn't load your roster: ${esc(errText(err))}</p>`; }
+  }
+  // + Add unit from the roster: pick the ledger (straight there when there's only one), and its unit editor opens.
+  let addOnOpen = "";
+  async function addToLedger(armies){
+    if(!armies) armies = (await liveryData()).armies;
+    armies = armies.filter(a => !isPool(a));
+    const go = id => { addOnOpen = id; location.hash = `#/army/${id}`; };
+    if(!armies.length){ location.hash = "#/livery/new"; return; }
+    if(armies.length === 1){ go(armies[0].id); return; }
+    const d = modal("Add a unit", `
+      <label>Which ledger?<select id="ra-army">${armies.map(a => `<option value="${esc(a.id)}">${esc(a.name)} (${esc(factionName(a.faction))})</option>`).join("")}</select></label>
+      <div class="row-actions"><button type="submit" class="primary">Add unit</button></div>`);
+    d.querySelector("form").addEventListener("submit", e => { e.preventDefault(); const id = $("ra-army").value; d.close(); go(id); });
+    $("ra-army").focus();
   }
   async function viewLiveryActivity(){
     view.name = "liv-activity"; document.title = "Painting activity · Livery Ledger";
@@ -5880,6 +5895,7 @@ Redemptor Dreadnought (210 points)</pre>
     loadLibrary();
     if($("vo-social")) viewerSocial();
     drawComments(army);
+    if(addOnOpen === army.id){ addOnOpen = ""; if(canWrite) openNew(); }
     // Came from the roster: show that unit, and tidy the address back to the ledger's.
     if(openUnit){
       history.replaceState(null, "", "#/army/" + army.id); lastHash = location.hash;

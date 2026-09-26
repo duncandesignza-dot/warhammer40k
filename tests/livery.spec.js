@@ -117,3 +117,14 @@ test("on a phone, the floating Add unit button waits until the page's own button
   await page.mouse.wheel(0, 600);
   await expect(page.locator("#b-fab")).not.toHaveClass(/fab-off/);
 });
+
+test("+ Add unit on the roster asks which ledger, then opens its unit editor", async ({page}) => {
+  await seed(page);
+  await open(page, "#/livery/roster");
+  await page.click("#ro-add");
+  await page.selectOption("#ra-army", "a2");
+  await page.click("dialog[open] [type=submit]");
+  await expect(page).toHaveURL(/#\/army\/a2$/);
+  await expect(page.locator("#editdlg")).toBeVisible();
+  await expect(page.locator("#ed-title")).toHaveText("New unit");
+});
