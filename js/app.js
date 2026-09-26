@@ -503,6 +503,7 @@
         else if(parts[1] === "armies") await viewWarArmies();
         else if(parts[1] === "collection") await viewWarCollection();
         else if(parts[1] === "list" && parts[2]) await viewWarList(parts[2]);
+        else if(parts[1] === "compare") await viewWarCompare(parts[2], parts[3]);
         else if(parts[1] === "lists") await viewWarLists();
         else if(parts[1] === "battles") await viewWarBattles();
         else if(!parts[1]) await viewWarDash();
@@ -647,7 +648,7 @@
   };
   // Which section a page belongs to, so its tab is lit (a ledger counts as Ledgers, an army list as Lists).
   function navSection(parts){
-    if(parts[0] === "war") return ({army: "armies", new: "armies", list: "lists"})[parts[1]] || (BOTNAV.war.items.some(i => i[0] === parts[1]) ? parts[1] || "" : "");
+    if(parts[0] === "war") return ({army: "armies", new: "armies", list: "lists", compare: "lists"})[parts[1]] || (BOTNAV.war.items.some(i => i[0] === parts[1]) ? parts[1] || "" : "");
     if(parts[0] === "army" || parts[0] === "new") return "ledgers";
     if(parts[0] === "livery") return parts[1] === "new" ? "ledgers" : parts[1] || "";
     return null;
@@ -1231,15 +1232,58 @@
   // "Things to check": friendly notes about a list. They're suggestions only and never stop you using it,
   // because house rules, missions and new rules all change what's allowed.
   const listChecksOn = () => settings.listChecks !== false;
+  const dataBuilt = () => DATA.built || "";
+
+  /* ---------- Crusade ---------- */
+  // A Crusade force is an army list kept as an Order of Battle: its points limit is the supply limit, and
+  // battles logged with it build up each unit's experience and the force's requisition points.
+  const CR_RANKS = [[0, "Battle-ready"], [6, "Blooded"], [16, "Battle-hardened"], [31, "Heroic"], [51, "Legendary"]];
+  const CR_HON = {trait: "Battle trait", weapon: "Weapon enhancement", relic: "Crusade relic", other: "Other honour"};
+  const isCrusade = l => !!l && l.kind === "crusade";
+  const crTag = l => isCrusade(l) ? `<span class="tag cr">Crusade</span>` : "";
+  const victories = n => `${n} ${n === 1 ? "victory" : "victories"}`;
+  // The force's battles, its requisition points (1 per battle plus any changed by hand) and each unit's share.
+  function crusadeState(l, D){
+    const gs = D.games.filter(g => g.listId === l.id);
+    return {gs, rec: recordOf(gs), rp: Math.max(0, (l.rp || 0) + gs.length),
+      per: k => ({battles: gs.filter(g => (g.took || []).includes(k)).length, mfg: gs.filter(g => g.mfg === k).length})};
+  }
+  // A unit's experience (1 per battle it took part in, 3 each time it was Marked for Greatness, plus any added
+  // by hand), its rank, and its crusade points (1 per battle honour, less 1 per battle scar, plus any adjustment).
+  // Only characters usually rise past Battle-hardened.
+  function crUnit(x, cs){
+    const p = cs.per(x.k), gained = p.battles + 3 * p.mfg, xp = Math.max(0, (x.e.xp || 0) + gained);
+    const cap = isCharRole(x.role) ? CR_RANKS.length : 3, idx = Math.min(cap, CR_RANKS.filter(r => xp >= r[0]).length) - 1;
+    const hon = x.e.hon || [], scar = x.e.scar || [];
+    return {...p, gained, xp, idx, rank: CR_RANKS[idx][1], from: CR_RANKS[idx][0], next: idx + 1 < cap ? CR_RANKS[idx + 1][0] : null,
+      hon, scar, cp: hon.length - scar.length + (x.e.cpx || 0)};
+  }
+  // Where a list's points differ from the latest datasheet points: each unit whose points follow its
+  // datasheet (not ones given their own points in this list, or a size outside the datasheet's range) and
+  // each enhancement from the list's detachments. next is what the list would come to.
+  function latestChanges(l, s, faction){
+    const sheets = sheetsOf(faction), opts = enhOptions(faction, l.detachments), items = [];
+    s.rows.filter(x => !x.gone).forEach(x => {
+      const n = x.u ? x.u.datasheet || x.name : x.sheet || x.name, sh = sheets.find(z => z.n === n && !z.t) || sheets.find(z => z.n === n);
+      if(sh && !(x.u && x.e.pts != null) && !(sh.ms && (x.count < sh.ms[0] || x.count > sh.ms[1])) && (sh.ms || sh.pb || x.count === 1)){
+        const want = sheetPts(sh, x.count);
+        if(want != null && want !== x.base) items.push({kind: x.u ? "unit" : "entry", x, name: x.name + (x.count > 1 ? ` (${x.count} models)` : ""), from: x.base, to: want});
+      }
+      const o = x.enh && opts.find(e => e[0].toLowerCase() === x.enh.n.toLowerCase());
+      if(o && x.enh.p !== o[1]) items.push({kind: "enh", x, name: `${o[0]} on ${x.name}`, from: x.enh.p, to: o[1]});
+    });
+    return {items, next: s.points + items.reduce((a, c) => a + c.to - c.from, 0), shared: items.some(c => c.kind === "unit"),
+      sig: items.map(c => `${c.x.k}.${c.kind}.${c.to}`).join(",").slice(0, 100)};
+  }
   const DAY_MS = 864e5;
   function listChecks(l, s, faction){
-    const out = [], add = (id, text, more) => out.push({id, text, more});
+    const out = [], add = (id, text, more, extra) => out.push({id, text, more, ...extra});
     const rows = s.rows.filter(x => !x.gone), sheets = sheetsOf(faction);
     const sheetName = x => x.u ? x.u.datasheet || x.name : x.sheet || x.name;
     const sheetOf = x => sheets.find(z => z.n === sheetName(x));
     const epic = x => x.role === "Epic Hero" || !!(sheetOf(x) || {}).eh;
     if(!rows.length) return out;
-    if(l.limit && s.points > l.limit) add("over", `${num(s.points - l.limit)} pts over the limit.`, `The list comes to ${ptsText(s.points)} against a limit of ${ptsText(l.limit)}.`);
+    if(l.limit && s.points > l.limit) add("over", `${num(s.points - l.limit)} pts over the ${isCrusade(l) ? "supply " : ""}limit.`, `The ${isCrusade(l) ? "Order of Battle" : "list"} comes to ${ptsText(s.points)} against a limit of ${ptsText(l.limit)}.`);
     if(!rows.some(x => x.warlord)) add("warlord", "No warlord chosen.", rows.some(x => isCharRole(x.role)) ? "Choose one with the ⋯ button on a character." : "There are no characters in this list to lead it.");
     if(!(l.detachments || []).length) add("detachment", "No detachment chosen.", "Add one in Edit details.");
     const z = sizeRules(l), sizeIdx = Math.max(0, BATTLE_SIZES.indexOf(z)), known = (l.detachments || []).map(n => detByName(faction, n)).filter(Boolean);
@@ -1271,37 +1315,30 @@
       const o = opts.find(e => e[0].toLowerCase() === x.enh.n.toLowerCase());
       if(!o){ if(known.length && known.length === (l.detachments || []).length) add(`enh-det:${x.k}:${x.enh.n}`, `${x.enh.n} isn't one of your detachments' enhancements.`, `Enhancements usually come from the detachment${known.length > 1 ? "s" : ""} you've chosen.`); return; }
       if(o[2] && o[2].every(n => names.has(n)) && !o[2].includes(sheetName(x))) add(`enh-only:${x.k}:${o[0]}`, `${o[0]} is usually for ${o[2].join(" or ")} only.`, `${x.name} has it in this list.`);
-      if(x.enh.p !== o[1]) add(`enh-pts:${x.k}:${o[1]}`, `${o[0]} is ${ptsText(x.enh.p)} here but ${ptsText(o[1])} in the latest points.`, "Update it with the ⋯ button if the points have changed.");
     });
     rows.forEach(x => {
       const leaders = rows.filter(r => r.lead === x.k);
       if(leaders.length > 1) add("lead:" + x.k, `${x.name} is led by ${leaders.map(r => r.name).join(" and ")}.`, "A unit usually has one leader, unless a datasheet says it can have more.");
     });
-    // Unit sizes and points from the datasheet: a size outside its range, or points that don't match that size.
-    const ptsOff = {};
+    // Unit sizes from the datasheet.
     rows.forEach(x => {
-      const sh = sheetOf(x); if(!sh) return;
-      if(sh.ms && (x.count < sh.ms[0] || x.count > sh.ms[1])){
-        add(`size:${x.k}:${x.count}`, `${x.name} has ${plural(x.count, "model")}.`, `The datasheet's unit size is ${sh.ms[0] === sh.ms[1] ? sh.ms[0] : `${sh.ms[0]} to ${sh.ms[1]}`} models.`);
-        return;
-      }
-      if(!sh.ms && !sh.pb && x.count !== 1) return;
-      const want = sheetPts(sh, x.count);
-      if(want == null || (x.u && x.e.pts != null) || x.base === want) return;
-      // Several copies at the same wrong cost make one note, not one each.
-      const key = [sh.n, x.count, x.base, want].join(":");
-      (ptsOff[key] = ptsOff[key] || []).push(x);
+      const sh = sheetOf(x);
+      if(sh && sh.ms && (x.count < sh.ms[0] || x.count > sh.ms[1])) add(`size:${x.k}:${x.count}`, `${x.name} has ${plural(x.count, "model")}.`, `The datasheet's unit size is ${sh.ms[0] === sh.ms[1] ? sh.ms[0] : `${sh.ms[0]} to ${sh.ms[1]}`} models.`);
     });
-    Object.entries(ptsOff).forEach(([key, xs]) => {
-      const x = xs[0], want = +key.split(":").pop(), many = xs.length > 1;
-      add("pts:" + key, `${many ? `${xs.length} units of ${x.name} are` : `${x.name} is`} ${ptsText(x.base)}${many ? " each" : ""} here but ${ptsText(want)} in the latest datasheet points${x.count > 1 ? ` for ${x.count} models` : ""}.`,
-        xs.some(r => r.u) ? "If the points have changed, update the unit." : "If the points have changed, update them with the ⋯ button.");
-    });
+    // Points that differ from the latest datasheet points, as one note with a button to update them all.
+    const ch = latestChanges(l, s, faction);
+    if(ch.items.length){
+      const over = l.limit && ch.next > l.limit;
+      add("latest:" + ch.sig, `The latest points change this list from ${ptsText(s.points)} to ${ptsText(ch.next)}${over ? `, ${num(ch.next - l.limit)} over the limit` : ""}.`,
+        `${dataBuilt() ? `Datasheet points were updated ${dayText(dataBuilt())}. ` : ""}${ch.shared ? "Updating also changes the points on the units in your collection, so other lists using them change too." : ""}`,
+        {items: ch.items.map(c => `${c.name}: ${num(c.from)} → ${num(c.to)} pts`), act: "Update to latest points"});
+    }
     if(l.ptsAsOf){
       const days = Math.floor((Date.now() - new Date(l.ptsAsOf + "T12:00:00")) / DAY_MS);
       if(days > 90) add("date:" + l.ptsAsOf, `Points last checked ${dayText(l.ptsAsOf)}.`, "Points change a few times a year, so check they're still current.");
     } else if(l.status === "tournament") add("date", "No points date set.", "Note when you checked the points in Edit details, so you know they're current.");
-    return out;
+    // A Crusade force's Order of Battle isn't a list for one game, so only its size and points matter here.
+    return isCrusade(l) ? out.filter(c => /^(over|size|latest)/.test(c.id)) : out;
   }
   // What a list holds, set against the collection: what's owned, what's ready, what's missing.
   // A row's points are the unit's (or the list's override for it) plus any enhancement.
@@ -1328,8 +1365,8 @@
     const hidden = new Set(l.ignored || []), checks = listChecksOn() && a ? listChecks(l, s, a.faction).filter(c => !hidden.has(c.id)).length : 0;
     const note = !s.rows.length ? "No units yet" : checks ? `<span class="tc-chip">${plural(checks, "thing")} to check</span>` : s.avail < 100 ? `${s.avail}% in your collection` : "All in your collection";
     return `<a class="lcard war-card${l.status === "archived" ? " archived" : ""}" href="#/war/list/${esc(l.id)}">
-      <div class="card-top">${a ? armyBadge(a, 44) : ""}<div><h3>${esc(l.name)}</h3><div class="meta">${esc([a ? a.name : "Deleted army", sizeName(l), detText(l)].filter(Boolean).join(" · "))}</div></div>${statusTag(l)}</div>
-      <div class="wc-nums"><span><b>${num(s.points)}</b>${l.limit ? ` / ${num(l.limit)}` : ""} pts</span><span><b>${s.rows.length}</b> ${s.rows.length === 1 ? "unit" : "units"}</span>${gs.length ? `<span><b>${recText(r)}</b> record</span>` : ""}</div>
+      <div class="card-top">${a ? armyBadge(a, 44) : ""}<div><h3>${esc(l.name)}</h3><div class="meta">${esc([a ? a.name : "Deleted army", sizeName(l), detText(l)].filter(Boolean).join(" · "))}</div></div><span class="tags">${crTag(l)}${statusTag(l)}</span></div>
+      <div class="wc-nums"><span><b>${num(s.points)}</b>${l.limit ? ` / ${num(l.limit)}` : ""} ${isCrusade(l) ? "supply" : "pts"}</span><span><b>${s.rows.length}</b> ${s.rows.length === 1 ? "unit" : "units"}</span>${isCrusade(l) ? `<span><b>${crusadeState(l, D).rp}</b> RP</span>` : ""}${gs.length ? `<span><b>${recText(r)}</b> record</span>` : ""}</div>
       <div class="prog" aria-hidden="true"><i style="width:${s.readyPct}%"></i></div>
       <div class="foot"><span>${s.readyPct}% battle ready</span><span>${note}</span></div>
     </a>`;
@@ -1341,20 +1378,33 @@
     await render();
     onApp(e => {
       const b = e.target.closest("[data-new-list]");
-      if(b) openNewList(D, b.dataset.newList || ""); else warClicks(e, D, render);
+      if(b) openNewList(D, b.dataset.newList || "", b.dataset.kind || ""); else warClicks(e, D, render);
     });
   }
   function drawWarLists(D){
     const groups = D.armies.map(a => [a, D.lists.filter(l => l.armyId === a.id).sort((x, y) => (x.status === "archived") - (y.status === "archived"))]).filter(x => x[1].length);
     app.innerHTML = `
       <section class="page-head war-head">
-        <div><p class="eyebrow">War Ledger</p><h1>Army lists</h1><p class="sub">Your collection is everything you own. A list is what you take to a particular game.</p></div>
-        <div class="war-actions">${D.armies.length && !D.warMissing ? `<button type="button" class="primary" data-new-list="">+ New list</button>` : ""}</div>
+        <div><p class="eyebrow">War Ledger</p><h1>Army lists</h1><p class="sub">Your collection is everything you own. A list is what you take to a particular game, and a Crusade force is the Order of Battle you grow over a campaign.</p></div>
+        <div class="war-actions">${D.armies.length && !D.warMissing ? `<button type="button" class="primary" data-new-list="">+ New list</button><button type="button" data-new-list="" data-kind="crusade">+ New Crusade force</button>` : ""}</div>
       </section>
       ${warTabs("lists")}
       ${missingBanner(D)}
+      ${latestBanner(D)}
       ${!D.armies.length ? warEmpty() : groups.length ? groups.map(([a, ls]) => `<section class="war-sec"><div class="sec-h"><h2>${esc(a.name)}</h2><a href="#/war/army/${esc(a.id)}">View army</a></div><div class="ledgers">${ls.map(l => listCard(l, D)).join("")}</div></section>`).join("")
         : D.warMissing ? "" : `<section class="panel war-empty"><h2>No army lists yet</h2><p class="sub">Build a list from one of your armies, or paste one you've made elsewhere, and War Ledger checks whether it's ready for the table.</p><button type="button" class="primary" data-new-list="">+ New list</button></section>`}`;
+  }
+  // Lists (not archived) whose total would change with the latest datasheet points, unless that note was hidden.
+  function latestBanner(D){
+    if(!listChecksOn()) return "";
+    const hit = D.lists.filter(l => l.status !== "archived").map(l => {
+      const a = D.armies.find(x => x.id === l.armyId); if(!a) return null;
+      const s = listState(l, D), ch = latestChanges(l, s, a.faction);
+      return ch.items.length && !(l.ignored || []).includes("latest:" + ch.sig) ? [l, s.points, ch.next] : null;
+    }).filter(Boolean);
+    if(!hit.length) return "";
+    return `<div class="banner latest-b"><span class="dot warn"></span><span>${dataBuilt() ? `Datasheet points were updated ${esc(dayText(dataBuilt()))}. ` : ""}${hit.length === 1 ? "This list comes" : `${hit.length} lists come`} to a different total with the latest points:
+      ${hit.map(([l, a, b]) => `<a href="#/war/list/${esc(l.id)}">${esc(l.name)}</a> (${num(a)} → ${num(b)} pts)`).join(", ")}.</span></div>`;
   }
   // Battle size, points limit, detachments, status and points date: shared by the New list and List details dialogs.
   function listFields(l, D, faction){
@@ -1404,17 +1454,24 @@
   }
   const readListFields = d => ({size: d.querySelector("#w-lsz").value, limit: Math.max(0, parseInt(d.querySelector("#w-ll").value, 10) || 0),
     detachments: [...d.querySelectorAll(".w-det")].map(x => x.value.trim()).filter(Boolean), status: d.querySelector("#w-lst").value, ptsAsOf: d.querySelector("#w-lpd").value});
-  function openNewList(D, armyId){
+  // What a list is for: one game, or a Crusade force's Order of Battle.
+  const kindHint = kind => kind === "crusade" ? "The points limit is your supply limit. Battles you log with this force add experience to its units and requisition points to the force."
+    : "A list is what you take to a game, picked from your collection.";
+  const kindField = kind => `<label>Type<select id="w-lk"><option value="">Army list for games</option><option value="crusade"${kind === "crusade" ? " selected" : ""}>Crusade force (Order of Battle)</option></select></label>
+      <p class="hint" id="w-lk-hint">${kindHint(kind)}</p>`;
+  const wireKind = d => { const k = d.querySelector("#w-lk"); k.addEventListener("change", () => { d.querySelector("#w-lk-hint").textContent = kindHint(k.value); }); };
+  function openNewList(D, armyId, kind){
     if(!D.armies.length){ flash("Create an army first."); return; }
     if(D.warMissing){ flash("Run supabase/features.sql in Supabase to turn on army lists."); return; }
     const first = D.armies.find(a => a.id === armyId) || D.armies[0];
-    const d = modal("New army list", `
+    const d = modal(kind === "crusade" ? "New Crusade force" : "New army list", `
       <label>Army<select id="w-la">${D.armies.map(a => `<option value="${esc(a.id)}"${a.id === first.id ? " selected" : ""}>${esc(a.name)} (${esc(factionName(a.faction))})</option>`).join("")}</select></label>
-      <label>List name<input id="w-ln" maxlength="80" placeholder="e.g. Club night 2,000"></label>
+      ${kindField(kind)}
+      <label>Name<input id="w-ln" maxlength="80" placeholder="e.g. Club night 2,000"></label>
       <div id="w-lf">${listFields({size: "strike", limit: 2000, status: "draft", ptsAsOf: isoDay(new Date())}, D, first.faction)}</div>
       <div class="row-actions"><button type="submit" class="primary">Create list</button><span class="msg" id="w-msg" role="status"></span></div>`, "wide");
     const fac = () => (D.armies.find(x => x.id === $("w-la").value) || first).faction;
-    wireListFields(d, fac);
+    wireListFields(d, fac); wireKind(d);
     // Detachment suggestions follow the army's faction.
     $("w-la").addEventListener("change", () => {
       const keep = readListFields(d);
@@ -1422,8 +1479,8 @@
     });
     d.querySelector("form").addEventListener("submit", async e => {
       e.preventDefault();
-      const f = readListFields(d), name = $("w-ln").value.trim() || (f.limit ? `${num(f.limit)} points` : "Army list");
-      try { const l = await store.saveList({armyId: $("w-la").value, name, ...f, units: []}); d.close(); location.hash = `#/war/list/${l.id}`; }
+      const f = readListFields(d), kind = $("w-lk").value, name = $("w-ln").value.trim() || (kind === "crusade" ? "Crusade force" : f.limit ? `${num(f.limit)} points` : "Army list");
+      try { const l = await store.saveList({armyId: $("w-la").value, name, ...f, kind, units: []}); d.close(); location.hash = `#/war/list/${l.id}`; }
       catch(err){ console.error(err); $("w-msg").textContent = "Couldn't create the list: " + errText(err); }
     });
     $("w-ln").focus();
@@ -1436,7 +1493,7 @@
       app.innerHTML = `${warTabs("lists")}<div class="banner"><span class="dot warn"></span><span>${D.warMissing ? "Army lists need a quick database update first. Run supabase/features.sql in Supabase." : list ? "The army for this list was deleted." : "That list couldn't be found. It may have been deleted."}</span></div><p><a class="btn" href="#/war/lists">Your army lists</a></p>`;
       return;
     }
-    let army = army0, q = "", chain = Promise.resolve();
+    let army = army0, q = "", chain = Promise.resolve(), rmArmed = "", rmTimer = 0;
     view.name = "war-list"; document.title = `${list.name} · War Ledger`;
     // Saves run one after another, so the last change always wins.
     function save(patch){
@@ -1454,7 +1511,7 @@
       if(!all.length) return "";
       return `<section class="panel tc" aria-labelledby="tc-h"><h2 class="ph" id="tc-h">Things to check${shown.length ? ` <span class="tc-n">${shown.length}</span>` : ""}</h2>
         ${shown.length ? `<p class="hint">Suggestions only. Nothing here stops you using this list.</p>
-        <ul class="tc-list">${shown.map(c => `<li><span><strong>${esc(c.text)}</strong>${c.more ? ` <small>${esc(c.more)}</small>` : ""}</span><button type="button" class="btn-sm" data-hide-check="${esc(c.id)}" aria-label="Hide: ${esc(c.text)}">Hide</button></li>`).join("")}</ul>`
+        <ul class="tc-list">${shown.map(c => `<li><div><strong>${esc(c.text)}</strong>${c.more ? ` <small>${esc(c.more)}</small>` : ""}${c.items ? `<ul class="tc-items">${c.items.map(t => `<li>${esc(t)}</li>`).join("")}</ul>` : ""}</div>${c.act ? `<button type="button" class="btn-sm primary" data-latest>${esc(c.act)}</button>` : ""}<button type="button" class="btn-sm" data-hide-check="${esc(c.id)}" aria-label="Hide: ${esc(c.text)}">Hide</button></li>`).join("")}</ul>`
           : `<p class="hint">Nothing new to check.</p>`}
         ${nHid ? `<p class="hint tc-hid">${plural(nHid, "check")} hidden. <button type="button" class="linkish" data-unhide-checks>Show ${nHid === 1 ? "it" : "them"} again</button></p>` : ""}
       </section>`;
@@ -1473,16 +1530,17 @@
         <section class="page-head war-head">
           <div class="wh-id">${armyBadge(army, 56)}<div><p class="eyebrow"><a href="#/war/army/${esc(army.id)}">${esc(army.name)}</a> · ${esc(factionName(army.faction))}</p><h1>${esc(list.name)}</h1>
             <p class="sub">${esc([sizeName(list), detText(list), list.limit ? ptsText(list.limit) + " limit" : "No points limit", gs.length ? `${recText(rec)} record` : ""].filter(Boolean).join(" · "))}</p>
-            <p class="lst-meta">${statusTag(list)}<span>${list.ptsAsOf ? `Points as of ${esc(dayText(list.ptsAsOf))}` : "Points date not set"}</span></p></div></div>
+            <p class="lst-meta">${crTag(list)}${statusTag(list)}<span>${list.ptsAsOf ? `Points as of ${esc(dayText(list.ptsAsOf))}` : "Points date not set"}</span></p></div></div>
           <div class="war-actions"><button type="button" class="primary" data-log="${esc(army.id)}" data-list="${esc(list.id)}">Log a battle</button><button type="button" data-import>Paste a list</button><button type="button" data-details>Edit details</button></div>
         </section>
         ${warTabs("lists")}
         <section class="war-stats" aria-label="List summary">
-          <div class="wstat${over ? " over" : ""}"><b>${num(s.points)}${list.limit ? `<small> / ${num(list.limit)}</small>` : ""}</b><span>Points</span>${list.limit ? `<div class="wbar" aria-hidden="true"><i style="width:${Math.min(100, pctOf(s.points, list.limit))}%"></i></div><small>${over ? `${num(s.points - list.limit)} over the limit` : `${num(list.limit - s.points)} left`}</small>` : ""}</div>
+          <div class="wstat${over ? " over" : ""}"><b>${num(s.points)}${list.limit ? `<small> / ${num(list.limit)}</small>` : ""}</b><span>${isCrusade(list) ? "Supply used" : "Points"}</span>${list.limit ? `<div class="wbar" aria-hidden="true"><i style="width:${Math.min(100, pctOf(s.points, list.limit))}%"></i></div><small>${over ? `${num(s.points - list.limit)} over the limit` : `${num(list.limit - s.points)} left`}</small>` : ""}</div>
           <div class="wstat"><b>${s.rows.length}</b><span>${s.rows.length === 1 ? "Unit" : "Units"}</span><small>${plural(s.models, "model")}</small></div>
           <div class="wstat"><b>${s.avail}%</b><span>Models available</span><small>${num(s.have)} of ${num(s.models)} in your collection</small></div>
           <div class="wstat ready"><b>${s.readyPct}%</b><span>Battle ready</span><div class="wbar" aria-hidden="true"><i style="width:${s.readyPct}%"></i></div><small>${num(s.ready)} of ${num(s.models)} models</small></div>
         </section>
+        ${isCrusade(list) ? crusadePanel(s) : ""}
         ${checksPanel(s)}
         <section class="panel lr" aria-labelledby="lr-h"><h2 class="ph" id="lr-h">Ready for the table?</h2>
           <p class="verdict ${verdict[0]}">${verdict[1]}</p>
@@ -1509,13 +1567,81 @@
             <button type="button" class="btn-sm" data-add-unit>+ Add a new unit to the army</button>
           </section>
         </div>
-        <section class="war-sec danger-zone"><div class="row-actions"><button type="button" class="btn-sm" data-copy>Copy as text</button><button type="button" class="btn-sm" data-dup>Duplicate list</button><button type="button" class="btn-sm danger" id="w-dellist">Delete list</button></div></section>`;
+        <section class="war-sec danger-zone"><div class="row-actions"><button type="button" class="btn-sm" data-copy>Copy as text</button><button type="button" class="btn-sm" data-dup>Duplicate list</button><button type="button" class="btn-sm" data-compare>Compare with another list</button><button type="button" class="btn-sm danger" id="w-dellist">Delete list</button></div></section>`;
       const inp = $("lb-q");
       inp.addEventListener("input", () => { q = inp.value.trim().toLowerCase(); const pos = inp.selectionStart; draw(); const n = $("lb-q"); n.focus(); n.setSelectionRange(pos, pos); });
       armButton($("w-dellist"), "Press again to delete", async () => {
         try { await chain; await store.removeList(list.id); flash(`Deleted ${list.name}`); location.hash = "#/war/lists"; }
         catch(err){ flash("Couldn't delete: " + errText(err)); }
       });
+    }
+    // A Crusade force: requisition points, battles and crusade points, then the Order of Battle.
+    function crusadePanel(s){
+      const cs = crusadeState(list, D), us = s.rows.filter(x => !x.gone).map(x => [x, crUnit(x, cs)]), cp = us.reduce((a, [, c]) => a + c.cp, 0);
+      const bar = c => c.next == null ? "" : `<span class="cr-bar" aria-hidden="true"><i style="width:${pctOf(c.xp - c.from, c.next - c.from)}%"></i></span>`;
+      return `<section class="war-stats cr-stats" aria-label="Crusade">
+          <div class="wstat"><b>${cs.rp}</b><span>Requisition points</span><small><button type="button" class="linkish" data-rp>Spend or add</button></small></div>
+          <div class="wstat"><b>${cs.gs.length}</b><span>${cs.gs.length === 1 ? "Battle" : "Battles"}</span><small>${victories(cs.rec.w)}</small></div>
+          <div class="wstat"><b>${cp}</b><span>Crusade points</span><small>From honours and scars</small></div>
+          <div class="wstat"><b>${us.filter(([, c]) => c.idx >= 2).length}</b><span>Battle-hardened or better</span><small>of ${plural(us.length, "unit")}</small></div>
+        </section>
+        <section class="panel cr-ob" aria-labelledby="ob-h"><h2 class="ph" id="ob-h">Order of Battle</h2>
+          <p class="hint">Each battle logged with this force gives the units that took part 1 XP, 3 more to the one Marked for Greatness, and the force 1 requisition point. Choose a unit to add battle honours, scars or experience.</p>
+          ${us.length ? `<div class="wt-scroll"><table class="wtable wt-cards cr-t">
+            <thead><tr><th scope="col">Unit</th><th scope="col">Rank</th><th scope="col" class="n">XP</th><th scope="col" class="n">Battles</th><th scope="col" class="n">Honours</th><th scope="col" class="n">Scars</th><th scope="col" class="n">Crusade pts</th></tr></thead>
+            <tbody>${us.map(([x, c]) => `<tr><th scope="row"><button type="button" class="linkish" data-cr="${x.i}">${esc(x.name)}</button>${c.hon.length || c.scar.length ? `<small>${esc([...c.hon.map(h => h.n), ...c.scar.map(n => "Scar: " + n)].join(" · "))}</small>` : ""}</th>
+              <td class="wt-sub"><span class="cr-rank r${c.idx}">${esc(c.rank)}</span></td>
+              <td class="n" data-label="XP">${c.xp}${bar(c)}</td><td class="n" data-label="Battles">${c.battles}${c.mfg ? ` <small title="Marked for Greatness">★${c.mfg}</small>` : ""}</td>
+              <td class="n" data-label="Honours">${c.hon.length}</td><td class="n" data-label="Scars">${c.scar.length}</td><td class="n" data-label="Crusade pts">${c.cp}</td></tr>`).join("")}</tbody>
+          </table></div>` : `<p class="hint">Add units from your collection below to start your Order of Battle.</p>`}
+        </section>`;
+    }
+    // One unit's Crusade card: experience, battle honours, battle scars, crusade points and notes.
+    function openCrusadeUnit(i){
+      const s = listState(list, D), x = s.rows.find(r => r.i === i); if(!x || x.gone) return;
+      const cs = crusadeState(list, D), c = crUnit(x, cs), e = list.units[i];
+      let hon = c.hon.slice(), scar = c.scar.slice();
+      const d = modal(`${esc(x.name)}: Crusade card`, `
+        <p class="sub cr-now"><span class="cr-rank r${c.idx}">${esc(c.rank)}</span> ${c.next != null ? `${c.next - c.xp} XP to ${esc(CR_RANKS[c.idx + 1][1])}` : isCharRole(x.role) ? "The highest rank" : "Only characters usually rise past Battle-hardened"}</p>
+        <div class="wgrid">
+          <label>Experience (XP)<input id="cr-xp" type="number" min="0" max="999" inputmode="numeric" value="${c.xp}"></label>
+          <label class="span2">Crusade points adjustment<input id="cr-cpx" type="number" min="-99" max="99" inputmode="numeric" value="${e.cpx || ""}" placeholder="0"></label>
+        </div>
+        <p class="hint">${c.gained ? `${c.gained} XP came from ${plural(c.battles, "battle")}${c.mfg ? ` and ${c.mfg}× Marked for Greatness` : ""}. ` : ""}Change the total for kills, agendas or anything else that gives experience. Crusade points are 1 per battle honour, less 1 per scar; adjust for honours worth more.</p>
+        <fieldset class="wfs"><legend>Battle honours</legend><ul class="cr-items" id="cr-hon"></ul>
+          <div class="cr-add"><select id="cr-ht" aria-label="Kind of honour">${Object.entries(CR_HON).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select><input id="cr-hn" maxlength="80" placeholder="e.g. Hardened veterans" aria-label="Battle honour"><button type="button" class="btn-sm" id="cr-hadd">Add</button></div></fieldset>
+        <fieldset class="wfs"><legend>Battle scars</legend><ul class="cr-items" id="cr-scar"></ul>
+          <div class="cr-add"><input id="cr-sn" maxlength="80" placeholder="e.g. Battle-weary" aria-label="Battle scar"><button type="button" class="btn-sm" id="cr-sadd">Add</button></div></fieldset>
+        <label>Notes<textarea id="cr-note" rows="3" maxlength="400" placeholder="Kills, deeds and grudges">${esc(e.cnote || "")}</textarea></label>
+        <div class="row-actions"><button type="submit" class="primary">Save</button></div>`, "wide");
+      const paint = () => {
+        $("cr-hon").innerHTML = hon.length ? hon.map((h, j) => `<li><span>${esc(h.n)} <small>${esc(CR_HON[h.t] || CR_HON.other)}</small></span><button type="button" class="btn-sm icon-x" data-rmh="${j}" aria-label="Remove ${esc(h.n)}">×</button></li>`).join("") : `<li class="hint">None yet.</li>`;
+        $("cr-scar").innerHTML = scar.length ? scar.map((n, j) => `<li><span>${esc(n)}</span><button type="button" class="btn-sm icon-x" data-rms="${j}" aria-label="Remove ${esc(n)}">×</button></li>`).join("") : `<li class="hint">None.</li>`;
+      };
+      paint();
+      const addHon = () => { const n = $("cr-hn").value.trim(); if(!n || hon.length >= 20) return; hon.push({t: $("cr-ht").value, n}); $("cr-hn").value = ""; paint(); $("cr-hn").focus(); };
+      const addScar = () => { const n = $("cr-sn").value.trim(); if(!n || scar.length >= 20) return; scar.push(n); $("cr-sn").value = ""; paint(); $("cr-sn").focus(); };
+      $("cr-hadd").addEventListener("click", addHon); $("cr-sadd").addEventListener("click", addScar);
+      // Enter in an add box adds the item instead of saving the card.
+      $("cr-hn").addEventListener("keydown", ev => { if(ev.key === "Enter"){ ev.preventDefault(); addHon(); } });
+      $("cr-sn").addEventListener("keydown", ev => { if(ev.key === "Enter"){ ev.preventDefault(); addScar(); } });
+      d.addEventListener("click", ev => {
+        const h = ev.target.closest("[data-rmh]"), sc = ev.target.closest("[data-rms]");
+        if(h){ hon.splice(+h.dataset.rmh, 1); paint(); } else if(sc){ scar.splice(+sc.dataset.rms, 1); paint(); }
+      });
+      d.querySelector("form").addEventListener("submit", ev => {
+        ev.preventDefault();
+        const n = {...e, xp: Math.max(0, parseInt($("cr-xp").value, 10) || 0) - c.gained, hon, scar, cpx: parseInt($("cr-cpx").value, 10) || 0, cnote: $("cr-note").value.trim()};
+        save({units: list.units.map((u, j) => j === i ? n : u)}); d.close();
+      });
+    }
+    function openRequisition(){
+      const cs = crusadeState(list, D);
+      const d = modal("Requisition points", `
+        <label>Requisition points now<input id="cr-rp" type="number" min="0" max="999" inputmode="numeric" value="${cs.rp}"></label>
+        <p class="hint">The force gains 1 for each battle logged with it (${cs.gs.length} so far). Lower this when you spend them on requisitions, or raise it when a rule gives you more.</p>
+        <div class="row-actions"><button type="submit" class="primary">Save</button></div>`);
+      d.querySelector("form").addEventListener("submit", ev => { ev.preventDefault(); save({rp: Math.max(0, parseInt($("cr-rp").value, 10) || 0) - cs.gs.length}); d.close(); });
     }
     // Warlord, enhancement, leader and points for one unit in this list. Nothing here is checked against the rules.
     function openEntryOptions(i){
@@ -1567,9 +1693,33 @@
       else if(b.dataset.rm != null) {
         // Anyone leading the removed unit stops leading it.
         const gone = list.units[+b.dataset.rm];
+        // A unit with a Crusade record takes a second press, since its experience and honours go with it.
+        if(isCrusade(list) && gone && (gone.xp || gone.hon || gone.scar || D.games.some(g => g.listId === list.id && (g.took || []).includes(gone.k))) && rmArmed !== gone.k){
+          rmArmed = gone.k; clearTimeout(rmTimer); rmTimer = setTimeout(() => { rmArmed = ""; }, 5000);
+          flash("Press × again to remove it. Its experience, honours and scars will be lost."); return;
+        }
+        rmArmed = "";
         save({units: list.units.filter((x, i) => i !== +b.dataset.rm).map(x => gone && x.lead === gone.k ? (({lead, ...r}) => r)(x) : x)});
       }
       else if(b.dataset.opts != null) openEntryOptions(+b.dataset.opts);
+      else if(b.dataset.cr != null) openCrusadeUnit(+b.dataset.cr);
+      else if(b.matches("[data-rp]")) openRequisition();
+      else if(b.matches("[data-latest]")) {
+        // Units from the collection take the new points on the unit itself; the rest change in this list.
+        const ch = latestChanges(list, listState(list, D), army.faction);
+        b.disabled = true;
+        try {
+          for(const c of ch.items.filter(c => c.kind === "unit")){ const u = c.x.u; await store.saveUnit(u.armyId, mergeUnit(u, {points: c.to}), u.id, null, false, u); }
+          const units = list.units.map((e, i) => {
+            const mine = ch.items.filter(c => c.x.i === i), n = {...e};
+            mine.forEach(c => { if(c.kind === "entry") n.points = c.to; if(c.kind === "enh") n.enh = {...n.enh, p: c.to}; });
+            return n;
+          });
+          D = await warData(false);
+          await save({units, ptsAsOf: isoDay(new Date())});
+          flash(`Updated ${plural(ch.items.length, "points value")}. The list is now ${ptsText(listState(list, D).points)}.`);
+        } catch(err){ console.error(err); flash("Couldn't update the points: " + errText(err)); b.disabled = false; }
+      }
       else if(b.dataset.hideCheck){
         // Keep focus in the panel after the redraw.
         await save({ignored: [...new Set((list.ignored || []).concat(b.dataset.hideCheck))]});
@@ -1600,14 +1750,15 @@
       }
       else if(b.matches("[data-details]")) {
         const d = modal("List details", `
-          <label>List name<input id="w-ln" maxlength="80" value="${esc(list.name)}"></label>
+          <label>Name<input id="w-ln" maxlength="80" value="${esc(list.name)}"></label>
+          ${kindField(list.kind)}
           ${listFields(list, D, army.faction)}
           <label>Notes<textarea id="w-lnote" rows="3" maxlength="600">${esc(list.notes)}</textarea></label>
           <div class="row-actions"><button type="submit" class="primary">Save</button></div>`, "wide");
-        wireListFields(d, army.faction);
+        wireListFields(d, army.faction); wireKind(d);
         d.querySelector("form").addEventListener("submit", ev => {
           ev.preventDefault();
-          save({name: $("w-ln").value.trim() || list.name, ...readListFields(d), notes: $("w-lnote").value.trim()});
+          save({name: $("w-ln").value.trim() || list.name, kind: $("w-lk").value, ...readListFields(d), notes: $("w-lnote").value.trim()});
           document.title = `${list.name} · War Ledger`; d.close();
         });
       }
@@ -1624,11 +1775,105 @@
         try { await navigator.clipboard.writeText(text); flash("List copied."); } catch(err){ flash("Couldn't copy. Your browser blocked the clipboard."); }
       }
       else if(b.matches("[data-dup]")) {
-        try { await chain; const c = await store.saveList({...list, name: `${list.name} (copy)`, status: "draft"}); flash("List duplicated."); location.hash = `#/war/list/${c.id}`; }
+        // A copied Crusade force has none of the battles, so the experience and requisition points they gave are written in.
+        let copy = {...list};
+        if(isCrusade(list)){ const cs = crusadeState(list, D), rows = listState(list, D).rows; copy = {...copy, rp: cs.rp, units: list.units.map((e, i) => { const x = rows.find(r => r.i === i); return x && !x.gone ? {...e, xp: crUnit(x, cs).xp} : e; })}; }
+        try { await chain; const c = await store.saveList({...copy, name: nextVersion(list.name, D.lists), status: "draft", from: list.id, ignored: []}); flash("List duplicated. Compare it with the original at the bottom of the page."); location.hash = `#/war/list/${c.id}`; }
         catch(err){ flash("Couldn't duplicate: " + errText(err)); }
+      }
+      else if(b.matches("[data-compare]")) {
+        const other = compareDefault(list, D);
+        // The older version goes first, so the page reads as what changed.
+        if(other) location.hash = other.id === list.from ? `#/war/compare/${other.id}/${list.id}` : `#/war/compare/${list.id}/${other.id}`; else flash("Make another list first, for example with Duplicate list, then compare the two.");
       }
       else warClicks(e, D, reload);
     });
+  }
+  // "Club night" → "Club night v2", "Club night v2" → "Club night v3", skipping names already taken.
+  function nextVersion(name, lists){
+    const m = name.match(/^(.*?)\s+v(\d+)$/i), base = m ? m[1] : name.replace(/\s+\(copy\)$/i, "");
+    let n = m ? +m[2] + 1 : 2;
+    while(lists.some(l => l.name.toLowerCase() === `${base} v${n}`.toLowerCase())) n++;
+    return `${base} v${n}`.slice(0, 80);
+  }
+  // Who to compare a list with first: the list it was copied from, a copy of it, or the newest other list of the faction.
+  function compareDefault(l, D){
+    const fac = id => (D.armies.find(a => a.id === id) || {}).faction, others = D.lists.filter(x => x.id !== l.id);
+    return others.find(x => x.id === l.from) || others.find(x => x.from === l.id)
+      || others.filter(x => fac(x.armyId) === fac(l.armyId)).sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || ""))[0] || others[0] || null;
+  }
+  // Two lists' units matched up: the same collection unit first, then the same datasheet.
+  function diffLists(sa, sb){
+    const A = sa.rows.filter(x => !x.gone), B = sb.rows.filter(x => !x.gone), used = new Set(), pairs = [], onlyA = [];
+    const sheet = x => (x.u ? x.u.datasheet || x.name : x.sheet || x.name).toLowerCase();
+    const take = (x, test) => { const y = B.find(y => !used.has(y) && test(y)); if(y){ used.add(y); pairs.push([x, y]); } return !!y; };
+    A.filter(x => !(x.u && take(x, y => y.u && y.u.id === x.u.id))).forEach(x => { if(!take(x, y => sheet(y) === sheet(x) && y.count === x.count) && !take(x, y => sheet(y) === sheet(x))) onlyA.push(x); });
+    const lead = (x, s) => x.lead ? (s.rows.find(r => r.k === x.lead && !r.gone) || {}).name || "" : "";
+    const changed = [], same = [];
+    pairs.forEach(([x, y]) => {
+      const d = [];
+      if(x.count !== y.count) d.push(`${plural(x.count, "model")} → ${plural(y.count, "model")}`);
+      if(x.points !== y.points) d.push(`${num(x.points)} → ${num(y.points)} pts`);
+      const en = e => e ? e.n : "";
+      if(en(x.enh) !== en(y.enh)) d.push(`Enhancement: ${en(x.enh) || "none"} → ${en(y.enh) || "none"}`);
+      if(x.warlord !== y.warlord) d.push(y.warlord ? "Now the warlord" : "No longer the warlord");
+      if(lead(x, sa) !== lead(y, sb)) d.push(`Leading: ${lead(x, sa) || "nobody"} → ${lead(y, sb) || "nobody"}`);
+      (d.length ? changed : same).push({x, y, d});
+    });
+    return {onlyA, onlyB: B.filter(y => !used.has(y)), changed, same};
+  }
+  async function viewWarCompare(aId, bId){
+    view.name = "war-compare"; document.title = "Compare lists · War Ledger";
+    const D = await warData(false);
+    let a = D.lists.find(l => l.id === aId), b = D.lists.find(l => l.id === bId);
+    if(a && (!b || b.id === a.id)) b = compareDefault(a, D);
+    if(!a || !b){
+      app.innerHTML = `${warTabs("lists")}<div class="banner"><span class="dot warn"></span><span>${D.lists.length < 2 ? "You need two army lists to compare. Duplicate a list to make a new version of it." : "Those lists couldn't be found. They may have been deleted."}</span></div><p><a class="btn" href="#/war/lists">Your army lists</a></p>`;
+      return;
+    }
+    const sa = listState(a, D), sb = listState(b, D), df = diffLists(sa, sb), gA = D.games.filter(g => g.listId === a.id), gB = D.games.filter(g => g.listId === b.id);
+    const armyName = l => (D.armies.find(x => x.id === l.armyId) || {}).name || "Deleted army";
+    const nChecks = (l, s) => { const ar = D.armies.find(x => x.id === l.armyId); if(!ar || !listChecksOn()) return null; const hid = new Set(l.ignored || []); return listChecks(l, s, ar.faction).filter(c => !hid.has(c.id)).length; };
+    const opt = sel => D.lists.map(l => `<option value="${esc(l.id)}"${l.id === sel ? " selected" : ""}>${esc(l.name)} (${esc(armyName(l))})</option>`).join("");
+    const row = (label, va, vb) => `<tr${va === vb ? "" : ` class="cmp-diff"`}><th scope="row">${label}</th><td>${va}</td><td>${vb}</td></tr>`;
+    const ca = nChecks(a, sa), cb = nChecks(b, sb);
+    const unitLi = x => `<li><span>${esc(x.name)}${x.count > 1 ? ` <small>${plural(x.count, "model")}</small>` : ""}${x.warlord ? ` <span class="tag wl">Warlord</span>` : ""}</span><span class="lb-pts">${num(x.points)}</span></li>`;
+    const sum = xs => ptsText(xs.reduce((t, x) => t + x.points, 0));
+    app.innerHTML = `
+      <div class="crumbs"><a href="#/war">War Ledger</a> / <a href="#/war/lists">Army lists</a> / Compare</div>
+      <section class="page-head war-head"><div><p class="eyebrow">War Ledger</p><h1>Compare lists</h1><p class="sub">What changes between two lists: units, points, detachments and how each has done.</p></div></section>
+      ${warTabs("lists")}
+      <div class="cmp-pick">
+        <label>First list<select id="cmp-a">${opt(a.id)}</select></label>
+        <button type="button" class="btn-sm" id="cmp-swap" aria-label="Swap the two lists">⇄</button>
+        <label>Second list<select id="cmp-b">${opt(b.id)}</select></label>
+      </div>
+      <section class="panel cmp-sum" aria-label="Side by side"><div class="wt-scroll"><table class="wtable compact cmp-t">
+        <thead><tr><th scope="col"><span class="sr-only">Detail</span></th><th scope="col"><a href="#/war/list/${esc(a.id)}">${esc(a.name)}</a></th><th scope="col"><a href="#/war/list/${esc(b.id)}">${esc(b.name)}</a></th></tr></thead>
+        <tbody>
+          ${row("Points", `${num(sa.points)}${a.limit ? ` / ${num(a.limit)}` : ""}`, `${num(sb.points)}${b.limit ? ` / ${num(b.limit)}` : ""}`)}
+          ${row("Battle size", esc(sizeName(a) || "—"), esc(sizeName(b) || "—"))}
+          ${row("Detachments", esc(detText(a) || "—"), esc(detText(b) || "—"))}
+          ${row("Units", `${sa.rows.filter(x => !x.gone).length}`, `${sb.rows.filter(x => !x.gone).length}`)}
+          ${row("Models", `${sa.models}`, `${sb.models}`)}
+          ${row("Battle ready", `${sa.readyPct}%`, `${sb.readyPct}%`)}
+          ${ca == null ? "" : row("Things to check", `${ca}`, `${cb}`)}
+          ${row("Record", gA.length ? `${recText(recordOf(gA))} <small>(${plural(gA.length, "game")})</small>` : "No games", gB.length ? `${recText(recordOf(gB))} <small>(${plural(gB.length, "game")})</small>` : "No games")}
+          ${row("Status", esc(statusName(a.status)), esc(statusName(b.status)))}
+        </tbody></table></div></section>
+      <div class="cmp-grid">
+        <section class="panel" aria-labelledby="cmp-oa"><h2 class="ph" id="cmp-oa">Only in ${esc(a.name)} <small>${sum(df.onlyA)}</small></h2>
+          ${df.onlyA.length ? `<ul class="lb-rows cmp-rows">${df.onlyA.map(unitLi).join("")}</ul>` : `<p class="hint">Nothing. Every unit is also in ${esc(b.name)}.</p>`}</section>
+        <section class="panel" aria-labelledby="cmp-ob"><h2 class="ph" id="cmp-ob">Only in ${esc(b.name)} <small>${sum(df.onlyB)}</small></h2>
+          ${df.onlyB.length ? `<ul class="lb-rows cmp-rows">${df.onlyB.map(unitLi).join("")}</ul>` : `<p class="hint">Nothing. Every unit is also in ${esc(a.name)}.</p>`}</section>
+      </div>
+      <section class="panel" aria-labelledby="cmp-ch"><h2 class="ph" id="cmp-ch">In both, but different</h2>
+        ${df.changed.length ? `<ul class="lb-rows cmp-rows">${df.changed.map(c => `<li><span class="lb-name">${esc(c.x.name)}<small>${c.d.map(esc).join(" · ")}</small></span><span class="lb-pts">${c.y.points - c.x.points > 0 ? "+" : ""}${c.y.points - c.x.points ? num(c.y.points - c.x.points) : ""}</span></li>`).join("")}</ul>` : `<p class="hint">No units are set up differently.</p>`}
+        <p class="hint">${df.same.length ? `${plural(df.same.length, "unit")} ${df.same.length === 1 ? "is" : "are"} the same in both: ${esc(df.same.map(c => c.x.name).join(", "))}.` : "No units are the same in both."}</p>
+      </section>`;
+    const go = () => { location.hash = `#/war/compare/${$("cmp-a").value}/${$("cmp-b").value}`; };
+    $("cmp-a").addEventListener("change", go); $("cmp-b").addEventListener("change", go);
+    $("cmp-swap").addEventListener("click", () => { location.hash = `#/war/compare/${b.id}/${a.id}`; });
   }
   // Paste a list: its units are matched to the collection, and anything you don't own is marked.
   function openListImport(army, list, D, apply){
@@ -1701,7 +1946,8 @@
         <div class="res-pick" role="radiogroup" aria-label="Result">${["w", "l", "d"].map(k => `<label class="r-${k}"><input type="radio" name="w-gr" value="${k}"${(seed.result || "w") === k ? " checked" : ""}><span>${RES[k]}</span></label>`).join("")}</div>
         <div class="wgrid"><label>Your score<input id="w-gu" type="number" min="0" max="999" inputmode="numeric" value="${seed.us ?? ""}"></label><label>Their score<input id="w-gt" type="number" min="0" max="999" inputmode="numeric" value="${seed.them ?? ""}"></label></div>
       </fieldset>
-      <label><span>Most valuable unit <span class="opt">(optional)</span></span><select id="w-gv"></select></label>
+      <label id="w-gv-l"><span>Most valuable unit <span class="opt">(optional)</span></span><select id="w-gv"></select></label>
+      <fieldset class="wfs" id="w-gcr" hidden></fieldset>
       <label>Notes<textarea id="w-gn" rows="3" maxlength="1000" placeholder="What worked, what didn't, what to try next time">${esc(seed.notes || "")}</textarea></label>
       <div class="row-actions"><button type="submit" class="primary">${edit ? "Save battle" : "Log battle"}</button>${edit ? `<button type="button" class="danger" id="w-gdel">Delete</button>` : ""}<span class="msg" id="w-msg" role="status"></span></div>`, "wide");
     const fill = () => {
@@ -1709,11 +1955,31 @@
       $("w-gl").innerHTML = `<option value="">No list / not recorded</option>${ls.map(l => `<option value="${esc(l.id)}"${l.id === seed.listId ? " selected" : ""}>${esc(l.name)}</option>`).join("")}`;
       $("w-gv").innerHTML = `<option value="">None</option>${us.map(u => `<option value="${esc(u.id)}"${u.id === seed.mvp ? " selected" : ""}>${esc(u.name)}</option>`).join("")}`;
     };
-    $("w-ga").addEventListener("change", fill); fill();
+    // A Crusade force's battle: which units took part and which was Marked for Greatness (instead of the MVP).
+    const crList = () => { const l = D.lists.find(x => x.id === $("w-gl").value); return isCrusade(l) ? l : null; };
+    const crFill = () => {
+      const l = crList(), box = $("w-gcr");
+      $("w-gv-l").hidden = !!l; box.hidden = !l;
+      if(!l){ box.innerHTML = ""; return; }
+      const rows = listState(l, D).rows.filter(x => !x.gone), same = seed.listId === l.id && edit;
+      const took = k => same ? (seed.took || []).includes(k) : true;
+      box.innerHTML = `<legend>Crusade: ${esc(l.name)}</legend>
+        <p class="hint">Units that took part gain 1 XP, and the one Marked for Greatness 3 more. The force gains 1 requisition point.</p>
+        <div class="cr-took">${rows.map(x => `<label class="chk"><input type="checkbox" name="w-took" value="${esc(x.k)}"${took(x.k) ? " checked" : ""}><span>${esc(x.name)}</span></label>`).join("")}</div>
+        <label>Marked for Greatness<select id="w-gmfg"><option value="">None</option>${rows.map(x => `<option value="${esc(x.k)}"${same && seed.mfg === x.k ? " selected" : ""}>${esc(x.name)}</option>`).join("")}</select></label>`;
+    };
+    $("w-ga").addEventListener("change", () => { fill(); crFill(); }); $("w-gl").addEventListener("change", crFill); fill(); crFill();
     d.querySelector("form").addEventListener("submit", async e => {
       e.preventDefault();
       const row = {armyId: $("w-ga").value, listId: $("w-gl").value, date: $("w-gd").value, opp: $("w-go").value, oppName: $("w-gp").value.trim(), mission: $("w-gm").value.trim(),
-        result: (d.querySelector("[name=w-gr]:checked") || {}).value || "w", us: $("w-gu").value, them: $("w-gt").value, mvp: $("w-gv").value, notes: $("w-gn").value.trim()};
+        result: (d.querySelector("[name=w-gr]:checked") || {}).value || "w", us: $("w-gu").value, them: $("w-gt").value, mvp: $("w-gv").value, notes: $("w-gn").value.trim(), took: [], mfg: ""};
+      const cl = crList();
+      if(cl){
+        row.took = [...d.querySelectorAll("[name=w-took]:checked")].map(x => x.value); row.mfg = $("w-gmfg").value;
+        // The unit Marked for Greatness counts as the battle's most valuable unit too.
+        const m = cl.units.find(x => x.k === row.mfg); row.mvp = m && m.u ? m.u : "";
+        if(row.mfg && !row.took.includes(row.mfg)) row.took.push(row.mfg);
+      }
       const b = e.submitter || d.querySelector("[type=submit]"); b.disabled = true; $("w-msg").textContent = "Saving…";
       try { await store.saveGame(row, edit ? g.id : null); await syncRecords([row.armyId, edit ? g.armyId : ""]); d.close(); flash(edit ? "Battle saved." : `${RES[row.result]} logged.`); again(); }
       catch(err){ console.error(err); $("w-msg").textContent = "Couldn't save: " + errText(err); b.disabled = false; }
@@ -1722,6 +1988,60 @@
       try { await store.removeGame(g.id); await syncRecords([g.armyId]); d.close(); flash("Battle deleted."); again(); }
       catch(err){ $("w-msg").textContent = "Couldn't delete: " + errText(err); }
     });
+  }
+  // Streaks, scores and biggest win for a set of battles (newest first).
+  function battleHighlights(gs){
+    const cur = gs.length ? gs.findIndex(g => g.result !== gs[0].result) : 0, curN = cur < 0 ? gs.length : cur;
+    let best = 0, run = 0;
+    gs.slice().reverse().forEach(g => { run = g.result === "w" ? run + 1 : 0; best = Math.max(best, run); });
+    const sc = gs.filter(g => g.us != null && g.them != null), avg = k => sc.length ? Math.round(sc.reduce((a, g) => a + g[k], 0) / sc.length) : 0;
+    const big = sc.filter(g => g.us > g.them).sort((a, b) => (b.us - b.them) - (a.us - a.them))[0];
+    const cell = (b, l, sm) => `<div class="wstat"><b>${b}</b><span>${l}</span>${sm ? `<small>${sm}</small>` : ""}</div>`;
+    return `<section class="war-stats" aria-label="Highlights">
+      ${cell(gs.length ? `${curN} ${RES[gs[0].result].toLowerCase()}${curN === 1 ? "" : gs[0].result === "l" ? "es" : "s"}` : "—", "Current streak", gs.length ? `Since ${esc(dayText(gs[Math.min(curN, gs.length) - 1].date))}` : "")}
+      ${cell(best, "Best winning streak", best ? `${best === 1 ? "game" : "games"} in a row` : "No wins yet")}
+      ${cell(sc.length ? `${avg("us")}<small> – ${avg("them")}</small>` : "—", "Average score", sc.length ? `Over ${plural(sc.length, "game")} with scores` : "Add scores when you log battles")}
+      ${cell(big ? `+${big.us - big.them}` : "—", "Biggest win", big ? `${big.us}–${big.them} vs ${esc(oppText(big))}` : "")}
+    </section>`;
+  }
+  // Each game's score margin (yours minus theirs), oldest on the left, up for ahead and down for behind.
+  // Games without scores sit on the line. The history below is the same data as a list.
+  function marginChart(gs, D){
+    const pts = gs.slice(0, 30).reverse();
+    if(pts.filter(g => g.us != null && g.them != null).length < 2) return "";
+    const W = Math.round(Math.max(300, Math.min(900, (app.clientWidth || innerWidth) - 60))), H = 200, pad = 24, mid = H / 2, m = g => g.us != null && g.them != null ? g.us - g.them : null;
+    const top = Math.max(10, ...pts.map(g => Math.abs(m(g) || 0))), step = Math.ceil(top / 10) * 10, k = (mid - pad) / step;
+    const band = (W - 48) / pts.length, bw = Math.min(24, band - 2);
+    const bars = pts.map((g, i) => {
+      const v = m(g), x = 40 + i * band + (band - bw) / 2, h = v == null ? 0 : Math.max(2, Math.abs(v) * k), y = v == null || v >= 0 ? mid - h : mid;
+      const tip = `${dayText(g.date)} · ${RES[g.result]} vs ${oppText(g)}${v == null ? " · no score" : ` · ${g.us}–${g.them}`}`;
+      const r = Math.min(4, bw / 2, h), path = v == null ? `<circle cx="${x + bw / 2}" cy="${mid}" r="4" class="mc-${g.result}"/>`
+        : v >= 0 ? `<path class="mc-${g.result}" d="M${x},${mid}V${y + r}Q${x},${y} ${x + r},${y}H${x + bw - r}Q${x + bw},${y} ${x + bw},${y + r}V${mid}Z"/>`
+        : `<path class="mc-${g.result}" d="M${x},${mid}V${mid + h - r}Q${x},${mid + h} ${x + r},${mid + h}H${x + bw - r}Q${x + bw},${mid + h} ${x + bw},${mid + h - r}V${mid}Z"/>`;
+      return `<g class="mc-bar" data-tip="${esc(tip)}"><rect x="${40 + i * band}" y="0" width="${band}" height="${H}" fill="transparent"/>${path}<title>${esc(tip)}</title></g>`;
+    }).join("");
+    const wins = pts.filter(g => g.result === "w").length;
+    return `<section class="panel mchart" aria-labelledby="mc-h"><h2 class="ph" id="mc-h">Score margin</h2>
+      <p class="hint">Your score minus your opponent's in your last ${plural(pts.length, "game")}, oldest first. Hover or tap a bar for the game.</p>
+      <div class="mc-wrap"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Score margin in your last ${plural(pts.length, "game")}: ${wins} won. The history below lists every game.">
+        <line x1="40" x2="${W - 8}" y1="${mid - step * k}" y2="${mid - step * k}" class="mc-grid"/><line x1="40" x2="${W - 8}" y1="${mid + step * k}" y2="${mid + step * k}" class="mc-grid"/>
+        <text x="34" y="${mid - step * k + 4}" class="mc-ax">+${step}</text><text x="34" y="${mid + 4}" class="mc-ax">0</text><text x="34" y="${mid + step * k + 4}" class="mc-ax">−${step}</text>
+        ${bars}<line x1="40" x2="${W - 8}" y1="${mid}" y2="${mid}" class="mc-base"/></svg><div class="mc-tip" hidden></div></div>
+      <ul class="mc-key"><li><i class="mc-w"></i>Win</li><li><i class="mc-l"></i>Loss</li><li><i class="mc-d"></i>Draw</li></ul>
+    </section>`;
+  }
+  // The chart's tooltip follows the pointer (or a tap on phones).
+  function wireMarginChart(){
+    const wrap = app.querySelector(".mc-wrap"); if(!wrap) return;
+    const tip = wrap.querySelector(".mc-tip");
+    const show = e => {
+      const g = e.target.closest(".mc-bar"); if(!g){ tip.hidden = true; return; }
+      const b = wrap.getBoundingClientRect(), r = g.getBoundingClientRect();
+      tip.textContent = g.dataset.tip; tip.hidden = false;
+      tip.style.left = Math.max(0, Math.min(b.width - tip.offsetWidth, r.left - b.left + r.width / 2 - tip.offsetWidth / 2)) + "px";
+    };
+    wrap.addEventListener("pointermove", show); wrap.addEventListener("pointerdown", show);
+    wrap.addEventListener("pointerleave", () => { tip.hidden = true; });
   }
   async function viewWarBattles(){
     view.name = "war-battles"; document.title = "Battles · War Ledger";
@@ -1740,6 +2060,15 @@
         <thead><tr><th scope="col">${title.replace(/^By /, "")}</th><th scope="col" class="n">Games</th><th scope="col" class="n">W</th><th scope="col" class="n">L</th><th scope="col" class="n">D</th><th scope="col" class="n">Won</th></tr></thead>
         <tbody>${rows.map(([name, gs]) => { const r = recordOf(gs); return `<tr><th scope="row">${name}</th><td class="n">${gs.length}</td><td class="n">${r.w}</td><td class="n">${r.l}</td><td class="n">${r.d}</td><td class="n">${pctOf(r.w, gs.length)}%</td></tr>`; }).join("")}</tbody></table></div></section>` : "";
     }
+    // A game's detachments are its list's (as the list is now).
+    const detOf = g => { const l = g.listId && D.lists.find(x => x.id === g.listId); return l ? detText(l) : ""; };
+    // Most valuable units: how often each was picked, and how those games went.
+    function mvpTable(gs){
+      const rows = group(gs.filter(g => g.mvp), g => g.mvp, k => { const u = D.units.find(x => x.id === k); return u ? `<button type="button" class="linkish" data-unit="${esc(u.id)}">${esc(u.name)}</button>` : "A deleted unit"; });
+      return rows.length ? `<section class="panel wrec"><h2 class="ph">Most valuable units</h2><div class="wt-scroll"><table class="wtable compact">
+        <thead><tr><th scope="col">Unit</th><th scope="col" class="n">Picked</th><th scope="col" class="n">Won</th></tr></thead>
+        <tbody>${rows.slice(0, 10).map(([name, v]) => `<tr><th scope="row">${name}</th><td class="n">${v.length}</td><td class="n">${plural(recordOf(v).w, "game")}</td></tr>`).join("")}</tbody></table></div></section>` : "";
+    }
     const group = (gs, key, name) => { const m = new Map(); gs.forEach(g => { const k = key(g); if(!m.has(k)) m.set(k, []); m.get(k).push(g); }); return [...m.entries()].map(([k, v]) => [name(k, v), v]).sort((a, b) => b[1].length - a[1].length); };
     function draw(){
       if(!D.armies.length){ $("wb-out").innerHTML = warEmpty(); return; }
@@ -1755,17 +2084,27 @@
           <div class="wstat"><b>${rec.d}</b><span>Draws</span></div>
           <div class="wstat"><b>${pctOf(rec.w, gs.length)}%</b><span>Won</span><small class="form" aria-label="Last five results">${gs.slice(0, 5).map(g => `<i class="r-${g.result}" title="${RES[g.result]}">${g.result.toUpperCase()}</i>`).join("")}</small></div>
         </section>
+        ${battleHighlights(gs)}
+        ${marginChart(gs, D)}
         <div class="wrec-grid">
           ${armyF ? "" : table("By army", group(gs, g => g.armyId, k => an(k)))}
           ${table("By opponent", group(gs, g => g.opp || g.oppName || "", (k, v) => esc(oppText(v[0]))))}
           ${table("By list", group(gs.filter(g => g.listId), g => g.listId, k => esc((D.lists.find(l => l.id === k) || {}).name || "Deleted list")))}
+          ${table("By detachment", group(gs.filter(g => detOf(g)), detOf, k => esc(k)))}
+          ${gs.filter(g => g.mission).length ? table("By mission", group(gs.filter(g => g.mission), g => g.mission.trim().toLowerCase(), (k, v) => esc(v[0].mission.trim()))) : ""}
+          ${mvpTable(gs)}
         </div>
         <section class="war-sec"><div class="sec-h"><h2>History</h2></div>${gameRows(gs, D)}</section>`
         : `<section class="panel war-empty"><h2>No battles yet</h2><p class="sub">After a game, log the result here. War Ledger keeps each army's record, and shows it on Shared armies when you share that army.</p>${D.warMissing ? "" : `<button type="button" class="primary" data-log="${esc(armyF)}">Log a battle</button>`}</section>`}`;
       $("wb-army").addEventListener("change", e => { armyF = e.target.value; draw(); });
+      wireMarginChart();
     }
     draw();
-    onApp(e => warClicks(e, D, again));
+    onApp(e => {
+      const b = e.target.closest("[data-unit]"), u = b && D.units.find(x => x.id === b.dataset.unit);
+      if(u){ openUnit(armyById(D, u.armyId), u, again, {armies: D.armies, pools: D.pools}); return; }
+      warClicks(e, D, again);
+    });
   }
 
   /* ============================================================

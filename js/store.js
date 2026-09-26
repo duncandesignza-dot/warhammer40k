@@ -150,6 +150,8 @@
   // points override (pts) are only stored when set. Nothing here checks the rules: that's left to the player.
   const slug = v => /^[a-z0-9-]{1,24}$/.test(v || "") ? v : "";
   const LIST_STATUS = ["draft", "theory", "tournament", "narrative", "archived"];
+  const CR_HONOURS = ["trait", "weapon", "relic", "other"];
+  const key = v => /^[\w-]{1,24}$/.test(v || "") ? v : "";
   function cleanList(l){
     l = l || {};
     const seen = new Set();
@@ -170,6 +172,15 @@
       if(en) row.enh = {n: en, p: int(e.enh.p, 0, 999)};
       if(e.lead && /^[\w-]{1,24}$/.test(e.lead)) row.lead = e.lead;
       if(e.u && e.pts !== null && e.pts !== undefined && e.pts !== "") row.pts = int(e.pts, 0, 9999);
+      // Crusade: experience added by hand (battles add their own), battle honours and scars, a crusade
+      // points adjustment and notes. Only stored when set.
+      const xp = int(e.xp, -999, 999); if(xp) row.xp = xp;
+      const hon = (Array.isArray(e.hon) ? e.hon : []).map(h => h && typeof h === "object" ? {t: CR_HONOURS.includes(h.t) ? h.t : "other", n: String(h.n || "").trim().slice(0, 80)} : null).filter(h => h && h.n).slice(0, 20);
+      if(hon.length) row.hon = hon;
+      const scar = (Array.isArray(e.scar) ? e.scar : []).map(x => String(x || "").trim().slice(0, 80)).filter(Boolean).slice(0, 20);
+      if(scar.length) row.scar = scar;
+      const cpx = int(e.cpx, -99, 99); if(cpx) row.cpx = cpx;
+      const cnote = String(e.cnote || "").trim().slice(0, 400); if(cnote) row.cnote = cnote;
       return row;
     }).filter(Boolean);
     // Leaders only point at units still in the list.
@@ -179,6 +190,11 @@
       limit: int(l.limit, 0, 20000), size: slug(l.size), detachments: dets, detachment: dets.join(" + "),
       status: LIST_STATUS.includes(l.status) ? l.status : "draft", ptsAsOf: /^\d{4}-\d{2}-\d{2}$/.test(l.ptsAsOf || "") ? l.ptsAsOf : "",
       notes: String(l.notes || "").slice(0, 600), units,
+      // from: the list this one was copied from, so Compare can start with the two.
+      from: /^[\w-]{1,60}$/.test(l.from || "") ? l.from : "",
+      // A Crusade force (an Order of Battle) rather than a list for one game. rp: requisition points
+      // added or spent by hand; each battle logged with the force adds one on top.
+      kind: l.kind === "crusade" ? "crusade" : "", rp: int(l.rp, -99, 999),
       // "Things to check" the player has looked at and hidden for this list.
       ignored: [...new Set((Array.isArray(l.ignored) ? l.ignored : []).map(x => String(x).slice(0, 120)).filter(Boolean))].slice(0, 60)};
   }
@@ -189,7 +205,9 @@
     return {armyId: String(g.armyId || "").slice(0, 60), listId: String(g.listId || "").slice(0, 60), date: day(g.date),
       opp: String(g.opp || "").slice(0, 60), oppName: String(g.oppName || "").slice(0, 60), mission: String(g.mission || "").slice(0, 80),
       result: ["w", "l", "d"].includes(g.result) ? g.result : "w", us: score(g.us), them: score(g.them),
-      mvp: String(g.mvp || "").slice(0, 60), notes: String(g.notes || "").slice(0, 1000)};
+      mvp: String(g.mvp || "").slice(0, 60), notes: String(g.notes || "").slice(0, 1000),
+      // Crusade: the units (list entry keys) that took part, and the one Marked for Greatness.
+      took: [...new Set((Array.isArray(g.took) ? g.took : []).map(key).filter(Boolean))].slice(0, 200), mfg: key(g.mfg)};
   }
   function cleanArmy(a){
     return {faction: String(a.faction || "").slice(0, 60), name: String(a.name || "My army").slice(0, 80), scheme: cleanScheme(a.scheme), public: a.public === true};
