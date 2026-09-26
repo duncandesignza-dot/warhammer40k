@@ -20,8 +20,10 @@ OUT = os.path.join(HERE, "..", "js", "data", "sheets")
 src = open(os.path.join(HERE, "build_factions.py"), encoding="utf-8").read()
 FACTIONS = ast.literal_eval(re.search(r"^FACTIONS = (\[.*?^\])", src, re.S | re.M).group(1))
 SKIP_ROLES = {"Configuration", "Order of Battle", ""}
-# Groups that hold options for the army rather than the datasheet's own rules.
-NOT_THE_UNIT = re.compile(r"crusade|enhancement|honour|scar|relic|upgrade|warlord|requisition|detachment|agenda|trait", re.I)
+# Groups that hold options for the army rather than the datasheet's own rules. Whole words only, and never
+# tested against units and models themselves, so "Crusader Squad" or "Canoptek Scarab Swarms" keep their profiles.
+NOT_THE_UNIT = re.compile(r"\b(crusade|enhancements?|honours?|scars?|relics?|upgrades?|warlord|requisition|detachments?|agendas?|traits?)\b", re.I)
+def not_the_unit(e): return e.get("type") not in ("unit", "model") and bool(NOT_THE_UNIT.search(e.get("name", "")))
 
 ents, cats, docs = {}, {}, {}
 def index(o):
@@ -53,7 +55,6 @@ def hidden(e, cat_id):
         if m.get("field") != "hidden" or m.get("type") != "set": continue
         v = group_true({"type": "and", "conditions": m.get("conditions", []) or [], "conditionGroups": m.get("conditionGroups", []) or []}, cat_id)
         if v: return bool(m.get("value") in (True, "true"))
-        if v is False and m.get("value") in (False, "false"): continue
     return e.get("hidden") is True
 
 def clean(n): return re.sub(r"^[➤>\s]+", "", n or "").replace(" ", " ").strip()
@@ -61,7 +62,7 @@ def clean(n): return re.sub(r"^[➤>\s]+", "", n or "").replace(" ", " ").strip
 def walk(entry, acc, cat_id, depth=0, seen=None):
     """Every profile and rule that belongs to a datasheet, following its models, wargear and shared entries."""
     if seen is None: seen = set()
-    if depth > 8 or not isinstance(entry, dict) or NOT_THE_UNIT.search(entry.get("name", "")) or (depth and hidden(entry, cat_id)): return
+    if depth > 8 or not isinstance(entry, dict) or (depth and (not_the_unit(entry) or hidden(entry, cat_id))): return
     key = entry.get("id")
     if key in seen: return
     if key: seen.add(key)
@@ -70,15 +71,15 @@ def walk(entry, acc, cat_id, depth=0, seen=None):
     for r in entry.get("rules", []) or []: acc["rules"].append(r.get("name", ""))
     for il in entry.get("infoLinks", []) or []:
         t = ents.get(il.get("targetId"))
-        if not t or NOT_THE_UNIT.search(t.get("name", "")) or hidden(il, cat_id) or hidden(t, cat_id): continue
+        if not t or not_the_unit(t) or hidden(il, cat_id) or hidden(t, cat_id): continue
         if il.get("type") == "rule": acc["rules"].append(t["name"])
         elif il.get("type") == "profile": acc["profiles"].append(t)
         else: walk(t, acc, cat_id, depth + 1, seen)
     for k in ("selectionEntries", "selectionEntryGroups"):
         for c in entry.get(k, []) or []: walk(c, acc, cat_id, depth + 1, seen)
     for el in entry.get("entryLinks", []) or []:
-        if NOT_THE_UNIT.search(el.get("name", "")): continue
         t = ents.get(el.get("targetId"))
+        if t and not_the_unit(t): continue
         if t: walk(t, acc, cat_id, depth + 1, seen)
 
 def chars(p): return {c.get("name", ""): clean(c.get("$text", "")) for c in p.get("characteristics", []) or []}
@@ -113,7 +114,7 @@ def primary_role(link, t):
     return ""
 
 def sheets_for(files, skip=()):
-    out, cat_id = {}, (docs.get(files[0]) or {}).get("id")
+    out, tagged, cat_id = {}, set(), (docs.get(files[0]) or {}).get("id")
     for fn in files:
         c = docs.get(fn)
         if not c: print("missing", fn, file=sys.stderr); continue
@@ -121,9 +122,14 @@ def sheets_for(files, skip=()):
             if link.get("hidden"): continue
             t = ents.get(link.get("targetId")) if link.get("targetId") else link
             if not t or t.get("type") not in ("unit", "model") or primary_role(link, t) in SKIP_ROLES: continue
-            name = re.sub(r"\s*\[(Legends|Crucible)\]\s*", "", link.get("name") or t.get("name")).strip()
-            if name in out or name in skip: continue
+            raw = link.get("name") or t.get("name")
+            name = re.sub(r"\s*\[(Legends|Crucible)\]\s*", "", raw).strip()
+            legend = name != raw.strip()
+            # The current datasheet wins over a Legends one of the same name, whichever comes first.
+            if name in skip or (name in out and (legend or name not in tagged)): continue
             out[name] = sheet(link, t, cat_id)
+            if legend: tagged.add(name)
+            else: tagged.discard(name)
     return out
 
 os.makedirs(OUT, exist_ok=True)
