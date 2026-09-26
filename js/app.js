@@ -2999,7 +2999,8 @@
       actions: `<button type="button" class="primary" data-import-army>Import an army</button>`});
     onApp(e => { if(e.target.closest("[data-import-army]")) openImportArmy(); });
   }
-  // A faction's hero picture for the new army pages, where there is one (img/heroes/<faction>.webp).
+  // A faction's hero picture for the new army pages, where there is one: img/heroes/<faction>.webp, then <faction>-2.webp and so on.
+  // A faction with more than one shows one of them at random.
   const FACTION_HEROES = {
     "black-templars": "Black Templars: the High Marshal leads a crusade of Primaris and Firstborn Templars",
     "blood-angels": "Blood Angels: the Sanguinor and the Sanguinary Guard charge a Necron line",
@@ -3017,14 +3018,20 @@
     "astra-militarum": "Astra Militarum: Guardsmen advance under a regimental banner",
     "adepta-sororitas": "Adepta Sororitas: a Canoness leads Battle Sisters against Tyranids",
     "adeptus-custodes": "Adeptus Custodes: Trajann Valoris and a Shield-Captain in golden armour",
-    "imperial-knights": "Imperial Knights: blue and gold Knights of a noble house stride out to war",
+    "imperial-knights": ["Imperial Knights: blue and gold Knights of a noble house stride out to war", "A Reaver Titan and a Warhound Titan stride through a storm"],
     "emperors-children": "Emperor's Children: Fulgrim and a pink Land Raider lead the legion into battle",
-    "chaos-space-marines": "Chaos Space Marines: Abaddon the Despoiler leads the Black Legion against Ultramarines",
+    "chaos-space-marines": ["Chaos Space Marines: Abaddon the Despoiler leads the Black Legion against Ultramarines", "Chaos Space Marines: Iron Warriors in hazard-striped armour march to war"],
     "death-guard": "Death Guard: Plague Marines and their daemon engines advance through a poisoned swamp",
-    "chaos-knights": "Chaos Knights: dark Knights and War Dogs stride against the Aeldari",
-    "chaos-daemons": "Chaos Daemons: a Great Unclean One, a Keeper of Secrets and their daemons"
+    "chaos-knights": ["Chaos Knights: dark Knights and War Dogs stride against the Aeldari", "A traitor Titan towers over a burning Imperial city"],
+    "chaos-daemons": "Chaos Daemons: a Great Unclean One, a Keeper of Secrets and their daemons",
+    "world-eaters": "World Eaters: Angron leads Khorne Berzerkers across a field of skulls",
+    "thousand-sons": "Thousand Sons: an Exalted Sorcerer leads Rubric Marines"
   };
-  const factionHero = fid => FACTION_HEROES[fid] ? `<figure class="faction-hero"><img src="img/heroes/${esc(fid)}.webp" alt="${esc(FACTION_HEROES[fid])}" width="800" height="250" decoding="async"></figure>` : "";
+  const factionHero = fid => {
+    const alts = [].concat(FACTION_HEROES[fid] || []); if(!alts.length) return "";
+    const i = Math.floor(Math.random() * alts.length);
+    return `<figure class="faction-hero"><img src="img/heroes/${esc(fid)}${i ? `-${i + 1}` : ""}.webp" alt="${esc(alts[i])}" width="800" height="250" decoding="async"></figure>`;
+  };
   // Second step of a new army: its name and the points you're building to.
   async function viewWarNewFaction(fid){
     const f = FBY[fid];

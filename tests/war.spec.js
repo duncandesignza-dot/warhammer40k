@@ -530,12 +530,15 @@ test("the eye on army and collection tables shows a unit's datasheet, and the un
 
 test("new army pages show the faction's picture under the army name, where there is one", async ({page}) => {
   await seed(page);
-  for(const f of ["adepta-sororitas", "adeptus-custodes", "adeptus-mechanicus", "agents-of-the-imperium", "astra-militarum", "black-templars", "chaos-daemons", "chaos-knights", "chaos-space-marines", "death-guard", "emperors-children", "blood-angels", "dark-angels", "deathwatch", "grey-knights", "imperial-fists", "imperial-knights", "iron-hands", "raven-guard", "salamanders", "space-wolves", "white-scars"]){
+  for(const f of ["adepta-sororitas", "adeptus-custodes", "adeptus-mechanicus", "agents-of-the-imperium", "astra-militarum", "black-templars", "chaos-daemons", "chaos-knights", "chaos-space-marines", "death-guard", "emperors-children", "blood-angels", "dark-angels", "deathwatch", "grey-knights", "imperial-fists", "imperial-knights", "iron-hands", "raven-guard", "salamanders", "space-wolves", "thousand-sons", "white-scars", "world-eaters"]){
     await open(page, "#/war/new/" + f);
     const img = page.locator("#wn-form .faction-hero img");
     await expect(img).toHaveAttribute("alt", /.+/);
     await expect.poll(() => img.evaluate(i => i.complete && i.naturalWidth)).toBe(800);
   }
+  // A faction with more than one picture shows one of them at random, so every file is checked directly.
+  for(const f of ["imperial-knights-2", "chaos-space-marines-2", "chaos-knights-2"])
+    expect((await page.request.get(`/img/heroes/${f}.webp`)).ok()).toBe(true);
   await open(page, "#/livery/new/black-templars");
   await expect(page.locator(".setup .faction-hero img")).toBeVisible();
   // Factions without a picture just have the form.
