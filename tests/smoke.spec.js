@@ -20,6 +20,11 @@ for(const [name, viewport] of Object.entries(SIZES)){
       // War tables fit without scrolling sideways inside their own box, too.
       const hidden = await page.$$eval(".wt-scroll", els => els.filter(e => e.scrollWidth > e.clientWidth + 1).length);
       expect(hidden, `a War table scrolls sideways on ${route}`).toBe(0);
+      // On wider screens War tables are real tables, with the header row above the rows (phones get cards).
+      if(viewport.width > 640){
+        const bad = await page.$$eval(".wtable", ts => ts.filter(t => getComputedStyle(t).display !== "table" || (t.tHead && t.tBodies[0] && t.tHead.getBoundingClientRect().bottom > t.tBodies[0].getBoundingClientRect().top + 1)).length);
+        expect(bad, `a War table isn't laid out as a table on ${route}`).toBe(0);
+      }
     }
   });
 }

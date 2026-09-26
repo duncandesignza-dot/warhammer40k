@@ -27,9 +27,39 @@ test("a unit can live in the collection without an army, and lists can use it", 
   await page.click("dialog[open] [type=submit]");
   await page.selectOption("#w-sheet", {label: await page.$eval("#w-sheet", s => [...s.options].find(o => o.textContent.startsWith("Lieutenant")).textContent)});
   await page.click("dialog[open] [type=submit]");
-  await expect(page.locator(".wc-loose")).toHaveCount(1);
+  await expect(page.locator('.wc-group:has(h3:text-is("Not in an army"))')).toContainText("Lieutenant");
   await open(page, "#/war/list/l1");
   await expect(page.locator('.lb-coll li:has-text("Lieutenant")')).toContainText("Not in an army");
+});
+
+test("the collection works like the roster: a summary, quick filters and grouping", async ({page}) => {
+  await seed(page, `db.units.push({id: "u9", armyId: "a1", name: "Gladiator Lancer", datasheet: "Gladiator Lancer", role: "Vehicle", count: 1, points: 160, painted: 0, stages: [], own: "planned"});`);
+  await open(page, "#/war/collection");
+  // The totals sit under the title, as on the roster.
+  await expect(page.locator(".page-head .sub")).toHaveText("6 units · 38 models · 910 pts · 21% battle ready · 1 planned".replace(/ pts/, "\u00a0pts"));
+  const heads = () => page.locator(".wc-group h3").allInnerTexts();
+  expect(await heads()).toEqual(["Ultramarines 2nd Company", "Hive Fleet Leviathan"]);
+  const rows = () => page.locator(".wc-group tbody tr").count();
+  expect(await rows()).toBe(7);
+  // Quick filters
+  await page.click('[data-cf="ready"]');
+  expect(await page.locator(".wc-group tbody [data-unit]").allInnerTexts()).toEqual(["Captain", "Hive Tyrant"]);
+  await expect(page.locator(".page-head .sub")).toContainText("showing 2");
+  await page.click('[data-cf="planned"]');
+  expect(await page.locator(".wc-group tbody [data-unit]").allInnerTexts()).toEqual(["Gladiator Lancer"]);
+  await page.click('[data-cf="all"]');
+  // Group by role, then readiness; the choice is remembered.
+  await page.selectOption("#wc-g", "role");
+  expect(await heads()).toEqual(["Character", "Battleline", "Infantry", "Vehicle"]);
+  await page.selectOption("#wc-g", "ready");
+  expect(await heads()).toEqual(["Not battle ready", "Partly battle ready", "Battle ready", "Planned"]);
+  await open(page, "#/war");
+  await open(page, "#/war/collection");
+  await expect(page.locator("#wc-g")).toHaveValue("ready");
+  // Search finds units by army name too.
+  await page.selectOption("#wc-g", "army");
+  await page.fill("#wc-q", "hive fleet");
+  expect(await heads()).toEqual(["Hive Fleet Leviathan"]);
 });
 
 test("plan a unit from a list, then mark it bought", async ({page}) => {

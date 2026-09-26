@@ -1025,7 +1025,7 @@
         <section class="war-sec" aria-labelledby="cf-h">
           <div class="sec-h"><h2 id="cf-h">Current force</h2>
             <div class="seg" role="group" aria-label="Show"><button type="button" data-filter="all" aria-pressed="${filter === "all"}">All units</button><button type="button" data-filter="notready" aria-pressed="${filter === "notready"}">Not battle ready</button><button type="button" data-filter="fav" aria-pressed="${filter === "fav"}">${STAR(true)} Starred</button></div></div>
-          ${shown.length ? `<div class="wt-scroll"><table class="wtable cards" role="table">
+          ${shown.length ? `<div class="wt-scroll"><table class="wtable wt-cards" role="table">
             <thead><tr><th scope="col">Unit</th><th scope="col">Role</th><th scope="col" class="n">Owned</th><th scope="col" class="n">Built</th><th scope="col" class="n">Painted</th><th scope="col" class="n">Ready</th><th scope="col" class="n">Points</th></tr></thead>
             <tbody>${shown.map(u => { const r = readiness(u); return `<tr><th scope="row"><span class="wt-unit">${warStar(u)}<span><button type="button" class="linkish" data-unit="${esc(u.id)}">${esc(u.name)}</button>${u.own === "planned" ? PLANNED_TAG : ""}${u.datasheet && u.datasheet !== u.name ? `<small>${esc(u.datasheet)}</small>` : ""}</span></span></th>
               <td class="wt-sub">${esc(u.role || "—")}</td>${statCells(r)}</tr>`; }).join("")}</tbody>
@@ -1091,47 +1091,81 @@
     });
     $("w-cf").focus();
   }
+  // The whole collection, laid out like Livery Ledger's roster: a summary under the title, quick filters,
+  // and units grouped by army, role or readiness.
+  let collFilter = "all";
+  const COLL_FILTERS = [["all", "All"], ["notready", "Not ready"], ["ready", "Ready"], ["planned", "Planned"], ["fav", "Starred"]];
+  const READY_GROUPS = [["none", "Not battle ready"], ["part", "Partly battle ready"], ["ready", "Battle ready"], ["planned", "Planned"]];
+  const readyKey = u => { const r = readiness(u); return r.planned ? "planned" : r.ready >= r.owned ? "ready" : r.ready ? "part" : "none"; };
   async function viewWarCollection(){
     view.name = "war-collection"; document.title = "Collection · War Ledger";
-    let D = await warData(true), q = "", armyF = "", notReady = false, favOnly = false;
+    let D = await warData(true), q = "", by = "army";
+    try { by = localStorage.getItem("ll-coll-group") || "army"; } catch(e){}
+    if(!["army", "role", "ready"].includes(by)) by = "army";
     const armyOf = id => D.armies.find(a => a.id === id) || D.pools.find(a => a.id === id);
     async function reload(){ D = await warData(true); draw(); }
-    app.innerHTML = `
-      <section class="page-head war-head">
-        <div><p class="eyebrow">War Ledger</p><h1>My collection</h1><p class="sub">Everything you own, in an army or not.</p></div>
-        <div class="war-actions"><button type="button" class="primary" data-coll-add>+ Add unit</button></div>
-      </section>
+    app.innerHTML = `${tabHead("War Ledger", "My collection", `<span id="wc-sum">Everything you own, in an army or not.</span>`, `<button type="button" class="primary" data-coll-add>+ Add unit</button>`)}
       ${warTabs("collection")}
-      <div class="war-filters">
-        <input type="search" id="wc-q" placeholder="Search units" aria-label="Search units">
-        <select id="wc-army" aria-label="Army"><option value="">All units</option>${D.armies.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join("")}<option value="__pool">Not in an army</option></select>
-        <label class="chk"><input type="checkbox" id="wc-nr"><span>Not battle ready only</span></label>
-        <label class="chk"><input type="checkbox" id="wc-fav"><span>Starred only</span></label>
+      <div class="ro-tools war-filters">
+        <input type="search" id="wc-q" placeholder="Search your units" aria-label="Search your collection">
+        <div class="filters" id="wc-f" role="group" aria-label="Show">
+          ${COLL_FILTERS.map(([k, l]) => `<button type="button" data-cf="${k}" aria-pressed="${collFilter === k}">${l}</button>`).join("")}
+        </div>
+        <label class="ro-by">Group by<select id="wc-g"><option value="army">Army</option><option value="role">Role</option><option value="ready">Readiness</option></select></label>
       </div>
+      <h2 class="sr-only">Units</h2>
       <div id="wc-out"></div>`;
+    $("wc-g").value = by;
+    const armyCell = a => isPool(a) ? `<span class="wc-loose">Not in an army</span><small>${esc(factionName(a.faction))}</small>` : `<a href="#/war/army/${esc(a.id)}">${esc(a.name)}</a>`;
     function draw(){
-      const list = D.units.filter(u => armyOf(u.armyId) && (!armyF || (armyF === "__pool" ? isPool(armyOf(u.armyId)) : u.armyId === armyF)) && (!q || [u.name, u.datasheet, u.role].join(" ").toLowerCase().includes(q))
-        && (!notReady || readiness(u).ready < readiness(u).owned) && (!favOnly || u.fav)).sort((a, b) => a.name.localeCompare(b.name));
-      const t = sumUp(list), kits = D.kits.filter(k => !armyF || (armyOf(armyF) && k.faction === armyOf(armyF).faction));
-      const armyCell = a => isPool(a) ? `<span class="wc-loose">Not in an army</span><small>${esc(factionName(a.faction))}</small>` : `<a href="#/war/army/${esc(a.id)}">${esc(a.name)}</a>`;
-      $("wc-out").innerHTML = `
-        <p class="wc-sum">${plural(list.length - t.planned, "unit")} · ${plural(t.models, "model")} · ${ptsText(t.points)} · ${pctOf(t.ready, t.models)}% battle ready${t.planned ? ` · ${t.planned} planned` : ""}</p>
-        ${list.length ? `<div class="wt-scroll"><table class="wtable cards" role="table">
-          <thead><tr><th scope="col">Unit</th><th scope="col">Army</th><th scope="col" class="n">Owned</th><th scope="col" class="n">Built</th><th scope="col" class="n">Painted</th><th scope="col" class="n">Ready</th><th scope="col" class="n">Points</th></tr></thead>
-          <tbody>${list.map(u => { const r = readiness(u), a = armyOf(u.armyId); return `<tr><th scope="row"><span class="wt-unit">${warStar(u)}<span><button type="button" class="linkish" data-unit="${esc(u.id)}">${esc(u.name)}</button>${u.own === "planned" ? PLANNED_TAG : ""}<small>${esc(u.role || "")}</small></span></span></th>
-            <td class="wt-sub">${armyCell(a)}</td>${statCells(r)}</tr>`; }).join("")}</tbody>
-        </table></div>` : `<p class="hint">${D.units.length ? "No units match." : "No units yet. Add one here, or add them to one of your armies."}</p>`}
-        ${kits.length ? `<p class="hint wc-kits"><a href="#/shame">Pile of shame</a>: ${plural(kits.length, "kit")} and ${plural(kits.reduce((a, k) => a + k.models, 0), "model")} still on the sprue.</p>` : ""}`;
+      const all = D.units.filter(u => armyOf(u.armyId)), t = sumUp(all);
+      const list = all.filter(u => {
+        const k = readyKey(u);
+        if(collFilter === "notready" && !(k === "none" || k === "part")) return false;
+        if(collFilter === "ready" && k !== "ready") return false;
+        if(collFilter === "planned" && k !== "planned") return false;
+        if(collFilter === "fav" && !u.fav) return false;
+        const a = armyOf(u.armyId);
+        return !q || [u.name, u.datasheet, u.role, isPool(a) ? "not in an army" : a.name, factionName(a.faction)].join(" ").toLowerCase().includes(q);
+      }).sort((a, b) => a.name.localeCompare(b.name));
+      $("wc-sum").textContent = all.length ? [plural(all.length - t.planned, "unit"), plural(t.models, "model"), ptsText(t.points), `${pctOf(t.ready, t.models)}% battle ready`].join(" · ")
+        + (t.planned ? ` · ${t.planned} planned` : "") + (list.length !== all.length ? ` · showing ${list.length}` : "") : "Everything you own, in an army or not.";
+      const kits = D.kits.length ? `<p class="hint wc-kits"><a href="#/shame">Pile of shame</a>: ${plural(D.kits.length, "kit")} and ${plural(D.kits.reduce((a, k) => a + k.models, 0), "model")} still on the sprue.</p>` : "";
+      if(!all.length){ $("wc-out").innerHTML = `<div class="ro-empty"><strong>No units yet</strong><p>Add one here, or add them to one of your armies, and they'll all show up here.</p></div>${kits}`; return; }
+      if(!list.length){ $("wc-out").innerHTML = `<p class="hint">No units match. Try a different search or filter.</p>${kits}`; return; }
+      let groups;
+      if(by === "role") groups = ROLE_ORDER.map(r => ({title: r, units: list.filter(u => (ROLE_ORDER.includes(u.role) ? u.role : "Other") === r)}));
+      else if(by === "ready") groups = READY_GROUPS.map(([k, l]) => ({title: l, units: list.filter(u => readyKey(u) === k)}));
+      else groups = [...D.armies, ...D.pools].map(a => ({army: a, title: isPool(a) ? `Not in an army` : a.name, units: list.filter(u => u.armyId === a.id)}));
+      // Grouped by army, each unit's second column is its role; otherwise it's the army it's in.
+      const second = by === "army" ? "Role" : "Army";
+      $("wc-out").innerHTML = groups.filter(g => g.units.length).map(g => {
+        const gt = sumUp(g.units), a = g.army;
+        const owned = g.units.length - gt.planned;
+        const meta = [a ? factionName(a.faction) : "", owned ? plural(owned, "unit") : "", owned ? ptsText(gt.points) : "", owned ? `${pctOf(gt.ready, gt.models)}% battle ready` : "", gt.planned ? `${gt.planned} planned` : ""].filter(Boolean).join(" · ");
+        return `<section class="ro-group wc-group" aria-label="${esc(g.title)}">
+          <div class="ro-gh">${a && !isPool(a) ? armyBadge(a, 34) : ""}<div><h3>${esc(g.title)}</h3><small>${esc(meta)}</small></div>${a && !isPool(a) ? `<a class="btn btn-sm" href="#/war/army/${esc(a.id)}" aria-label="Open ${esc(a.name)}">View army</a>` : ""}</div>
+          <div class="wt-scroll"><table class="wtable wt-cards" role="table">
+            <thead><tr><th scope="col">Unit</th><th scope="col">${second}</th><th scope="col" class="n">Owned</th><th scope="col" class="n">Built</th><th scope="col" class="n">Painted</th><th scope="col" class="n">Ready</th><th scope="col" class="n">Points</th></tr></thead>
+            <tbody>${g.units.map(u => { const r = readiness(u), ua = armyOf(u.armyId); return `<tr><th scope="row"><span class="wt-unit">${warStar(u)}<span><button type="button" class="linkish" data-unit="${esc(u.id)}">${esc(u.name)}</button>${u.own === "planned" ? PLANNED_TAG : ""}${u.datasheet && u.datasheet !== u.name ? `<small>${esc(u.datasheet)}</small>` : ""}</span></span></th>
+              <td class="wt-sub">${by === "army" ? esc(u.role || "—") : armyCell(ua)}</td>${statCells(r)}</tr>`; }).join("")}</tbody>
+          </table></div>
+        </section>`;
+      }).join("") + kits;
       tableRoles($("wc-out"));
     }
     $("wc-q").addEventListener("input", e => { q = e.target.value.trim().toLowerCase(); draw(); });
-    $("wc-army").addEventListener("change", e => { armyF = e.target.value; draw(); });
-    $("wc-nr").addEventListener("change", e => { notReady = e.target.checked; draw(); });
-    $("wc-fav").addEventListener("change", e => { favOnly = e.target.checked; draw(); });
+    $("wc-g").addEventListener("change", e => { by = e.target.value; try { localStorage.setItem("ll-coll-group", by); } catch(err){} draw(); });
+    $("wc-f").addEventListener("click", e => {
+      const b = e.target.closest("[data-cf]"); if(!b) return;
+      collFilter = b.dataset.cf;
+      $("wc-f").querySelectorAll("[data-cf]").forEach(x => x.setAttribute("aria-pressed", x === b));
+      draw();
+    });
     draw();
     onApp(e => {
       const st = e.target.closest("[data-wstar]"); if(st){ toggleWarStar(D, st.dataset.wstar, draw); return; }
-      if(e.target.closest("[data-coll-add]")){ openCollectionAdd(D, armyF, reload); return; }
+      if(e.target.closest("[data-coll-add]")){ openCollectionAdd(D, "", reload); return; }
       const b = e.target.closest("[data-unit]"); if(!b) return;
       const u = D.units.find(x => x.id === b.dataset.unit), a = u && armyOf(u.armyId);
       if(u && a) openUnit(a, u, reload, {armies: D.armies, pools: D.pools});
@@ -2122,7 +2156,7 @@
     <td class="n" data-label="Ready"><span class="rdy ${r.ready >= r.owned ? "ok" : r.ready ? "part" : "no"}">${r.ready}</span></td><td class="n" data-label="Points">${num(r.points)}</td>`;
   // Tables restyled as cards lose their table meaning in some screen readers unless every part says what it is.
   function tableRoles(root){
-    root.querySelectorAll("table.cards").forEach(t => {
+    root.querySelectorAll("table.wt-cards").forEach(t => {
       t.querySelectorAll("thead,tbody,tfoot").forEach(x => x.setAttribute("role", "rowgroup"));
       t.querySelectorAll("tr").forEach(x => x.setAttribute("role", "row"));
       t.querySelectorAll("th").forEach(x => x.setAttribute("role", x.getAttribute("scope") === "row" ? "rowheader" : "columnheader"));
