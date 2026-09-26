@@ -1593,6 +1593,8 @@ header.top .wh-id h1{margin:0}
 .lb-title .tag{margin:0 0 0 6px;vertical-align:2px}
 .lb-name small.lb-extra{color:var(--ink);opacity:.8;margin-top:2px}
 .lb-rows .icon-x+.icon-x{margin-left:-4px}
+/* The list fields in New list sit in their own box; space them like the rest of the dialog. */
+#w-lf{display:flex;flex-direction:column;gap:14px}
 .det-row{display:flex;gap:8px;align-items:center}
 .det-row+.det-row{margin-top:8px}
 .det-row input{flex:1;min-width:0}
