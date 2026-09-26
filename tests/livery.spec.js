@@ -128,3 +128,11 @@ test("+ Add unit on the roster asks which ledger, then opens its unit editor", a
   await expect(page.locator("#editdlg")).toBeVisible();
   await expect(page.locator("#ed-title")).toHaveText("New unit");
 });
+
+test("the Livery overview shows every model's painting status", async ({page}) => {
+  await seed(page);
+  await open(page, "#/livery");
+  const ps = page.locator(".liv-status");
+  await expect(ps).toContainText("8 of 38 models painted");
+  await expect(ps.locator(".stack-key li")).toHaveText([/1\s*Not started/, /20\s*Built/, /5\s*Primed/, /4\s*In progress/, /8\s*Painted/]);
+});

@@ -2435,6 +2435,23 @@
     </section>`;
 
   /* ---------- Livery overview ---------- */
+  // Every owned model across your ledgers, by how far its painting has got (planned units aren't counted).
+  const PAINT_BUCKETS = [["sprue", "Not started"], ["built", "Built"], ["primed", "Primed"], ["painting", "In progress"], ["ready", "Painted"]];
+  function paintStatus(units){
+    const bk = {sprue: 0, built: 0, primed: 0, painting: 0, ready: 0};
+    units.filter(u => u.own !== "planned").forEach(u => {
+      const n = +u.count || 0, done = Math.min(n, +u.painted || 0), rest = n - done;
+      bk.ready += done;
+      bk[{unbuilt: "sprue", built: "built", primed: "primed"}[u.status] || (u.status === "done" ? "ready" : "painting")] += rest;
+    });
+    const total = Object.values(bk).reduce((a, b) => a + b, 0);
+    if(!total) return "";
+    return `<section class="panel war-status liv-status" aria-labelledby="ps-h">
+        <h2 class="ph" id="ps-h">Painting status <small class="ws-rule">${num(bk.ready)} of ${plural(total, "model")} painted · ${Math.round(bk.ready / total * 100)}%</small></h2>
+        <div class="stack" role="img" aria-label="${esc(PAINT_BUCKETS.map(([k, l]) => `${l}: ${bk[k]}`).join(", "))}">${PAINT_BUCKETS.map(([k]) => bk[k] ? `<i class="b-${k}" style="flex:${bk[k]}"></i>` : "").join("")}</div>
+        <ul class="stack-key">${PAINT_BUCKETS.map(([k, l]) => `<li><span class="sw b-${k}"></span><span><b>${num(bk[k])}</b><small>${l}</small></span></li>`).join("")}</ul>
+      </section>`;
+  }
   async function viewLivery(){
     view.name = "home"; document.title = "Overview · Livery Ledger";
     const {armies, sum, tot} = await liveryData();
@@ -2445,6 +2462,7 @@
         stats: [[armies.length, armies.length === 1 ? "Ledger" : "Ledgers"], [num(tot.units), "Units"], [`${num(tot.done)}/${num(tot.models)}`, "Models painted"], [`${tot.models ? Math.round(tot.done / tot.models * 100) : 0}%`, "Complete"]],
         actions: armies.length ? `<a class="btn btn-sm" href="#/livery/roster">${LIST_ICON}Your roster<span class="count">${num(tot.units)}</span></a>${shameBtn()}${settingsBtn}` : ""})}
       ${livTabs("")}
+      <div id="paint-status"></div>
       ${signedOut ? `<div class="banner"><span class="dot"></span>Log in to create a ledger and see the ones you've made. <button type="button" class="btn-sm" data-signin>Log in</button></div>` : ""}
       ${armies.length ? `
       <section class="war-sec" aria-labelledby="yl-h"><div class="sec-h"><h2 id="yl-h">Your ledgers</h2><div class="sec-acts">${armies.length > shown.length ? `<a href="#/livery/ledgers">All ${armies.length} ledgers</a>` : ""}${newLedgerBtn("primary btn-sm")}</div></div>
@@ -2454,6 +2472,7 @@
       : signedOut ? "" : livEmpty()}`;
     wireProfileHead();
     if(armies.length) store.listAllUnits().then(us => {
+      const ps = $("paint-status"); if(ps) ps.innerHTML = paintStatus(us.filter(u => armies.some(a => a.id === u.armyId)));
       const box = $("act-sum"); if(!box) return;
       const A = activityOf(us), goal = getGoal();
       box.innerHTML = `<div class="war-stats" aria-label="Painting activity">

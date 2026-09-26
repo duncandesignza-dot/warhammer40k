@@ -1781,3 +1781,6 @@ body.has-timer .site-foot{padding-bottom:80px}
 .wtable tr.picked{background:rgba(var(--brand-rgb),.08)}
 .wtable tr.picked:hover{background:rgba(var(--brand-rgb),.12)}
 .b-select[aria-pressed="true"]{border-color:var(--brand-line);color:var(--brand);background:var(--brand-soft)}
+.liv-status{margin-bottom:22px}
+.liv-status .stack-key{grid-template-columns:repeat(5,minmax(0,1fr))}
+@media (max-width:900px){.liv-status .stack-key{grid-template-columns:repeat(3,minmax(0,1fr))}}
