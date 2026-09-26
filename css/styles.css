@@ -1578,19 +1578,19 @@ header.top .wh-id h1{margin:0}
 .rs-list .chk small,.wd-body>.chk small{display:block;color:var(--muted);font-size:.82rem;margin-top:2px}
 /* War unit tables become cards on phones: name, army or role, then the numbers with their labels. */
 @media (max-width:640px){
-  .wtable.cards{min-width:0;display:block}
-  .wtable.cards thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
-  .wtable.cards tbody,.wtable.cards tfoot{display:block}
-  .wtable.cards tr{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px 8px;padding:12px 14px;border-bottom:1px solid var(--line)}
-  .wtable.cards tbody tr:last-child{border-bottom:0}
-  .wtable.cards tfoot tr{border-top:1px solid var(--line-strong);border-bottom:0;background:rgba(255,255,255,.03)}
-  .wtable.cards th,.wtable.cards td{padding:0;border:0}
-  .wtable.cards tbody th,.wtable.cards tfoot th{grid-column:1/-1}
-  .wtable.cards .wt-sub{grid-column:1/-1;color:var(--muted);font-size:.84rem;margin-top:-4px}
-  .wtable.cards .wt-sub:empty{display:none}
-  .wtable.cards .wt-sub a{color:var(--muted)}
-  .wtable.cards td.n{text-align:left;display:flex;flex-direction:column;align-items:flex-start;gap:2px;font-weight:600}
-  .wtable.cards td.n::before{content:attr(data-label);font-family:var(--mono);font-size:.58rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700}
+  .wtable.wt-cards{min-width:0;display:block}
+  .wtable.wt-cards thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
+  .wtable.wt-cards tbody,.wtable.wt-cards tfoot{display:block}
+  .wtable.wt-cards tr{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px 8px;padding:12px 14px;border-bottom:1px solid var(--line)}
+  .wtable.wt-cards tbody tr:last-child{border-bottom:0}
+  .wtable.wt-cards tfoot tr{border-top:1px solid var(--line-strong);border-bottom:0;background:rgba(255,255,255,.03)}
+  .wtable.wt-cards th,.wtable.wt-cards td{padding:0;border:0}
+  .wtable.wt-cards tbody th,.wtable.wt-cards tfoot th{grid-column:1/-1}
+  .wtable.wt-cards .wt-sub{grid-column:1/-1;color:var(--muted);font-size:.84rem;margin-top:-4px}
+  .wtable.wt-cards .wt-sub:empty{display:none}
+  .wtable.wt-cards .wt-sub a{color:var(--muted)}
+  .wtable.wt-cards td.n{text-align:left;display:flex;flex-direction:column;align-items:flex-start;gap:2px;font-weight:600}
+  .wtable.wt-cards td.n::before{content:attr(data-label);font-family:var(--mono);font-size:.58rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700}
 }
 /* Battle record tables on the smallest phones: tighter cells, and long names wrap. */
 @media (max-width:380px){
@@ -1621,3 +1621,10 @@ header.top .wh-id h1{margin:0}
 .nf{max-width:560px;margin:48px auto;padding:32px 28px;text-align:center}
 .nf h1{margin:6px 0 10px}
 .nf .row-actions{justify-content:center;margin-top:20px}
+/* Collection groups: the same column widths in every group's table, so they line up down the page. */
+@media (min-width:641px){
+  .wc-group .wtable{table-layout:fixed}
+  .wc-group .wtable th:nth-child(1){width:32%}
+  .wc-group .wtable th:nth-child(2){width:23%}
+}
+.wc-group+.wc-group{margin-top:22px}

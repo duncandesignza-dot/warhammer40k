@@ -320,7 +320,7 @@
       photoUrl: p => p,
       // "Delete account" when saving in this browser: clear everything this site saved here.
       async deleteAccount(){
-        ["livery-ledger-v3", "livery-paints-v1", "livery-recipes-v1", "ll-goal", "ll-settings", "ll-shame", "ll-list-prefs", "ll-detail-open", "ll-roster-group", "ll-mode"].forEach(k => { try { localStorage.removeItem(k); } catch(e){} });
+        ["livery-ledger-v3", "livery-paints-v1", "livery-recipes-v1", "ll-goal", "ll-settings", "ll-shame", "ll-list-prefs", "ll-detail-open", "ll-roster-group", "ll-coll-group", "ll-mode"].forEach(k => { try { localStorage.removeItem(k); } catch(e){} });
         db = {armies: [], units: [], lists: [], games: []};
       },
       async addUnitPhoto(armyId, u, file){ const url = await blobToDataURL(await resizeImage(file, 900, .78)); return this.saveUnit(armyId, {...u, photos: [...(u.photos || []), url]}, u.id, null, false, u); },
