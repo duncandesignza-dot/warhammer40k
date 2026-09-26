@@ -532,12 +532,13 @@
         else await viewShared();
       }
       else if(parts[0] === "livery"){
-        // Livery Ledger: your profile, ledgers, roster and painting activity; logged out, the homepage with the log in form open.
+        // Livery Ledger: your profile, ledgers, collection and painting activity; logged out, the homepage with the log in form open.
         if(store.kind === "supabase" && !store.session){ await viewLanding(); setTimeout(() => openAuth("in", "Log in to see your ledgers."), 0); }
         else if(parts[1] === "new" && FBY[parts[2]]) await viewSetup({factionId: parts[2]});
         else if(parts[1] === "new") await viewLiveryNew();
         else if(parts[1] === "ledgers") await viewLiveryLedgers();
-        else if(parts[1] === "roster") await viewLiveryRoster();
+        else if(parts[1] === "collection") await viewLiveryRoster();
+        else if(parts[1] === "roster"){ history.replaceState(null, "", "#/livery/collection"); lastHash = location.hash; await viewLiveryRoster(); }
         else if(parts[1] === "activity") await viewLiveryActivity();
         else if(parts[1] === "paints") await viewLiveryPaints();
         else if(!parts[1]) await viewLivery();
@@ -647,8 +648,8 @@
     swords: '<path d="m4 4 11 11M20 4 9 15M7 14l-3 3 3 3 3-3M17 14l3 3-3 3-3-3"/>'
   };
   const BOTNAV = {
-    livery: {label: "Livery Ledger", items: [["", "Overview", "home"], ["ledgers", "Ledgers", "book"], ["roster", "Roster", "list"], ["paints", "Paints", "drop"], ["activity", "Activity", "chart"]]},
-    war: {label: "War Ledger", items: [["", "Overview", "home"], ["armies", "Armies", "shield"], ["collection", "Collection", "grid"], ["lists", "Lists", "clip"], ["battles", "Battles", "swords"]]}
+    livery: {label: "Livery Ledger", items: [["", "Overview", "home"], ["ledgers", "Ledgers", "book"], ["collection", "Collection", "list"], ["paints", "Paints", "drop"], ["activity", "Activity", "chart"]]},
+    war: {label: "War Ledger", items: [["", "Overview", "home"], ["armies", "Armies", "shield"], ["collection", "Collection", "list"], ["lists", "Lists", "clip"], ["battles", "Battles", "swords"]]}
   };
   // Which section a page belongs to, so its tab is lit (a ledger counts as Ledgers, an army list as Lists).
   function navSection(parts){
@@ -1286,7 +1287,7 @@
     });
     $("w-cf").focus();
   }
-  // The whole collection, laid out like Livery Ledger's roster: a summary under the title, quick filters,
+  // The whole collection, laid out like Livery Ledger's: a summary under the title, quick filters,
   // and units grouped by army, role or readiness.
   let collFilter = "all";
   const COLL_FILTERS = [["all", "All"], ["notready", "Not ready"], ["ready", "Ready"], ["planned", "Planned"], ["fav", "Starred"]];
@@ -2397,7 +2398,7 @@
   const shameBtn = () => `<a class="btn btn-sm" href="#/shame">Pile of shame${shameCount() ? `<span class="count">${shameCount()}</span>` : ""}</a>`;
   const settingsBtn = `<a class="btn btn-sm" href="#/settings">Settings</a>`;
 
-  const LIV_TABS = [["", "Overview"], ["ledgers", "Ledgers"], ["roster", "Roster"], ["paints", "Paints & recipes"], ["activity", "Painting activity"]];
+  const LIV_TABS = [["", "Overview"], ["ledgers", "Ledgers"], ["collection", "Collection"], ["paints", "Paints & recipes"], ["activity", "Painting activity"]];
   const livTabs = on => `<nav class="war-tabs" aria-label="Livery Ledger">${LIV_TABS.map(([k, l]) => `<a href="#/livery${k ? "/" + k : ""}"${k === on ? ` aria-current="page"` : ""}>${esc(l)}</a>`).join("")}</nav>`;
   // A page's heading on the tab pages (the overview has the profile header instead).
   const tabHead = (eyebrow, title, sub, actions) => `<section class="page-head war-head">
@@ -2460,7 +2461,7 @@
     app.innerHTML = `
       ${profileHead({war: false,
         stats: [[armies.length, armies.length === 1 ? "Ledger" : "Ledgers"], [num(tot.units), "Units"], [`${num(tot.done)}/${num(tot.models)}`, "Models painted"], [`${tot.models ? Math.round(tot.done / tot.models * 100) : 0}%`, "Complete"]],
-        actions: armies.length ? `<a class="btn btn-sm" href="#/livery/roster">${LIST_ICON}Your roster<span class="count">${num(tot.units)}</span></a>${shameBtn()}${settingsBtn}` : ""})}
+        actions: armies.length ? `<a class="btn btn-sm" href="#/livery/collection">${LIST_ICON}Your collection<span class="count">${num(tot.units)}</span></a>${shameBtn()}${settingsBtn}` : ""})}
       ${livTabs("")}
       <div id="paint-status"></div>
       ${signedOut ? `<div class="banner"><span class="dot"></span>Log in to create a ledger and see the ones you've made. <button type="button" class="btn-sm" data-signin>Log in</button></div>` : ""}
@@ -2493,11 +2494,11 @@
       ${armies.length ? `<h2 class="sr-only">Ledgers</h2><div class="ledgers">${armies.map(a => ledgerCard(a, sum)).join("")}</div>` : livEmpty()}`;
   }
   async function viewLiveryRoster(){
-    view.name = "liv-roster"; document.title = "Roster · Livery Ledger";
-    app.innerHTML = `${tabHead("Livery Ledger", "Your roster", `<span id="ro-sum">Every unit across all your ledgers.</span>`, `<button type="button" class="primary" id="ro-add">+ Add unit</button>`)}
-      ${livTabs("roster")}
+    view.name = "liv-roster"; document.title = "Collection · Livery Ledger";
+    app.innerHTML = `${tabHead("Livery Ledger", "Your collection", `<span id="ro-sum">Every unit you have, in a ledger or not.</span>`, `<button type="button" class="primary" id="ro-add">+ Add unit</button>`)}
+      ${livTabs("collection")}
       <div class="ro-tools war-filters">
-        <input type="search" id="ro-q" placeholder="Search your units" aria-label="Search your roster">
+        <input type="search" id="ro-q" placeholder="Search your units" aria-label="Search your collection">
         <div class="filters" id="ro-f" role="group" aria-label="Filter by status">
           ${[["all", "All"], ["todo", "To paint"], ["progress", "In progress"], ["done", "Painted"], ["fav", "Starred"]].map(([k, l]) => `<button type="button" data-rf="${k}" aria-pressed="${rosterFilter === k}">${l}</button>`).join("")}
         </div>
@@ -2517,13 +2518,15 @@
       drawRoster();
     });
     try {
-      const {armies} = await liveryData(), units = await store.listAllUnits();
-      const byId = Object.fromEntries(armies.map(a => [a.id, a]));
-      roster = {armies, byId, units: units.filter(u => byId[u.armyId])};
+      // Units not in a ledger (War Ledger's collection holders) are listed too.
+      const [{armies}, units, all] = await Promise.all([liveryData(), store.listAllUnits(), store.listArmies()]);
+      const me = store.session ? store.session.user.id : null, pools = all.filter(a => isPool(a) && (!me || !a.owner || a.owner === me));
+      const byId = Object.fromEntries(armies.concat(pools).map(a => [a.id, a]));
+      roster = {armies, pools, byId, units: units.filter(u => byId[u.armyId])};
       if($("ro-body")) drawRoster();
-    } catch(err){ console.error(err); if($("ro-body")) $("ro-body").innerHTML = `<p class="hint">Couldn't load your roster: ${esc(errText(err))}</p>`; }
+    } catch(err){ console.error(err); if($("ro-body")) $("ro-body").innerHTML = `<p class="hint">Couldn't load your collection: ${esc(errText(err))}</p>`; }
   }
-  // + Add unit from the roster: pick the ledger (straight there when there's only one), and its unit editor opens.
+  // + Add unit from the collection: pick the ledger (straight there when there's only one), and its unit editor opens.
   let addOnOpen = "";
   async function addToLedger(armies){
     if(!armies) armies = (await liveryData()).armies;
@@ -3151,7 +3154,7 @@ Redemptor Dreadnought (210 points)</pre>
              ["photo", "Photo gallery", "Up to twelve photos per unit, from bare plastic to finished."],
              ["print", "Printable guide", "Print your army's colours, recipes and paint list to keep by the brushes."],
              ["cart", "Shopping list", "Every paint your recipes need that you don't own yet, ready to copy."],
-             ["list", "Your roster", "Every unit you own, across all your ledgers, in one list."],
+             ["list", "Your collection", "Every unit you own, across all your ledgers, in one list."],
              ["star", "Starred units", "Star the units you're painting next and find them in a tap."],
              ["layers", "Batch updates", "Pick several units and set their stage, mark them painted or star them in one go."],
              ["points", "Points at a glance", "See your army's total against the limit you're building to."],
@@ -5915,7 +5918,7 @@ Redemptor Dreadnought (210 points)</pre>
     if($("vo-social")) viewerSocial();
     drawComments(army);
     if(addOnOpen === army.id){ addOnOpen = ""; if(canWrite) openNew(); }
-    // Came from the roster: show that unit, and tidy the address back to the ledger's.
+    // Came from the collection: show that unit, and tidy the address back to the ledger's.
     if(openUnit){
       history.replaceState(null, "", "#/army/" + army.id); lastHash = location.hash;
       if(units.some(u => u.id === openUnit)) openDetail(openUnit);
@@ -5929,7 +5932,7 @@ Redemptor Dreadnought (210 points)</pre>
   const unitDone = u => { const c = +u.count || 0; return Math.min(c, +u.painted || (u.status === "done" ? c : 0)); };
   function drawRoster(){
     if(!roster) return;
-    const {armies, byId, units} = roster;
+    const {armies, pools, byId, units} = roster;
     const q = $("ro-q").value.trim().toLowerCase(), by = $("ro-g").value;
     const models = units.reduce((n, u) => n + (+u.count || 0), 0), done = units.reduce((n, u) => n + unitDone(u), 0), pts = units.reduce((n, u) => n + (+u.points || 0), 0);
     const list = units.filter(u => {
@@ -5949,12 +5952,13 @@ Redemptor Dreadnought (210 points)</pre>
     let groups;
     if(by === "role") groups = ROLE_ORDER.concat([...new Set(list.map(u => u.role || "Other"))].filter(r => !ROLE_ORDER.includes(r))).map(r => ({key: r, title: r, units: list.filter(u => (u.role || "Other") === r)}));
     else if(by === "status") groups = ["progress", "primed", "built", "unbuilt", "done"].map(k => ({key: k, title: STATUS[k], units: list.filter(u => (u.status || "unbuilt") === k)}));
-    else groups = armies.map(a => ({key: a.id, army: a, title: a.name, units: list.filter(u => u.armyId === a.id)}));
+    else groups = armies.map(a => ({key: a.id, army: a, title: a.name, units: list.filter(u => u.armyId === a.id)}))
+      .concat({key: "loose", title: "Not in a ledger", units: list.filter(u => pools.some(p => p.id === u.armyId))});
     const keep = PROF;
     const row = u => {
       const a = byId[u.armyId], c = +u.count || 0, dn = unitDone(u), pct = c ? Math.round(dn / c * 100) : 0, st = u.status || "unbuilt";
       PROF = P.profileFor(a.faction);
-      const sub = [u.datasheet && u.datasheet !== u.name ? u.datasheet : "", by === "role" ? "" : u.role, by === "army" ? "" : a.name].filter(Boolean).join(" · ");
+      const sub = [u.datasheet && u.datasheet !== u.name ? u.datasheet : "", by === "role" ? "" : u.role, by === "army" ? (isPool(a) ? factionName(a.faction) : "") : (isPool(a) ? "Not in a ledger" : a.name)].filter(Boolean).join(" · ");
       return `<a class="ro-row" href="#/army/${esc(a.id)}/unit/${esc(u.id)}">
         <span class="ro-badge">${unitBadge(u, a.scheme, 44)}</span>
         <span class="ro-name"><strong>${u.fav ? `<span class="star on" title="Starred">${STAR(true)}</span>` : ""}${esc(u.name || u.datasheet || "Unit")}${u.own === "planned" ? " " + PLANNED_TAG : ""}</strong><small>${esc(sub || "Unit")}</small></span>

@@ -1,7 +1,7 @@
 // No accessibility problems (axe-core, WCAG 2.1 AA) on the main pages and dialogs.
 const {test, expect, seed, open, axe, noSidewaysScroll} = require("./helpers");
 
-const PAGES = ["#/", "#/livery", "#/livery/roster", "#/livery/paints", "#/livery/new/ultramarines", "#/army/a1", "#/army/a1/colours",
+const PAGES = ["#/", "#/livery", "#/livery/collection", "#/livery/paints", "#/livery/new/ultramarines", "#/army/a1", "#/army/a1/colours",
   "#/war", "#/war/collection", "#/war/army/a1", "#/war/list/l1", "#/war/lists", "#/war/battles", "#/shame", "#/settings"];
 
 test("main pages on a desktop", async ({page}) => {

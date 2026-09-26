@@ -1,7 +1,7 @@
 // Every page opens without errors and without sideways scrolling, on a desktop, a phone and a small phone.
 const {test, expect, seed, open, noSidewaysScroll} = require("./helpers");
 
-const ROUTES = ["#/", "#/livery", "#/livery/ledgers", "#/livery/roster", "#/livery/paints", "#/livery/activity", "#/livery/new", "#/livery/new/ultramarines",
+const ROUTES = ["#/", "#/livery", "#/livery/ledgers", "#/livery/collection", "#/livery/paints", "#/livery/activity", "#/livery/new", "#/livery/new/ultramarines",
   "#/army/a1", "#/army/a1/colours", "#/army/a1/guide", "#/army/a1/unit/u2",
   "#/war", "#/war/armies", "#/war/collection", "#/war/lists", "#/war/battles", "#/war/army/a1", "#/war/army/a2", "#/war/list/l1", "#/war/new", "#/war/new/necrons",
   "#/shame", "#/settings", "#/shared", "#/nope"];
