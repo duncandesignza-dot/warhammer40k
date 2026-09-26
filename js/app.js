@@ -2999,6 +2999,47 @@
       actions: `<button type="button" class="primary" data-import-army>Import an army</button>`});
     onApp(e => { if(e.target.closest("[data-import-army]")) openImportArmy(); });
   }
+  // A faction's hero picture for the new army pages, where there is one: img/heroes/<faction>.webp, then <faction>-2.webp and so on.
+  // A faction with more than one shows one of them at random.
+  const FACTION_HEROES = {
+    "black-templars": "Black Templars: the High Marshal leads a crusade of Primaris and Firstborn Templars",
+    "blood-angels": "Blood Angels: the Sanguinor and the Sanguinary Guard charge a Necron line",
+    "deathwatch": "Deathwatch: a kill team in black armour fights Genestealer Cult hybrids",
+    "grey-knights": "Grey Knights: silver-armoured Grey Knights and their Rhinos face the Death Guard",
+    "imperial-fists": "Imperial Fists: yellow-armoured Terminators, a tank and a Dreadnought hold the walls",
+    "iron-hands": "Iron Hands: an Iron Father leads a line of black-armoured Space Marines",
+    "salamanders": "Salamanders: green-armoured Space Marines, tanks and a Dreadnought advance through a ruined city",
+    "dark-angels": "Dark Angels: the Lion and a Chaplain lead Dark Angels tanks, a Dreadnought and a flyer",
+    "space-wolves": "Space Wolves: a Wolf Lord, Fenrisian wolves and a Land Raider charge the Thousand Sons",
+    "white-scars": "White Scars: jump pack Space Marines in white armour strike at Drukhari raiders",
+    "raven-guard": "Raven Guard: black-armoured Space Marines with jump packs drop onto the battlefield",
+    "agents-of-the-imperium": "Agents of the Imperium: Inquisitors, Assassins and their retinues",
+    "adeptus-mechanicus": "Adeptus Mechanicus: a Tech-Priest leads red-robed Skitarii through a forge world",
+    "astra-militarum": "Astra Militarum: Guardsmen advance under a regimental banner",
+    "adepta-sororitas": "Adepta Sororitas: a Canoness leads Battle Sisters against Tyranids",
+    "adeptus-custodes": "Adeptus Custodes: Trajann Valoris and a Shield-Captain in golden armour",
+    "imperial-knights": ["Imperial Knights: blue and gold Knights of a noble house stride out to war", "A Reaver Titan and a Warhound Titan stride through a storm"],
+    "emperors-children": "Emperor's Children: Fulgrim and a pink Land Raider lead the legion into battle",
+    "chaos-space-marines": ["Chaos Space Marines: Abaddon the Despoiler leads the Black Legion against Ultramarines", "Chaos Space Marines: Iron Warriors in hazard-striped armour march to war"],
+    "death-guard": "Death Guard: Plague Marines and their daemon engines advance through a poisoned swamp",
+    "chaos-knights": ["Chaos Knights: dark Knights and War Dogs stride against the Aeldari", "A traitor Titan towers over a burning Imperial city"],
+    "chaos-daemons": "Chaos Daemons: a Great Unclean One, a Keeper of Secrets and their daemons",
+    "world-eaters": "World Eaters: Angron leads Khorne Berzerkers across a field of skulls",
+    "thousand-sons": "Thousand Sons: an Exalted Sorcerer leads Rubric Marines",
+    "aeldari": "Aeldari: the Avatar of Khaine leads Guardians, jetbikes and Aspect Warriors",
+    "drukhari": "Drukhari: an Archon and her raiders strike at the Astra Militarum",
+    "genestealer-cults": "Genestealer Cults: a Magus leads hybrids and Aberrants from their mining trucks",
+    "leagues-of-votann": "Leagues of Votann: Hearthkyn and armoured Hekaton land fortresses roll forward",
+    "necrons": "Necrons: an Overlord raises his legions of warriors and Lychguard",
+    "orks": "Orks: a Warboss leads Boyz, buggies and bikes in a roaring charge",
+    "tau-empire": "T'au Empire: Farsight's red battlesuits and a Devilfish fight Orks",
+    "tyranids": "Tyranids: a swarm of Hormagaunts and a towering monster overrun an Imperial line"
+  };
+  const factionHero = fid => {
+    const alts = [].concat(FACTION_HEROES[fid] || []); if(!alts.length) return "";
+    const i = Math.floor(Math.random() * alts.length);
+    return `<figure class="faction-hero"><img src="img/heroes/${esc(fid)}${i ? `-${i + 1}` : ""}.webp" alt="${esc(alts[i])}" width="800" height="250" decoding="async"></figure>`;
+  };
   // Second step of a new army: its name and the points you're building to.
   async function viewWarNewFaction(fid){
     const f = FBY[fid];
@@ -3008,6 +3049,7 @@
       <section class="page-head war-head"><div class="wh-id">${soloBadge(factionBadge(fid, 64), 64)}<div><p class="eyebrow">War Ledger · ${esc(f.group || "")}</p><h1>New ${esc(f.name)} army</h1><p class="sub">Name your force. You can add units straight after.</p></div></div></section>
       <form class="panel war-newform" id="wn-form" novalidate>
         <label>Army name<input id="w-name" maxlength="80" placeholder="e.g. ${esc(f.name)} Strike Force" autocomplete="off"></label>
+        ${factionHero(fid)}
         <label><span>Points you're building to <span class="opt">(optional)</span></span><input id="w-lim" type="number" min="0" max="20000" step="250" inputmode="numeric" placeholder="e.g. 2000"></label>
         <p class="hint">War Ledger uses the faction's official colours behind the scenes. If you start painting, you can choose your own in Livery Ledger.</p>
         <div class="row-actions"><button type="submit" class="primary">Create army</button><a class="btn" href="#/war/new">Back</a><span class="msg" id="w-msg" role="status"></span></div>
@@ -4520,6 +4562,7 @@ Redemptor Dreadnought (210 points)</pre>
           <div class="panel">
             <h2 class="ph">Army</h2>
             <label>Army name<input id="s-name" maxlength="80" placeholder="e.g. ${esc(f.name)} Crusade" value="${esc(draft.name)}"></label>
+            ${editing ? "" : factionHero(f.id)}
           </div>
           ${known.length ? `<div class="panel">
             <h2 class="ph">Start from a known scheme</h2>
