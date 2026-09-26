@@ -33,44 +33,62 @@ test("a unit can live in the collection without an army, and lists can use it", 
 });
 
 test("the collection works like the roster: a summary, quick filters and grouping", async ({page}) => {
-  await seed(page, `db.units.push({id: "u9", armyId: "a1", name: "Gladiator Lancer", datasheet: "Gladiator Lancer", role: "Vehicle", count: 1, points: 160, painted: 0, stages: [], own: "planned"});`);
+  await seed(page, `db.units.push({id: "u9", armyId: "a1", name: "Gladiator Lancer", datasheet: "Gladiator Lancer", role: "Vehicle", count: 1, points: 160, painted: 0, stages: [], own: "planned", fav: true});`);
   await open(page, "#/war/collection");
-  // The totals sit under the title, as on the roster.
-  await expect(page.locator(".page-head .sub")).toHaveText("6 units · 38 models · 910 pts · 21% battle ready · 1 planned".replace(/ pts/, "\u00a0pts"));
+  // The totals sit under the title, as on the roster. Every unit counts, owned or not, and nothing about painting shows.
+  await expect(page.locator(".page-head .sub")).toHaveText("7 units · 39 models · 1,070 pts".replace(/ pts/, "\u00a0pts"));
+  await expect(page.locator(".wc-group thead").first()).toHaveText(/Unit\s*Role\s*Models\s*Points/);
+  await expect(page.locator("main")).not.toContainText(/battle ready|Planned|Painted/i);
   const heads = () => page.locator(".wc-group h3").allInnerTexts();
   expect(await heads()).toEqual(["Ultramarines 2nd Company", "Hive Fleet Leviathan"]);
   const rows = () => page.locator(".wc-group tbody tr").count();
   expect(await rows()).toBe(7);
-  // Quick filters
-  await page.click('[data-cf="ready"]');
-  expect(await page.locator(".wc-group tbody [data-unit]").allInnerTexts()).toEqual(["Captain", "Hive Tyrant"]);
-  await expect(page.locator(".page-head .sub")).toContainText("showing 2");
-  await page.click('[data-cf="planned"]');
+  // Quick filters: all or starred.
+  expect(await page.locator("[data-cf]").allInnerTexts()).toEqual(["All", "Starred"]);
+  await page.click('[data-cf="fav"]');
   expect(await page.locator(".wc-group tbody [data-unit]").allInnerTexts()).toEqual(["Gladiator Lancer"]);
+  await expect(page.locator(".page-head .sub")).toContainText("showing 1");
   await page.click('[data-cf="all"]');
-  // Group by role, then readiness; the choice is remembered.
+  // Group by army or role; the choice is remembered.
+  expect(await page.locator("#wc-g option").allInnerTexts()).toEqual(["Army", "Role"]);
   await page.selectOption("#wc-g", "role");
   expect(await heads()).toEqual(["Character", "Battleline", "Infantry", "Vehicle"]);
-  await page.selectOption("#wc-g", "ready");
-  expect(await heads()).toEqual(["Not battle ready", "Partly battle ready", "Battle ready", "Planned"]);
   await open(page, "#/war");
   await open(page, "#/war/collection");
-  await expect(page.locator("#wc-g")).toHaveValue("ready");
+  await expect(page.locator("#wc-g")).toHaveValue("role");
   // Search finds units by army name too.
   await page.selectOption("#wc-g", "army");
   await page.fill("#wc-q", "hive fleet");
   expect(await heads()).toEqual(["Hive Fleet Leviathan"]);
 });
 
-test("plan a unit from a list, then mark it bought", async ({page}) => {
-  await seed(page);
+test("lists and armies work with units you don't own: no readiness or ownership anywhere", async ({page}) => {
+  await seed(page, `db.units.push({id: "u9", armyId: "a1", name: "Gladiator Lancer", datasheet: "Gladiator Lancer", role: "Vehicle", count: 1, points: 160, painted: 0, stages: [], own: "planned"});`);
+  // A list entry pasted from a datasheet sits in the list like any other unit.
   await open(page, "#/war/list/l1");
-  await page.click('[data-own][data-planned="1"]');
-  await expect(page.locator(".lr")).toContainText("Planned, not bought yet");
-  expect((await saved(page)).units.find(u => u.name === "Gladiator Lancer").own).toBe("planned");
-  await page.click(".lr [data-bought]");
-  await expect(page.locator(".lr")).not.toContainText("Planned, not bought yet");
-  expect((await saved(page)).units.find(u => u.name === "Gladiator Lancer").own).toBe("owned");
+  await expect(page.locator(".lr, [data-own], [data-bought]")).toHaveCount(0);
+  await expect(page.locator('.lb-in li:has-text("Gladiator Lancer")')).toContainText("1 model");
+  await expect(page.locator(".war-stats")).not.toContainText(/battle ready|available/i);
+  // The army counts a planned unit like any other, with no readiness columns, filters, groups or batch actions.
+  await open(page, "#/war/army/a1");
+  await expect(page.locator(".war-stats")).toContainText("5 units");
+  await expect(page.locator(".wc-group thead").first()).toHaveText(/Unit\s*Role\s*Models\s*Points/);
+  await expect(page.locator('[data-filter="notready"]')).toHaveCount(0);
+  expect(await page.locator("#wa-g option").allInnerTexts()).toEqual(["Nothing", "Role"]);
+  expect(await page.locator("#wa-s option").allInnerTexts()).toEqual(["Name", "Points (most first)", "Models (most first)"]);
+  await page.click("[data-select]");
+  await expect(page.locator('[data-bb="ready"], [data-bb="bought"]')).toHaveCount(0);
+  await page.click('[data-bb="done"]');
+  // The unit editor asks only about the unit itself.
+  await page.click('.wtable [data-unit="u9"]');
+  await expect(page.locator("dialog[open] legend")).toHaveText(["Wargear"]);
+  await expect(page.locator("#w-own, #w-built, #w-painted, #w-ready, #w-bought")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  // And the overview and settings don't mention it.
+  await open(page, "#/war");
+  await expect(page.locator("main")).not.toContainText(/battle ready|Collection status/i);
+  await open(page, "#/settings");
+  await expect(page.locator("#set-ready")).toHaveCount(0);
 });
 
 test("list details: battle size sets the limit, and Detachment Points are counted", async ({page}) => {
@@ -252,8 +270,6 @@ test("an army's current force can be grouped and sorted, and the choice is remem
   await seed(page);
   await open(page, "#/war/army/a1");
   await expect(page.locator(".wc-group h3")).toHaveText(["Character", "Battleline", "Infantry", "Vehicle"]);
-  await page.selectOption("#wa-g", "ready");
-  await expect(page.locator(".wc-group h3")).toHaveText(["Not battle ready", "Partly battle ready", "Battle ready"]);
   await page.selectOption("#wa-g", "none"); await page.selectOption("#wa-s", "points");
   await expect(page.locator(".wtable tbody th .linkish")).toHaveText(["Redemptor Dreadnought", "Terminator Squad", "Intercessor Squad", "Captain"]);
   await expect(page.locator(".wtable tfoot")).toContainText("Total");
@@ -262,7 +278,7 @@ test("an army's current force can be grouped and sorted, and the choice is remem
   await expect(page.locator("#wa-s")).toHaveValue("points");
 });
 
-test("select units on an army page: battle ready, bought, star, add to a list, move and delete", async ({page}) => {
+test("select units on an army page: star, add to a list, move and delete", async ({page}) => {
   await seed(page, `db.units.push({id: "u9", armyId: "a1", name: "Gladiator Lancer", datasheet: "Gladiator Lancer", role: "Vehicle", count: 1, points: 160, painted: 0, stages: [], own: "planned"});
     db.lists.push({id: "l2", armyId: "a1", name: "Second list", limit: 1000, units: [], createdAt: "2026-09-02", updatedAt: "2026-09-02"});`);
   await open(page, "#/war/army/a1");
@@ -271,11 +287,6 @@ test("select units on an army page: battle ready, bought, star, add to a list, m
   const unit = async id => (await saved(page)).units.find(u => u.id === id);
   await pick("Terminator Squad"); await pick("Gladiator Lancer");
   await expect(page.locator("#wa-count")).toHaveText("2 selected");
-  await page.click('[data-bb="ready"]');
-  await expect(page.locator(".toast")).toContainText("1 unit marked battle ready.");
-  expect((await unit("u3")).ready).toBe(5);
-  await page.click('[data-bb="bought"]');
-  await expect.poll(async () => (await unit("u9")).own).toBe("owned");
   await page.click('[data-bb="star"]');
   await expect.poll(async () => (await unit("u3")).fav && (await unit("u9")).fav).toBe(true);
   await page.selectOption("#wa-list", "l2");

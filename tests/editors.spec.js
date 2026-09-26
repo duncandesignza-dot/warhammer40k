@@ -47,36 +47,24 @@ test("saving in Livery Ledger keeps everything War Ledger knows, and the other w
   const before = await unit(page, "c1");
   await open(page, "#/war/army/a1");
   await page.click('.wtable [data-unit="c1"]');
-  await page.fill("#w-shop", "Online");
+  // War Ledger no longer asks about building, painting or buying, but it keeps what Livery Ledger recorded.
+  await expect(page.locator("#w-built, #w-painted, #w-ready, #w-own, #w-shop")).toHaveCount(0);
+  await page.fill("#w-melee", "Power fists");
   await page.click("dialog[open] [type=submit]");
-  await expect.poll(async () => (await unit(page, "c1")).shop).toBe("Online");
+  await expect.poll(async () => (await unit(page, "c1")).melee).toBe("Power fists");
   const after = await unit(page, "c1");
-  // Every field the War Ledger form doesn't show is exactly as it was.
-  for(const k of Object.keys(before)) if(!["shop", "updatedAt", "log"].includes(k)) expect(after[k], k).toEqual(before[k]);
+  // Every field the War Ledger form doesn't change is exactly as it was.
+  for(const k of Object.keys(before)) if(!["melee", "ranged", "updatedAt", "log"].includes(k)) expect(after[k], k).toEqual(before[k]);
 });
 
-test("ticking Built in Livery Ledger makes the whole unit built in War Ledger", async ({page}) => {
+test("ticking Built in Livery Ledger makes the whole unit built", async ({page}) => {
   await seed(page, `db.units.find(u => u.id === "u3").built = 2; db.units.find(u => u.id === "u3").stages = [];`);
   await open(page, "#/army/a1/unit/u3");
   await page.click("[data-edit]");
   await page.check('#f-stages input[value="built"]');
   await page.click("#b-save");
   await expect.poll(async () => (await unit(page, "u3")).stages).toContain("built");
-  await open(page, "#/war/army/a1");
-  await expect(page.locator('.wtable tr:has([data-unit="u3"]) td[data-label="Built"]')).toHaveText("5");
-});
-
-test("building the whole unit in War Ledger ticks Built in Livery Ledger, and unbuilding it unticks it", async ({page}) => {
-  await seed(page, `db.units.find(u => u.id === "u4").stages = [];`);
-  await open(page, "#/war/army/a1");
-  await page.click('.wtable [data-unit="u4"]');
-  await page.fill("#w-built", "1");
-  await page.click("dialog[open] [type=submit]");
-  await expect.poll(async () => (await unit(page, "u4")).stages).toContain("built");
-  await page.click('.wtable [data-unit="u4"]');
-  await page.fill("#w-built", "0");
-  await page.click("dialog[open] [type=submit]");
-  await expect.poll(async () => (await unit(page, "u4")).stages).not.toContain("built");
+  expect((await unit(page, "u3")).built).toBe(5);
 });
 
 test("both editors offer the same datasheets", async ({page}) => {
