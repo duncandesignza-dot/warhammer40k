@@ -38,7 +38,9 @@ test("the collection works like the roster: a summary, quick filters and groupin
   // The totals sit under the title, as on the roster. Every unit counts, owned or not, and nothing about painting shows.
   await expect(page.locator(".page-head .sub")).toHaveText("7 units · 39 models · 1,070 pts".replace(/ pts/, "\u00a0pts"));
   await expect(page.locator(".wc-group thead").first()).toHaveText(/Unit\s*Role\s*Models\s*Points/);
-  await expect(page.locator("main")).not.toContainText(/battle ready|Planned|Painted/i);
+  await expect(page.locator("main")).not.toContainText(/battle ready|Painted/i);
+  // A unit you don't own is marked Planned: it's in War Ledger for planning, not in Livery Ledger.
+  await expect(page.locator('.wc-group tr:has([data-unit="u9"]) .tag.plan')).toHaveText("Planned");
   const heads = () => page.locator(".wc-group h3").allInnerTexts();
   expect(await heads()).toEqual(["Ultramarines 2nd Company", "Hive Fleet Leviathan"]);
   const rows = () => page.locator(".wc-group tbody tr").count();
@@ -87,6 +89,9 @@ test("lists and armies work with units you don't own: no readiness or ownership 
   // And the overview and settings don't mention it.
   await open(page, "#/war");
   await expect(page.locator("main")).not.toContainText(/battle ready|Collection status/i);
+  // Instead it shows where the points go: every unit counts, owned or not (the planned Gladiator Lancer is a vehicle).
+  await expect(page.locator(".war-comp .ws-rule")).toHaveText("1,070 pts across 39 models");
+  expect(await page.locator(".war-comp .stack-key li").allTextContents()).toEqual(["295 ptsCharacters · 28%", "260 ptsBattleline · 24%", "160 ptsInfantry · 15%", "355 ptsVehicles · 33%"]);
   await open(page, "#/settings");
   await expect(page.locator("#set-ready")).toHaveCount(0);
 });
@@ -302,4 +307,64 @@ test("select units on an army page: star, add to a list, move and delete", async
   expect(await unit("u1")).toBeUndefined();
   await page.click('[data-bb="done"]');
   await expect(page.locator("#wa-bar")).toHaveCount(0);
+});
+
+test("export a list in New Recruit's tournament layout, and paste it back in without losing anything", async ({page}) => {
+  const text = require("fs").readFileSync(require("path").join(__dirname, "fixtures/newrecruit-world-eaters.txt"), "utf8");
+  await seed(page, `db.armies.push({id: "w1", faction: "world-eaters", name: "Butchers", scheme: window.LEDGER_PRESETS.presetFor("world-eaters"), createdAt: "2026-01-01", updatedAt: "2026-01-01"});
+    db.lists.push({id: "wl", armyId: "w1", name: "Imported", limit: 2000, detachments: [], units: [], createdAt: "2026-09-01", updatedAt: "2026-09-01"},
+      {id: "w2", armyId: "w1", name: "Round trip", limit: 2000, detachments: [], units: [], createdAt: "2026-09-01", updatedAt: "2026-09-01"});`);
+  await open(page, "#/war/list/wl");
+  await page.click("[data-import]"); await page.fill("#w-list", text); await page.click("#w-add");
+  await expect(page.locator(".war-stats")).toContainText("1,995");
+  await page.click("[data-export]");
+  const out = await page.inputValue("#w-exp");
+  for(const line of ["+ FACTION KEYWORD: Chaos - World Eaters", "+ DETACHMENT: Berzerker Warband", "+ TOTAL ARMY POINTS: 1995pts", "+ WARLORD: Char1: Daemon Prince of Khorne", "+ NUMBER OF UNITS: 17",
+    "Char1: 1x Daemon Prince of Khorne (200 pts): Warlord, Infernal cannon, Hellforged weapons", "Char3: 1x Lord Invocatus (100 pts): Bolt pistol, Bladed horn, Coward's Bane",
+    "Leading Khorne Berzerkers[2]", "Leading Eightbound", "2x Chaos Spawn (95 pts): Hideous Mutations", "  Attached to Slaughterbound[1]"]) expect(out.split("\n")).toContain(line);
+  // Pasting the export into another list gives the same list back.
+  const list = async id => (await saved(page)).lists.find(l => l.id === id);
+  await open(page, "#/war/list/w2");
+  await page.click("[data-import]"); await page.fill("#w-list", out); await page.click("#w-add");
+  await expect(page.locator(".war-stats")).toContainText("1,995");
+  const shape = l => { const key = new Map(l.units.map((e, i) => [e.k, i])); return {det: l.detachments, units: l.units.map(e => ({n: e.n, count: e.count, points: e.points, gear: e.gear, warlord: !!e.warlord, enh: e.enh, lead: e.lead ? key.get(e.lead) : null}))}; };
+  const a = shape(await list("wl")), b = shape(await list("w2"));
+  expect(b.det).toEqual(a.det);
+  // Same units, in export order (characters first), with the same leaders.
+  const byName = xs => xs.map(({lead, ...x}) => x).sort((p, q) => JSON.stringify(p).localeCompare(JSON.stringify(q)));
+  expect(byName(b.units)).toEqual(byName(a.units));
+  expect(b.units.filter(x => x.lead != null).map(x => [x.n, b.units[x.lead].n])).toEqual(a.units.filter(x => x.lead != null).map(x => [x.n, a.units[x.lead].n]));
+});
+
+test("import an army: the faction is found, and the army, its planned units and a list to test are made", async ({page}) => {
+  const text = require("fs").readFileSync(require("path").join(__dirname, "fixtures/newrecruit-world-eaters.txt"), "utf8");
+  await seed(page);
+  await open(page, "#/war/new");
+  await page.click("[data-import-army]");
+  await page.fill("#ia-text", text);
+  await expect(page.locator("#ia-f")).toHaveValue("world-eaters");
+  await expect(page.locator("#ia-lim")).toHaveValue("2000");
+  await expect(page.locator("#ia-name")).toHaveValue("World Eaters · Berzerker Warband");
+  await expect(page.locator("#ia-go")).toHaveText("Import 17 units");
+  await page.fill("#ia-name", "Butchers");
+  await page.click("#ia-go");
+  await expect(page).toHaveURL(/#\/war\/list\//);
+  await expect(page.locator("h1")).toHaveText("Butchers");
+  await expect(page.locator(".war-stats")).toContainText("1,995");
+  const d = await saved(page), army = d.armies.find(a => a.name === "Butchers"), list = d.lists.find(l => l.armyId === army.id);
+  expect(army.faction).toBe("world-eaters"); expect(army.scheme.limit).toBe(2000);
+  const units = d.units.filter(u => u.armyId === army.id);
+  expect(units).toHaveLength(17);
+  expect(units.every(u => u.own === "planned")).toBe(true);
+  expect(list).toMatchObject({name: "Butchers", limit: 2000, size: "strike", detachments: ["Berzerker Warband"]});
+  const name = e => units.find(u => u.id === e.u).name;
+  expect(list.units.filter(e => e.warlord).map(name)).toEqual(["Daemon Prince of Khorne"]);
+  // Coward's Bane is Lord Invocatus's own weapon, not an enhancement.
+  expect(list.units.filter(e => e.enh)).toEqual([]);
+  expect(units.find(u => u.name === "Lord Invocatus").melee).toBe("Bladed horn, Coward's Bane");
+  expect(list.units.filter(e => e.lead).map(e => [name(e), name(list.units.find(x => x.k === e.lead))])).toEqual([["Khârn the Betrayer", "Khorne Berzerkers"],
+    ["Lord Invocatus", "Khorne Berzerkers"], ["Master of Executions", "Khorne Berzerkers"], ["Slaughterbound", "Exalted Eightbound"], ["Slaughterbound", "Eightbound"]]);
+  // Planned units, so none of it shows in Livery Ledger.
+  await open(page, "#/livery/ledgers");
+  await expect(page.locator(".lcard h3")).not.toContainText(["Butchers"]);
 });
