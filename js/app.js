@@ -4509,7 +4509,21 @@ Redemptor Dreadnought (210 points)</pre>
           <p class="sub">${canWrite ? `<a href="#/war/army/${esc(army.id)}">Open in War Ledger</a> to plan its lists and battles.`
             : (army.scheme.rec.w + army.scheme.rec.l + army.scheme.rec.d) ? `<span class="rec-chip">${recText(army.scheme.rec)}</span> battle record` : "Colours, units and painting progress."}</p>
         </div></div>
-        ${canWrite ? `<div class="war-actions"><button type="button" class="primary" id="b-add">+ Add unit</button><button type="button" id="b-list">Add from a list</button></div>` : ""}
+        <div class="war-actions">
+          ${canWrite ? `<button type="button" class="primary" id="b-add">+ Add unit</button><button type="button" id="b-list">Add from a list</button>
+          <button type="button" class="share-btn${army.public ? " on" : ""}" id="b-share"><span class="dot${army.public ? " on" : ""}"></span><span id="share-label">${army.public ? "Shared" : "Share"}</span></button>
+          <a class="btn" href="#/army/${esc(army.id)}/colours">Edit colours</a>` : ""}
+          <div class="more">
+            <button type="button" id="b-more" aria-expanded="false" aria-controls="more-menu">More</button>
+            <div class="more-menu" id="more-menu" hidden>
+              <a href="#/army/${esc(army.id)}/guide">Painting guide (print)</a>
+              <button type="button" id="b-export">Export backup</button>
+              ${canWrite ? `<button type="button" id="b-import">Import backup</button>` : ""}
+              ${canWrite ? `<hr><button type="button" class="menu-danger" id="b-delarmy">Delete ledger</button>` : ""}
+            </div>
+          </div>
+          ${canWrite ? `<input type="file" id="f-import" accept="application/json,.json" hidden>` : ""}
+        </div>
       </section>
       ${canWrite ? livTabs("ledgers") : ""}
       <section class="war-stats five liv-stats" aria-label="Ledger overview" aria-live="polite">
@@ -4526,24 +4540,7 @@ Redemptor Dreadnought (210 points)</pre>
         <button type="button" class="primary btn-sm" id="lim-save">Save</button>
         <button type="button" class="btn-sm" id="lim-cancel">Cancel</button>
       </div>
-      <div class="toolbar">
-        ${canWrite ? noteHtml() : "<span></span>"}
-        <div class="tools">
-          ${canWrite ? `<button type="button" class="btn-sm share-btn${army.public ? " on" : ""}" id="b-share"><span class="dot${army.public ? " on" : ""}"></span><span id="share-label">${army.public ? "Shared" : "Share"}</span></button>` : ""}
-          <button type="button" class="btn-sm" id="b-paints">Paints &amp; recipes<span class="buy-badge" id="buy-badge" hidden></span></button>
-          ${canWrite ? `<a class="btn btn-sm" href="#/army/${esc(army.id)}/colours">Edit colours</a>` : ""}
-          <div class="more">
-            <button type="button" class="btn-sm" id="b-more" aria-expanded="false" aria-controls="more-menu">More</button>
-            <div class="more-menu" id="more-menu" hidden>
-              <a href="#/army/${esc(army.id)}/guide">Painting guide (print)</a>
-              <button type="button" id="b-export">Export backup</button>
-              ${canWrite ? `<button type="button" id="b-import">Import backup</button>` : ""}
-              ${canWrite ? `<hr><button type="button" class="menu-danger" id="b-delarmy">Delete ledger</button>` : ""}
-            </div>
-          </div>
-          ${canWrite ? `<input type="file" id="f-import" accept="application/json,.json" hidden>` : ""}
-        </div>
-      </div>
+      ${canWrite && store.note() ? `<div class="toolbar">${noteHtml()}</div>` : ""}
 
       ${canWrite && scheme.wonly ? `<div class="banner colours-prompt" id="wonly-banner"><span class="dot"></span><span><strong>This army was set up in War Ledger</strong>, so it's using the official ${esc(f.name)} colours. Choose your own scheme before you start painting, or keep these.</span><span class="cp-acts"><a class="btn btn-sm primary" href="#/army/${esc(army.id)}/colours">Choose your colours</a><button type="button" class="btn-sm" id="b-keepcol">Keep these colours</button></span></div>` : ""}
       ${!canWrite ? `<div class="banner viewonly"><span class="dot on"></span><span>You're viewing a shared ledger. You can look but not change anything.</span>${store.kind === "supabase" && !store.session ? `<button type="button" class="btn-sm" data-signin>Sign in</button>` : `<span class="vo-social" id="vo-social"></span>`}</div>` : ""}
@@ -5586,7 +5583,7 @@ Redemptor Dreadnought (210 points)</pre>
     if(canWrite && "IntersectionObserver" in window){
       const seen = new Set();
       fabIo = new IntersectionObserver(es => { es.forEach(e => e.isIntersecting ? seen.add(e.target) : seen.delete(e.target)); $("b-fab").classList.toggle("fab-off", seen.size > 0); });
-      [app.querySelector(".toolbar .tools"), $("b-add")].filter(Boolean).forEach(el => fabIo.observe(el));
+      [app.querySelector(".liv-head .war-actions"), $("b-add")].filter(Boolean).forEach(el => fabIo.observe(el));
     }
     const before = view.cleanup;
     view.cleanup = () => {
@@ -5922,7 +5919,7 @@ Redemptor Dreadnought (210 points)</pre>
     function confirmDropRecipe(){ return true; }
     $("pd-close").addEventListener("click", () => $("paintdlg").close());
     $("paintdlg").addEventListener("close", () => { editingRecipe = null; suggesting = null; renderRecipePicks(); });
-    $("b-paints").addEventListener("click", () => openPaints("recipes"));
+
     $("f-manage-recipes").addEventListener("click", () => openPaints("recipes"));
     $("f-recipes").addEventListener("change", () => { setDirty(true); preview(); });
 
