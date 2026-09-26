@@ -1547,6 +1547,9 @@ dialog.wdlg.wide{max-width:min(760px,calc(100vw - 24px))}
 .wt-unit>span{display:flex;flex-direction:column;min-width:0}
 .wt-unit .star{margin-left:-6px}
 .wt-unit>span>.tag{align-self:flex-start;margin:3px 0 2px}
+.wt-unit .wt-eye{margin-left:auto;flex:none;width:30px;height:30px;color:var(--muted)}
+.wt-unit .wt-eye:hover,.wt-unit .wt-eye:focus-visible{color:var(--ink)}
+.wu-ds{margin-top:12px}
 .seg button svg{width:13px;height:13px;vertical-align:-2px;color:var(--warn)}
 .seg button[aria-pressed="true"] svg{color:inherit}
 .lb-name .star{padding:0;vertical-align:-3px}

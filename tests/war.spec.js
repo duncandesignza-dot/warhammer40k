@@ -503,3 +503,27 @@ test("the eye shows a unit's datasheet: models, weapons, abilities, rules and ke
   await page.click("dialog[open] [type=submit]");
   await expect(page.locator(".lb-in")).toContainText("Deathstorm Drop Pod");
 });
+
+test("the eye on army and collection tables shows a unit's datasheet, and the unit editor has it too", async ({page}) => {
+  await seed(page, `db.units.find(u => u.id === "u2").ranged = "Bolt Rifle";`);
+  await open(page, "#/war/army/a1");
+  await page.click('[aria-label="Datasheet for Intercessor Squad"]');
+  const ds = page.locator("#ds-body");
+  await expect(ds.locator("table").nth(1).locator("tbody th")).toHaveText(["Bolt Rifle"]);
+  await expect(ds.locator(".ds-kws")).toContainText("Battleline");
+  // Edit the unit goes on to the unit editor.
+  await page.click("dialog[open] [type=submit]");
+  await expect(page.locator("dialog[open] #w-sheet")).toHaveValue("Intercessor Squad");
+  // The editor's datasheet folds open and follows the wargear chosen.
+  await page.click("#w-ds summary");
+  const eds = page.locator("#w-ds-body");
+  await expect(eds.locator("table").nth(1).locator("tbody th")).toHaveText(["Bolt Rifle"]);
+  const more = (await page.locator("#w-ranged .gp-add option").nth(1).textContent()).trim();
+  await page.locator("#w-ranged .gp-add").selectOption({index: 1});
+  await expect(eds.locator("table").nth(1).locator("tbody")).toContainText(more);
+  await page.click("dialog[open] [data-x]");
+  // The collection has the eye too.
+  await open(page, "#/war/collection");
+  await page.click('[aria-label="Datasheet for Intercessor Squad"]');
+  await expect(page.locator("#ds-body .ds-kws")).toContainText("Battleline");
+});

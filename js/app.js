@@ -993,6 +993,19 @@
       ${d.k ? `<p class="ds-line ds-kws"><b>Keywords</b> ${d.k.map(k => `<span class="tag">${esc(k)}</span>`).join("")}</p>` : ""}`;
   }
 
+  // Which faction's datasheets a unit's datasheet is in: the army's own (with its parent and allies) if it's there, or else its own faction's.
+  const sheetFaction = (fid, name) => !name || sheetByName(fid, name) ? fid : ((FACTIONS.find(f => f.units.some(x => x.n === name)) || {}).id || fid);
+  // The eye on War's army and collection tables: a unit's datasheet, with the weapons it has first.
+  const sheetEye = u => u.datasheet ? `<button type="button" class="btn-sm icon-x wt-eye" data-sheet-of="${esc(u.id)}" aria-label="Datasheet for ${esc(u.name)}" title="Datasheet">${EYE}</button>` : "";
+  function openUnitSheet(army, u, edit){
+    const d = modal(esc(u.name), `
+      <p class="sub ds-sub">${esc([u.datasheet !== u.name ? u.datasheet : "", u.role, plural(modelsOf(u), "model"), ptsText(+u.points || 0)].filter(Boolean).join(" · "))}</p>
+      <div class="row-actions"><button type="submit" class="primary">Edit the unit</button></div>
+      <div id="ds-body" class="ds" aria-live="polite"><p class="hint">Loading the datasheet…</p></div>`, "wide");
+    loadSheets(sheetFaction(army.faction, u.datasheet)).then(find => { const b = $("ds-body"); if(b) b.innerHTML = datasheetHtml(find(u.datasheet), [u.ranged, u.melee].filter(Boolean).join(", ")); });
+    d.querySelector("form").addEventListener("submit", ev => { ev.preventDefault(); d.close(); edit(); });
+  }
+
   /* ---------- wargear: picked from the datasheet ----------
      A chip for each weapon taken and a dropdown to add another, or to type one the datasheet doesn't list.
      The value is the usual comma-separated text, so lists, exports and Livery Ledger read it as before. */
@@ -1054,6 +1067,7 @@
         </div>
       </fieldset>
       <label>Notes<textarea id="w-notes" rows="2" maxlength="600">${esc(u ? u.notes : "")}</textarea></label>
+      <details class="ds-more wu-ds" id="w-ds"><summary>Datasheet</summary><div id="w-ds-body" class="ds" aria-live="polite"><p class="hint">Loading the datasheet…</p></div></details>
       </div></div>
       <div class="row-actions"><button type="submit" class="primary">${u ? "Save unit" : "Add unit"}</button>${u ? `<button type="button" class="danger" id="w-del">Delete unit</button>` : ""}<span class="msg" id="w-msg" role="status"></span></div>`, "wide xwide");
     const v = id => $(id).value, n = (id, max) => Math.min(max, Math.max(0, parseInt(v(id), 10) || 0));
@@ -1061,21 +1075,29 @@
     let ptsTouched = !!u;
     const sheetNow = () => sheetByName(army.faction, v("w-sheet"));
     const sh0 = sheetNow();
-    const rangedPick = gearPicker($("w-ranged"), {kind: "ranged weapon", options: sh0 ? sh0.wr : [], value: u ? u.ranged : ""});
-    const meleePick = gearPicker($("w-melee"), {kind: "melee weapon", options: sh0 ? sh0.wm : [], value: u ? u.melee : ""});
+    // The datasheet folds open under the notes. It loads when first opened and follows the datasheet and wargear chosen.
+    const drawDs = () => {
+      const box = $("w-ds"); if(!box || !box.open) return;
+      const name = v("w-sheet") || (u ? u.datasheet : "");
+      if(!name){ $("w-ds-body").innerHTML = `<p class="hint">Choose a datasheet to see its profiles and weapons.</p>`; return; }
+      loadSheets(sheetFaction(army.faction, name)).then(find => { if($("w-ds") && (v("w-sheet") || (u ? u.datasheet : "")) === name) $("w-ds-body").innerHTML = datasheetHtml(find(name), [rangedPick.value, meleePick.value].filter(Boolean).join(", ")); });
+    };
+    const rangedPick = gearPicker($("w-ranged"), {kind: "ranged weapon", options: sh0 ? sh0.wr : [], value: u ? u.ranged : "", onChange: () => drawDs()});
+    const meleePick = gearPicker($("w-melee"), {kind: "melee weapon", options: sh0 ? sh0.wm : [], value: u ? u.melee : "", onChange: () => drawDs()});
+    $("w-ds").addEventListener("toggle", drawDs);
     const ptsHint = () => { const sh = sheetNow(); $("w-ptshint").innerHTML = sh ? pointsHint(sh, Math.max(1, n("w-count", 99)), n("w-pts", 9999), "w-pts-reset") : ""; };
     const autoPts = () => { const sh = sheetNow(); if(sh && !ptsTouched){ const p = sheetPts(sh, Math.max(1, n("w-count", 99))); if(p != null) $("w-pts").value = p; } ptsHint(); };
     $("w-pts").addEventListener("input", () => { ptsTouched = true; ptsHint(); });
     $("w-count").addEventListener("input", autoPts);
     d.addEventListener("click", e => { if(e.target.id === "w-pts-reset"){ ptsTouched = false; autoPts(); } });
     $("w-sheet").addEventListener("change", () => {
-      const sh = sheetNow(); if(!sh){ ptsHint(); return; }
+      const sh = sheetNow(); if(!sh){ ptsHint(); drawDs(); return; }
       const def = sheetDefaults(sh);
       $("w-role").value = def.role;
       if(!u){ $("w-count").value = def.count;
         rangedPick.setOptions(sh.wr, (sh.wr || []).slice(0, 4)); meleePick.setOptions(sh.wm, (sh.wm || []).slice(0, 3)); }
       else { rangedPick.setOptions(sh.wr); meleePick.setOptions(sh.wm); }
-      autoPts();
+      autoPts(); drawDs();
     });
     ptsHint();
     d.querySelector("form").addEventListener("submit", async e => {
@@ -1219,7 +1241,7 @@
       const sorted = list.slice().sort(ARMY_SORT_FN[sortBy]);
       const table = (us, total) => `<div class="wt-scroll"><table class="wtable wt-cards" role="table">
             <thead><tr><th scope="col">Unit</th><th scope="col">Role</th><th scope="col" class="n">Models</th><th scope="col" class="n">Points</th></tr></thead>
-            <tbody>${us.map(u => `<tr${selecting && picked.has(u.id) ? ` class="picked"` : ""}><th scope="row"><span class="wt-unit">${selecting ? `<input type="checkbox" class="wa-pick" data-pick="${esc(u.id)}"${picked.has(u.id) ? " checked" : ""} aria-label="Select ${esc(u.name)}">` : warStar(u)}<span><button type="button" class="linkish" data-unit="${esc(u.id)}">${esc(u.name)}</button>${u.own === "planned" ? PLANNED_TAG : ""}${u.datasheet && u.datasheet !== u.name ? `<small>${esc(u.datasheet)}</small>` : ""}</span></span></th>
+            <tbody>${us.map(u => `<tr${selecting && picked.has(u.id) ? ` class="picked"` : ""}><th scope="row"><span class="wt-unit">${selecting ? `<input type="checkbox" class="wa-pick" data-pick="${esc(u.id)}"${picked.has(u.id) ? " checked" : ""} aria-label="Select ${esc(u.name)}">` : warStar(u)}<span><button type="button" class="linkish" data-unit="${esc(u.id)}">${esc(u.name)}</button>${u.own === "planned" ? PLANNED_TAG : ""}${u.datasheet && u.datasheet !== u.name ? `<small>${esc(u.datasheet)}</small>` : ""}</span>${sheetEye(u)}</span></th>
               <td class="wt-sub">${esc(u.role || "—")}</td>${statCells(u)}</tr>`).join("")}</tbody>
             ${total ? `<tfoot><tr><th scope="row">Total</th><td class="wt-sub"></td><td class="n" data-label="Models">${total.models}</td><td class="n" data-label="Points">${num(total.points)}</td></tr></tfoot>` : ""}
           </table></div>`;
@@ -1310,6 +1332,7 @@
       if(b.matches("[data-add-unit]")) openUnit(army, null, reload, {armies: D.armies, pools: D.pools});
       else if(b.matches("[data-from-list]")) openAddFromList(army, reload);
       else if(b.matches("[data-unit]")) { const u = D.units.find(x => x.id === b.dataset.unit); if(u) openUnit(army, u, reload, {armies: D.armies, pools: D.pools}); }
+      else if(b.dataset.sheetOf) { const u = D.units.find(x => x.id === b.dataset.sheetOf); if(u) openUnitSheet(army, u, () => openUnit(army, u, reload, {armies: D.armies, pools: D.pools})); }
       else if(b.matches("[data-filter]")) { filter = b.dataset.filter; draw(); }
       else if(b.dataset.wstar) toggleWarStar(D, b.dataset.wstar, draw);
       else if(b.matches("[data-new-list]")) openNewList(D, id);
@@ -1438,7 +1461,7 @@
           <div class="ro-gh">${a && !isPool(a) ? armyBadge(a, 34) : ""}<div><h3>${esc(g.title)}</h3><small>${esc(meta)}</small></div>${a && !isPool(a) ? `<a class="btn btn-sm" href="#/war/army/${esc(a.id)}" aria-label="Open ${esc(a.name)}">View army</a>` : ""}</div>
           <div class="wt-scroll"><table class="wtable wt-cards" role="table">
             <thead><tr><th scope="col">Unit</th><th scope="col">${second}</th><th scope="col" class="n">Models</th><th scope="col" class="n">Points</th></tr></thead>
-            <tbody>${g.units.map(u => { const ua = armyOf(u.armyId); return `<tr><th scope="row"><span class="wt-unit">${warStar(u)}<span><button type="button" class="linkish" data-unit="${esc(u.id)}">${esc(u.name)}</button>${u.own === "planned" ? PLANNED_TAG : ""}${u.datasheet && u.datasheet !== u.name ? `<small>${esc(u.datasheet)}</small>` : ""}</span></span></th>
+            <tbody>${g.units.map(u => { const ua = armyOf(u.armyId); return `<tr><th scope="row"><span class="wt-unit">${warStar(u)}<span><button type="button" class="linkish" data-unit="${esc(u.id)}">${esc(u.name)}</button>${u.own === "planned" ? PLANNED_TAG : ""}${u.datasheet && u.datasheet !== u.name ? `<small>${esc(u.datasheet)}</small>` : ""}</span>${sheetEye(u)}</span></th>
               <td class="wt-sub">${by === "army" ? esc(u.role || "—") : armyCell(ua)}</td>${statCells(u)}</tr>`; }).join("")}</tbody>
           </table></div>
         </section>`;
@@ -1457,6 +1480,8 @@
     onApp(e => {
       const st = e.target.closest("[data-wstar]"); if(st){ toggleWarStar(D, st.dataset.wstar, draw); return; }
       if(e.target.closest("[data-coll-add]")){ openCollectionAdd(D, "", reload); return; }
+      const eye = e.target.closest("[data-sheet-of]");
+      if(eye){ const u = D.units.find(x => x.id === eye.dataset.sheetOf), a = u && armyOf(u.armyId); if(u && a) openUnitSheet(a, u, () => openUnit(a, u, reload, {armies: D.armies, pools: D.pools})); return; }
       const b = e.target.closest("[data-unit]"); if(!b) return;
       const u = D.units.find(x => x.id === b.dataset.unit), a = u && armyOf(u.armyId);
       if(u && a) openUnit(a, u, reload, {armies: D.armies, pools: D.pools});

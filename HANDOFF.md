@@ -23,12 +23,9 @@ Cloudflare needed `"previews": {}` in `wrangler.jsonc` for the Workers Builds ch
 
 ## Current state (at handoff)
 
-- `main` is at the merge of PR #40, the New Recruit-style list builder.
-- Branch `claude/jolly-faraday-yfgidw` has **3 commits not yet merged**. Tests pass (69):
-  1. Wargear is picked from the datasheet (chip + dropdown pickers), and list-only units can be edited.
-  2. Units stay in armies they belong to (ally rules, army choices, a "not this faction" check), and unit sizes that disagree with their points brackets are fixed at load.
-  3. An eye icon on every list unit shows its datasheet (profiles, weapons, abilities, rules, keywords), with `js/data/sheets/*.js` built by `tools/build_sheets.py`. The ⋯ stays on characters only (warlord, enhancement, leading).
-- **Next step:** open a PR from that branch and merge it once the `test` check is green.
+- `main` is at the merge of PR #41 (wargear pickers, faction checks, the datasheet eye in lists, this guide).
+- Branch `claude/friendly-rubin-fpxzch` adds **the datasheet eye on War's army and collection tables** and a folding **Datasheet** panel in the unit editor, which follows the datasheet and wargear chosen. Tests pass (70).
+- **Next step:** check it on the branch preview, then open a PR and merge it once the `test` check is green.
 
 ## How we've been working
 
@@ -45,7 +42,7 @@ Cloudflare needed `"previews": {}` in `wrangler.jsonc` for the Workers Builds ch
 
 ```bash
 python3 -m http.server 8765          # from the repo root, then open http://localhost:8765
-cd tests && npm ci && npx playwright test     # the whole suite (~1.5 min, 69 tests)
+cd tests && npm ci && npx playwright test     # the whole suite (~1.5 min, 70 tests)
 npx playwright test war.spec.js -g "import an army"   # one test
 ```
 
@@ -116,6 +113,7 @@ python3 tools/build_factions.py bsdata && python3 tools/build_sheets.py bsdata
   - `viewWarList`: the New Recruit-style builder.
     - The roster: `configRow`, `sizePick`, `sheetRows`.
     - Dialogs: `openEntryView` (the eye), `openEntryOptions` (character ⋯), `openSheetPeek`.
+  - `openUnitSheet(army, unit, edit)` and `sheetEye(u)`: the eye on army and collection tables. `sheetFaction` finds which faction's sheets file a datasheet is in.
     - `addSheet` adds a datasheet to the list.
   - `openUnit(army, unit, done, opts)`: the War unit editor. `mergeUnit` keeps fields the other editor owns.
   - Pasting and importing: `makeListReader(fid)` (`parseList` / `parseCode`), `openListImport` (Paste a list), `openAddFromList`, `openImportArmy` + `detectFaction`.
@@ -184,5 +182,4 @@ python3 tools/build_factions.py bsdata && python3 tools/build_sheets.py bsdata
 
 - Show ability descriptions in the datasheet view (a build-script change).
 - Per-model wargear with counts ("2 with Khornate eviscerator"), like New Recruit's model breakdown. The data only has the datasheet's weapon names, not its option groups.
-- Datasheet eye on War army and collection tables and in the unit editor (it's only in lists today).
 - Check leaders against each datasheet's "Leader" list (BSData has it in the Leader ability's text).
