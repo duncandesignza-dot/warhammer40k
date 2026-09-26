@@ -119,7 +119,7 @@ test("unit options: warlord and an enhancement whose points fill in", async ({pa
   await seed(page);
   await open(page, "#/war/list/l1");
   expect(await checks(page)).toContain("No warlord chosen.");
-  await page.click('[aria-label="Options for Captain in this list"]');
+  await page.click('[aria-label="Warlord, enhancement and leading for Captain"]');
   await page.check("#w-ewl");
   await page.fill("#w-een", "Artificer Armour");
   await expect(page.locator("#w-eep")).toHaveValue("20");
@@ -217,7 +217,7 @@ test("duplicate a list as a new version and compare the two", async ({page}) => 
   await page.click("[data-dup]");
   await expect(page.locator("h1")).toHaveText("Club night v2");
   await page.click('[data-rm="0"]');                  // take the Captain out of the new version
-  await page.click('[data-opts="2"]'); await page.fill("#w-ep", "200"); await page.click("dialog[open] [type=submit]");
+  await page.click('[data-view="2"]'); await page.fill("#w-ep", "200"); await page.click("dialog[open] [type=submit]");
   await page.click("[data-compare]");
   await expect(page.locator("h1")).toHaveText("Compare lists");
   await expect(page.locator(".cmp-t thead")).toContainText("Club nightClub night v2");
@@ -397,18 +397,109 @@ test("build a list New Recruit style: battle size, detachment, datasheets, unit 
   await page.fill("#lb-dq", "intercessor squ");
   await expect(page.locator('#lb-dlist li:has([data-sheet="Intercessor Squad"])')).toContainText("2 in list");
   // Wargear on a unit that's only in the list is kept, and exported.
-  await page.click('[data-opts="1"]');
+  // Clicking a list-only unit's name opens its options; wargear comes from the datasheet's weapons.
+  await page.click('.lb-in .lb-title [data-view="1"]');
   await page.selectOption("#w-emc", "5");
   await expect(page.locator("#w-ep")).toHaveValue("80");
-  await page.fill("#w-egear", "Bolt rifle, Astartes grenade launcher");
+  await page.selectOption("#w-egear .gp-add", "Bolt Rifle");
+  await page.selectOption("#w-egear .gp-add", "Astartes grenade launcher");
   await page.click("dialog[open] [type=submit]");
   await expect(page.locator(".lb-sum b")).toHaveText("230");
-  await expect.poll(async () => (await list()).units.map(e => [e.count, e.points, e.gear])).toEqual([[10, 150, undefined], [5, 80, "Bolt rifle, Astartes grenade launcher"]]);
+  await expect.poll(async () => (await list()).units.map(e => [e.count, e.points, e.gear])).toEqual([[10, 150, undefined], [5, 80, "Bolt Rifle, Astartes grenade launcher"]]);
   await open(page, "#/war/list/nb");
   await page.click("[data-export]");
-  expect((await page.inputValue("#w-exp")).split("\n")).toContain("5x Intercessor Squad (80 pts): Bolt rifle, Astartes grenade launcher");
+  expect((await page.inputValue("#w-exp")).split("\n")).toContain("5x Intercessor Squad (80 pts): Bolt Rifle, Astartes grenade launcher");
   await page.keyboard.press("Escape");
   // Your collection is the other tab.
   await page.click('[data-add-tab="coll"]');
   await expect(page.locator("#lb-q")).toBeVisible();
+});
+
+test("wargear is picked from the datasheet: imported units can be changed, and anything else typed in", async ({page}) => {
+  await seed(page, `db.units.push({id: "u9", armyId: "a1", name: "Intercessor Squad", datasheet: "Intercessor Squad", role: "Battleline", count: 5, points: 80, painted: 0, stages: [], own: "planned", ranged: "Bolt Rifle, Bolt pistol", melee: "Close combat weapon"});`);
+  await open(page, "#/war/army/a1");
+  await page.click('.wtable [data-unit="u9"]');
+  // What the unit has shows as chips; the dropdown offers the rest of the datasheet's weapons.
+  await expect(page.locator("#w-ranged .gp-chips li span")).toHaveText(["Bolt Rifle", "Bolt pistol"]);
+  const offered = await page.locator("#w-ranged .gp-add option").allInnerTexts();
+  expect(offered).toContain("Astartes grenade launcher"); expect(offered).not.toContain("Bolt Rifle");
+  await page.click('#w-ranged [aria-label="Remove Bolt pistol"]');
+  await page.selectOption("#w-ranged .gp-add", "Plasma pistol");
+  await page.selectOption("#w-melee .gp-add", "Power fist");
+  await page.click("dialog[open] [type=submit]");
+  await expect.poll(async () => { const u = (await saved(page)).units.find(x => x.id === "u9"); return [u.ranged, u.melee]; })
+    .toEqual(["Bolt Rifle, Plasma pistol", "Close combat weapon, Power fist"]);
+  // Choosing a datasheet for a new unit starts it with that datasheet's weapons.
+  await page.click("[data-add-unit]");
+  await page.selectOption("#w-sheet", "Terminator Squad");
+  await expect(page.locator("#w-ranged .gp-chips li span")).toHaveText(["Storm bolter", "Cyclone missile launcher", "Heavy Flamer", "Assault Cannon"]);
+});
+
+test("units stay in armies they belong to: only real allies are matched, and odd ones are flagged", async ({page}) => {
+  await seed(page, `db.lists[0].units.push({n: "Hive Tyrant", sheet: "Hive Tyrant", role: "Character", count: 1, points: 215, k: "z"});`);
+  await open(page, "#/war/list/l1");
+  // A Tyranid unit in an Ultramarines list is flagged.
+  await expect(page.locator(".tc-list")).toContainText("Hive Tyrant isn't an Ultramarines unit.");
+  // Pasting: Imperial Knights are allies; Tyranids aren't recognised.
+  await page.click("[data-import]");
+  await page.fill("#w-list", "Armiger Warglaive (140 points)\nTermagants (60 points)\nCaptain (80 points)");
+  await expect(page.locator("#w-found")).toContainText("2 units");
+  await expect(page.locator("#w-found")).toContainText("Armiger Warglaive");
+  await expect(page.locator("#w-found .hint")).toContainText("Not recognised: Termagants");
+  await page.keyboard.press("Escape");
+  // The unit editor only offers armies of the same faction family.
+  await open(page, "#/war/army/a1");
+  await page.click('.wtable [data-unit="u2"]');
+  const armies = await page.locator("#w-army option").allInnerTexts();
+  expect(armies).toContain("Ultramarines 2nd Company"); expect(armies.join()).not.toContain("Hive Fleet Leviathan");
+  await page.keyboard.press("Escape");
+  // Adding from the collection: a Tyranid unit can't pick an Ultramarines army.
+  await open(page, "#/war/collection");
+  await page.click("[data-coll-add]");
+  await page.selectOption("#w-cf", "tyranids");
+  expect(await page.locator("#w-ca option").allInnerTexts()).toEqual(["Not in an army", "Hive Fleet Leviathan"]);
+});
+
+test("datasheets whose sizes disagree with their points use the points brackets (Jakhals come in 10 or 20)", async ({page}) => {
+  await seed(page, `db.armies.push({id: "w1", faction: "world-eaters", name: "Butchers", scheme: window.LEDGER_PRESETS.presetFor("world-eaters"), createdAt: "2026-01-01", updatedAt: "2026-01-01"});
+    db.lists.push({id: "wl", armyId: "w1", name: "Test", limit: 2000, detachments: [], units: [], createdAt: "2026-09-01", updatedAt: "2026-09-01"});`);
+  await open(page, "#/war/list/wl");
+  await page.fill("#lb-dq", "jakhals");
+  await page.click('[data-sheet="Jakhals"]');
+  await expect(page.locator(".lb-in")).toContainText("Jakhals");
+  await expect(page.locator('[data-size="0"] option:checked')).toHaveText("10 models · 65 pts");
+  await page.selectOption('[data-size="0"]', "20");
+  await expect(page.locator(".lb-sum b")).toHaveText("130");
+});
+
+test("the eye shows a unit's datasheet: models, weapons, abilities, rules and keywords; the ⋯ is for characters", async ({page}) => {
+  await seed(page, `db.units.find(u => u.id === "u2").ranged = "Bolt Rifle"; db.units.find(u => u.id === "u2").melee = "Close combat weapon";`);
+  await open(page, "#/war/list/l1");
+  // Only characters have the ⋯ (warlord, enhancement, leading); every unit has the eye.
+  await expect(page.locator(".lb-in .icon-x[data-view]")).toHaveCount(4);
+  await expect(page.locator(".lb-in [data-opts]")).toHaveCount(1);
+  await page.click('[aria-label="Datasheet, models and points for Intercessor Squad"]');
+  const ds = page.locator("#ds-body");
+  await expect(ds.locator("table").first()).toContainText("Intercessor");
+  await expect(ds.locator("table").first().locator("thead")).toContainText("InSv");
+  // The weapons the unit has come first, with their profiles; the rest fold away.
+  const ranged = ds.locator("table").nth(1);
+  await expect(ranged.locator("tbody th")).toHaveText(["Bolt Rifle"]);
+  await expect(ranged.locator("tbody tr").first()).toContainText('24"');
+  await expect(ds.locator(".ds-more summary").first()).toContainText("Other ranged weapons on the datasheet");
+  await expect(ds).toContainText("Abilities");
+  await expect(ds).toContainText("Oath of Moment");
+  await expect(ds.locator(".ds-kws")).toContainText("Battleline");
+  // Points in this list can still be changed here.
+  await page.fill("#w-ep", "140");
+  await page.click("dialog[open] [type=submit]");
+  await expect.poll(async () => (await saved(page)).lists[0].units[1].pts).toBe(140);
+  // A datasheet can be looked at before it's added.
+  // (Deathstorm Drop Pod is a Legends datasheet, so Legends are shown first.)
+  await page.fill("#lb-dq", "deathstorm");
+  await page.check("#lb-dl");
+  await page.click('[data-peek="Deathstorm Drop Pod"]');
+  await expect(page.locator("#ds-body")).toContainText("Deathstorm cannon array");
+  await page.click("dialog[open] [type=submit]");
+  await expect(page.locator(".lb-in")).toContainText("Deathstorm Drop Pod");
 });

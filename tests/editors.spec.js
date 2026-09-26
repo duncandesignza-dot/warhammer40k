@@ -49,7 +49,10 @@ test("saving in Livery Ledger keeps everything War Ledger knows, and the other w
   await page.click('.wtable [data-unit="c1"]');
   // War Ledger no longer asks about building, painting or buying, but it keeps what Livery Ledger recorded.
   await expect(page.locator("#w-built, #w-painted, #w-ready, #w-own, #w-shop")).toHaveCount(0);
-  await page.fill("#w-melee", "Power fists");
+  // A weapon the datasheet doesn't list can still be typed in.
+  await page.selectOption("#w-melee .gp-add", "__other");
+  await page.fill("#w-melee .gp-other", "Power fists");
+  await page.press("#w-melee .gp-other", "Enter");
   await page.click("dialog[open] [type=submit]");
   await expect.poll(async () => (await unit(page, "c1")).melee).toBe("Power fists");
   const after = await unit(page, "c1");
