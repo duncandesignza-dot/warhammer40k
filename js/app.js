@@ -3068,8 +3068,10 @@
         ${factionHero(fid)}
         <label><span>Points you're building to <span class="opt">(optional)</span></span><input id="w-lim" type="number" min="0" max="20000" step="250" inputmode="numeric" placeholder="e.g. 2000"></label>
         <p class="hint">War Ledger uses the faction's official colours behind the scenes. If you start painting, you can choose your own in Livery Ledger.</p>
-        <div class="row-actions"><button type="submit" class="primary">Create army</button><a class="btn" href="#/war/new">Back</a><span class="msg" id="w-msg" role="status"></span></div>
+        <div class="row-actions"><button type="submit" class="primary">Create army</button><button type="button" id="wn-import">Import from a list</button><a class="btn" href="#/war/new">Back</a><span class="msg" id="w-msg" role="status"></span></div>
       </form>`;
+    // Already built it somewhere else: paste the list and War Ledger makes the army and a list together.
+    $("wn-import").addEventListener("click", () => openImportArmy({fid, name: $("w-name").value.trim(), limit: parseInt($("w-lim").value, 10) || 0}));
     $("w-name").focus();
     $("wn-form").addEventListener("submit", async e => {
       e.preventDefault();
@@ -3104,7 +3106,8 @@
   }
   // Import an army: paste a list and War Ledger makes the army (its units planned, so they stay out of Livery
   // Ledger until you own them) and an army list of the same units, with its detachment, warlord, enhancements and leaders.
-  function openImportArmy(){
+  // pre: {fid, name, limit} from the new army page, so the faction (and anything already typed) is filled in.
+  function openImportArmy(pre = {}){
     const d = modal("Import an army", `
       <p class="sub">Paste a list from the Warhammer 40,000 app, New Recruit, BattleScribe or a list-builder share code. War Ledger makes the army and an army list to test it with. The units are planned, not owned, so they only show in Livery Ledger once you say you own them.</p>
       <label>Army list<textarea id="ia-text" rows="9" placeholder="Paste the whole list, including the points"></textarea></label>
@@ -3115,7 +3118,10 @@
       </div>
       <div id="ia-found" class="w-found ia-found" aria-live="polite"></div>
       <div class="row-actions"><button type="submit" class="primary" id="ia-go" disabled>Import army</button><span class="msg" id="w-msg" role="status"></span></div>`, "wide");
-    let parsed = null, fidPicked = false, limTyped = false, nameTyped = false;
+    let parsed = null, fidPicked = !!FBY[pre.fid], limTyped = !!pre.limit, nameTyped = !!pre.name;
+    if(fidPicked) $("ia-f").value = pre.fid;
+    if(limTyped) $("ia-lim").value = pre.limit;
+    if(nameTyped) $("ia-name").value = pre.name;
     const read = (detect) => {
       const t = $("ia-text").value;
       if(detect && !fidPicked){ const fid = detectFaction(t); if(fid) $("ia-f").value = fid; }

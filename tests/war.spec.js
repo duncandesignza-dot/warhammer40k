@@ -583,3 +583,21 @@ test("a new unit takes the wargear of the datasheet you switch to, and Custom un
   await page.click("dialog[open] [type=submit]");
   await expect.poll(async () => (await saved(page)).units.find(u => u.id === "u3").datasheet).toBe("");
 });
+
+test("the new army page can import from a list, with the faction and anything typed already filled in", async ({page}) => {
+  await seed(page);
+  await open(page, "#/war/new/black-templars");
+  await page.fill("#w-name", "Crusade of Sigismund");
+  await page.fill("#w-lim", "1000");
+  await page.click("#wn-import");
+  await expect(page.locator("#ia-f")).toHaveValue("black-templars");
+  await expect(page.locator("#ia-name")).toHaveValue("Crusade of Sigismund");
+  await expect(page.locator("#ia-lim")).toHaveValue("1000");
+  await page.fill("#ia-text", "Marshal (80 points)\n  • Warlord\nCrusader Squad (150 points)");
+  await expect(page.locator("#ia-go")).toHaveText("Import 2 units");
+  await page.click("#ia-go");
+  await expect(page).toHaveURL(/#\/war\/list\//);
+  const db = await saved(page), army = db.armies.find(a => a.name === "Crusade of Sigismund");
+  expect(army.faction).toBe("black-templars");
+  expect(db.units.filter(u => u.armyId === army.id).map(u => u.datasheet).sort()).toEqual(["Crusader Squad", "Marshal"]);
+});
