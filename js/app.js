@@ -3009,9 +3009,9 @@
     app.innerHTML = `
       <div class="crumbs"><a href="#/war">War Ledger</a> / <a href="#/war/new">New army</a> / ${esc(f.name)}</div>
       <section class="page-head war-head"><div class="wh-id">${soloBadge(factionBadge(fid, 64), 64)}<div><p class="eyebrow">War Ledger · ${esc(f.group || "")}</p><h1>New ${esc(f.name)} army</h1><p class="sub">Name your force. You can add units straight after.</p></div></div></section>
-      ${factionHero(fid)}
       <form class="panel war-newform" id="wn-form" novalidate>
         <label>Army name<input id="w-name" maxlength="80" placeholder="e.g. ${esc(f.name)} Strike Force" autocomplete="off"></label>
+        ${factionHero(fid)}
         <label><span>Points you're building to <span class="opt">(optional)</span></span><input id="w-lim" type="number" min="0" max="20000" step="250" inputmode="numeric" placeholder="e.g. 2000"></label>
         <p class="hint">War Ledger uses the faction's official colours behind the scenes. If you start painting, you can choose your own in Livery Ledger.</p>
         <div class="row-actions"><button type="submit" class="primary">Create army</button><a class="btn" href="#/war/new">Back</a><span class="msg" id="w-msg" role="status"></span></div>
@@ -4518,13 +4518,13 @@ Redemptor Dreadnought (210 points)</pre>
         <div><h1>${editing ? "Your colours" : esc(f.name)}</h1>
         <p class="sub">${editing ? "Change your army's colours. Units that use the scheme colours update to match." : "Name your army and choose its colours. These become the starting colours for every unit you add."}</p></div>
       </div>
-      ${editing ? "" : factionHero(f.id)}
       ${locked ? `<div class="banner"><span class="dot"></span>Sign in to create a ledger. <button type="button" class="btn-sm" data-signin>Sign in</button></div>` : ""}
       <div class="setup">
         <div>
           <div class="panel">
             <h2 class="ph">Army</h2>
             <label>Army name<input id="s-name" maxlength="80" placeholder="e.g. ${esc(f.name)} Crusade" value="${esc(draft.name)}"></label>
+            ${editing ? "" : factionHero(f.id)}
           </div>
           ${known.length ? `<div class="panel">
             <h2 class="ph">Start from a known scheme</h2>
