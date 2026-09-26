@@ -601,3 +601,14 @@ test("the new army page can import from a list, with the faction and anything ty
   expect(army.faction).toBe("black-templars");
   expect(db.units.filter(u => u.armyId === army.id).map(u => u.datasheet).sort()).toEqual(["Crusader Squad", "Marshal"]);
 });
+
+test("Army lists has Import a list, and the faction picker has a Back button", async ({page}) => {
+  await seed(page);
+  await open(page, "#/war/lists");
+  await page.click("[data-import-army]");
+  await expect(page.locator("dialog[open] #ia-text")).toBeVisible();
+  await page.click("dialog[open] [data-x]");
+  await open(page, "#/war/new");
+  await page.click(".war-actions a:has-text('Back')");
+  await expect(page).toHaveURL(/#\/war\/armies$/);
+});

@@ -1725,6 +1725,8 @@
     const render = async () => { D = await warData(); drawWarLists(D); };
     await render();
     onApp(e => {
+      // Import a list makes its army too, so it works before you have one.
+      if(e.target.closest("[data-import-army]")){ openImportArmy(); return; }
       const b = e.target.closest("[data-new-list]");
       if(b) openNewList(D, b.dataset.newList || "", b.dataset.kind || ""); else warClicks(e, D, render);
     });
@@ -1734,7 +1736,7 @@
     app.innerHTML = `
       <section class="page-head war-head">
         <div><p class="eyebrow">War Ledger</p><h1>Army lists</h1><p class="sub">Your collection is every unit you've added, owned or not. A list is what you take to a particular game, and a Crusade force is the Order of Battle you grow over a campaign.</p></div>
-        <div class="war-actions">${D.armies.length && !D.warMissing ? `<button type="button" class="primary" data-new-list="">+ New list</button><button type="button" data-new-list="" data-kind="crusade">+ New Crusade force</button>` : ""}</div>
+        <div class="war-actions">${D.warMissing ? "" : `${D.armies.length ? `<button type="button" class="primary" data-new-list="">+ New list</button><button type="button" data-new-list="" data-kind="crusade">+ New Crusade force</button>` : ""}<button type="button"${D.armies.length ? "" : ` class="primary"`} data-import-army>Import a list</button>`}</div>
       </section>
       ${warTabs("lists")}
       ${missingBanner(D)}
@@ -3012,7 +3014,7 @@
     view.name = "war-new"; document.title = "New army · War Ledger";
     factionPage({war: true, crumbs: `<a href="#/war">War Ledger</a> / New army`, title: "Muster a new army",
       sub: "Choose your faction. You'll name your army next, then add your units. Or import a list you've built elsewhere.", href: id => `#/war/new/${id}`,
-      actions: `<button type="button" class="primary" data-import-army>Import an army</button>`});
+      actions: `<button type="button" class="primary" data-import-army>Import an army</button><a class="btn" href="#/war/armies">Back</a>`});
     onApp(e => { if(e.target.closest("[data-import-army]")) openImportArmy(); });
   }
   // A faction's hero picture for the new army pages, where there is one: img/heroes/<faction>.webp, then <faction>-2.webp and so on.
