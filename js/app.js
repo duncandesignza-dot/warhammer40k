@@ -1089,8 +1089,27 @@
       return;
     }
     view.name = "war-army"; document.title = `${army.name} · War Ledger`;
-    let D = await warData(false), filter = "all";
+    let D = await warData(false), filter = "all", by = "role", sortBy = "name";
+    try { by = localStorage.getItem("ll-army-group") || by; sortBy = localStorage.getItem("ll-army-sort") || sortBy; } catch(e){}
+    if(!ARMY_GROUPS.some(g => g[0] === by)) by = "role";
+    if(!ARMY_SORTS.some(g => g[0] === sortBy)) sortBy = "name";
     async function reload(){ army = await store.getArmy(id) || army; D = await warData(false); draw(); }
+    // The current force as one table, or a table per group, each sorted the way chosen.
+    function forceGroups(list, t){
+      const r = u => readiness(u), sorted = list.slice().sort(ARMY_SORT_FN[sortBy]);
+      const table = (us, total) => `<div class="wt-scroll"><table class="wtable wt-cards" role="table">
+            <thead><tr><th scope="col">Unit</th><th scope="col">Role</th><th scope="col" class="n">Owned</th><th scope="col" class="n">Built</th><th scope="col" class="n">Painted</th><th scope="col" class="n">Ready</th><th scope="col" class="n">Points</th></tr></thead>
+            <tbody>${us.map(u => `<tr><th scope="row"><span class="wt-unit">${warStar(u)}<span><button type="button" class="linkish" data-unit="${esc(u.id)}">${esc(u.name)}</button>${u.own === "planned" ? PLANNED_TAG : ""}${u.datasheet && u.datasheet !== u.name ? `<small>${esc(u.datasheet)}</small>` : ""}</span></span></th>
+              <td class="wt-sub">${esc(u.role || "—")}</td>${statCells(r(u))}</tr>`).join("")}</tbody>
+            ${total ? `<tfoot><tr><th scope="row">Total</th><td class="wt-sub"></td><td class="n" data-label="Models">${total.models}</td><td class="n" data-label="Built">${total.built}</td><td class="n" data-label="Painted">${total.painted}</td><td class="n" data-label="Ready">${total.ready}</td><td class="n" data-label="Points">${num(total.points)}</td></tr></tfoot>` : ""}
+          </table></div>`;
+      if(by === "none") return table(sorted, filter === "all" ? t : null);
+      const groups = by === "ready" ? READY_GROUPS.map(([k, l]) => [l, sorted.filter(u => readyKey(u) === k)])
+        : by === "paint" ? PAINT_GROUPS.map(([k, l]) => [l, sorted.filter(u => paintKey(u) === k)])
+        : ROLE_ORDER.map(role => [role, sorted.filter(u => (ROLE_ORDER.includes(u.role) ? u.role : "Other") === role)]);
+      return groups.filter(g => g[1].length).map(([title, us]) => { const gt = sumUp(us), owned = us.length - gt.planned;
+        return `<section class="ro-group wc-group" aria-label="${esc(title)}"><div class="ro-gh"><div><h3>${esc(title)}</h3><small>${esc([owned ? plural(owned, "unit") : "", owned ? ptsText(gt.points) : "", owned ? `${gt.ready}/${gt.models} battle ready` : "", gt.planned ? `${gt.planned} planned` : ""].filter(Boolean).join(" · "))}</small></div></div>${table(us, null)}</section>`; }).join("");
+    }
     function draw(){
       const units = D.byArmy(id).slice().sort((a, b) => (ROLE_ORDER.indexOf(a.role) + 99) % 99 - (ROLE_ORDER.indexOf(b.role) + 99) % 99 || a.name.localeCompare(b.name));
       const t = sumUp(units), gs = D.games.filter(g => g.armyId === id), rec = recordOf(gs), ls = D.lists.filter(l => l.armyId === id);
@@ -1119,12 +1138,11 @@
         <section class="war-sec" aria-labelledby="cf-h">
           <div class="sec-h"><h2 id="cf-h">Current force</h2>
             <div class="seg" role="group" aria-label="Show"><button type="button" data-filter="all" aria-pressed="${filter === "all"}">All units</button><button type="button" data-filter="notready" aria-pressed="${filter === "notready"}">Not battle ready</button><button type="button" data-filter="fav" aria-pressed="${filter === "fav"}">${STAR(true)} Starred</button></div></div>
-          ${shown.length ? `<div class="wt-scroll"><table class="wtable wt-cards" role="table">
-            <thead><tr><th scope="col">Unit</th><th scope="col">Role</th><th scope="col" class="n">Owned</th><th scope="col" class="n">Built</th><th scope="col" class="n">Painted</th><th scope="col" class="n">Ready</th><th scope="col" class="n">Points</th></tr></thead>
-            <tbody>${shown.map(u => { const r = readiness(u); return `<tr><th scope="row"><span class="wt-unit">${warStar(u)}<span><button type="button" class="linkish" data-unit="${esc(u.id)}">${esc(u.name)}</button>${u.own === "planned" ? PLANNED_TAG : ""}${u.datasheet && u.datasheet !== u.name ? `<small>${esc(u.datasheet)}</small>` : ""}</span></span></th>
-              <td class="wt-sub">${esc(u.role || "—")}</td>${statCells(r)}</tr>`; }).join("")}</tbody>
-            ${filter === "all" ? `<tfoot><tr><th scope="row">Total</th><td class="wt-sub"></td><td class="n" data-label="Models">${t.models}</td><td class="n" data-label="Built">${t.built}</td><td class="n" data-label="Painted">${t.painted}</td><td class="n" data-label="Ready">${t.ready}</td><td class="n" data-label="Points">${num(t.points)}</td></tr></tfoot>` : ""}
-          </table></div>` : `<p class="hint">${filter === "fav" ? "No starred units yet. Tap the star beside a unit to keep it handy." : "Every unit is battle ready."}</p>`}
+          <div class="list-tools arrange wa-arrange">
+            <label class="inline">Group by<select id="wa-g">${ARMY_GROUPS.map(([k, l]) => `<option value="${k}"${k === by ? " selected" : ""}>${l}</option>`).join("")}</select></label>
+            <label class="inline">Sort by<select id="wa-s">${ARMY_SORTS.map(([k, l]) => `<option value="${k}"${k === sortBy ? " selected" : ""}>${l}</option>`).join("")}</select></label>
+          </div>
+          ${shown.length ? forceGroups(shown, t) : `<p class="hint">${filter === "fav" ? "No starred units yet. Tap the star beside a unit to keep it handy." : "Every unit is battle ready."}</p>`}
         </section>` : `<section class="panel war-empty"><h2>No units yet</h2><p class="sub">Add the units you own one at a time, or paste an army list to add them all at once.</p><div class="war-actions"><button type="button" class="primary" data-add-unit>+ Add unit</button><button type="button" data-from-list>Add from a list</button></div></section>`}
         <section class="war-sec" aria-labelledby="al-h"><div class="sec-h"><h2 id="al-h">Army lists</h2>${D.warMissing ? "" : `<button type="button" class="btn-sm" data-new-list="${esc(id)}">+ New list</button>`}</div>
           ${ls.length ? `<div class="ledgers">${ls.map(l => listCard(l, D)).join("")}</div>` : `<p class="hint">Build lists from this collection for the games you play, and see whether each one is ready for the table.</p>`}</section>
@@ -1135,6 +1153,9 @@
           <div class="row-actions"><button type="button" class="btn-sm" data-rename>Rename army</button><button type="button" class="btn-sm danger" id="w-delarmy">Delete army</button><span class="msg" id="w-amsg" role="status"></span></div></section>`;
       tableRoles(app);
       $("w-delarmy").addEventListener("click", () => confirmDeleteArmy(army, units, () => { location.hash = "#/war/armies"; }));
+      const keep = (k, v) => { try { localStorage.setItem(k, v); } catch(err){} };
+      if($("wa-g")) $("wa-g").addEventListener("change", e => { by = e.target.value; keep("ll-army-group", by); draw(); $("wa-g").focus(); });
+      if($("wa-s")) $("wa-s").addEventListener("change", e => { sortBy = e.target.value; keep("ll-army-sort", sortBy); draw(); $("wa-s").focus(); });
     }
     draw();
     onApp(async e => {
@@ -1187,6 +1208,18 @@
   let collFilter = "all";
   const COLL_FILTERS = [["all", "All"], ["notready", "Not ready"], ["ready", "Ready"], ["planned", "Planned"], ["fav", "Starred"]];
   const READY_GROUPS = [["none", "Not battle ready"], ["part", "Partly battle ready"], ["ready", "Battle ready"], ["planned", "Planned"]];
+  // An army page's Current force: ways to group and sort it.
+  const ARMY_GROUPS = [["none", "Nothing"], ["role", "Role"], ["ready", "Readiness"], ["paint", "Painting"]];
+  const PAINT_GROUPS = [["done", "Painted"], ["progress", "Being painted"], ["built", "Built, not painted"], ["sprue", "Not built yet"], ["planned", "Planned"]];
+  const paintKey = u => { const r = readiness(u); return r.planned ? "planned" : r.painted >= r.owned ? "done" : r.painted ? "progress" : r.built ? "built" : "sprue"; };
+  const ARMY_SORTS = [["name", "Name"], ["points", "Points (most first)"], ["models", "Models (most first)"], ["ready", "Least ready first"]];
+  const byName = (a, b) => a.name.localeCompare(b.name);
+  const ARMY_SORT_FN = {
+    name: byName,
+    points: (a, b) => (+b.points || 0) - (+a.points || 0) || byName(a, b),
+    models: (a, b) => readiness(b).owned - readiness(a).owned || byName(a, b),
+    ready: (a, b) => { const ra = readiness(a), rb = readiness(b); return (ra.owned ? ra.ready / ra.owned : 2) - (rb.owned ? rb.ready / rb.owned : 2) || byName(a, b); }
+  };
   const readyKey = u => { const r = readiness(u); return r.planned ? "planned" : r.ready >= r.owned ? "ready" : r.ready ? "part" : "none"; };
   async function viewWarCollection(){
     view.name = "war-collection"; document.title = "Collection · War Ledger";
@@ -4307,7 +4340,7 @@ Redemptor Dreadnought (210 points)</pre>
 
     app.innerHTML = `
       <div class="crumbs">${canWrite ? `<a href="#/livery">Livery Ledger</a> / <a href="#/livery/ledgers">Ledgers</a>` : store.session ? `<a href="#/shared">Shared armies</a>` : `<a href="#/">Livery Ledger</a>`} / ${esc(army.name)}</div>
-      <header class="top">
+      <section class="page-head war-head liv-head">
         <div class="wh-id">${armyBadge(army, 64)}<div>
           ${!canWrite ? (army.owner && store.canShare ? `<a class="owner-link" href="#/painter/${esc(army.owner)}">${ownerLine(army, "big")}</a>` : ownerLine(army, "big")) : ""}
           <p class="eyebrow">${esc(f.name)}</p>
@@ -4315,13 +4348,16 @@ Redemptor Dreadnought (210 points)</pre>
           <p class="sub">${canWrite ? `<a href="#/war/army/${esc(army.id)}">Open in War Ledger</a> to plan its lists and battles.`
             : (army.scheme.rec.w + army.scheme.rec.l + army.scheme.rec.d) ? `<span class="rec-chip">${recText(army.scheme.rec)}</span> battle record` : "Colours, units and painting progress."}</p>
         </div></div>
-        <div class="stats" aria-live="polite">
-          <div class="stat stat-pts"><b><span id="st-pts">0</span><small class="lim"${!canWrite && !scheme.limit ? " hidden" : ""}> / <button type="button" id="b-limit" class="lim-btn" ${canWrite ? "" : "disabled"} aria-label="Change points limit">${scheme.limit ? num(scheme.limit) : "set limit"}</button></small></b><span>Points</span><i class="pts-bar" aria-hidden="true"><i id="pts-bar"></i></i></div>
-          <div class="stat"><b id="st-units">0</b><span>Units</span></div>
-          <div class="stat"><b id="st-done">0/0</b><span>Models painted</span></div>
-          <div class="stat"><b id="st-pct">0%</b><span>Complete</span></div>
-        </div>
-      </header>
+        ${canWrite ? `<div class="war-actions"><button type="button" class="primary" id="b-add">+ Add unit</button><button type="button" id="b-list">Add from a list</button></div>` : ""}
+      </section>
+      ${canWrite ? livTabs("ledgers") : ""}
+      <section class="war-stats five liv-stats" aria-label="Ledger overview" aria-live="polite">
+        <div class="wstat stat-pts"><b><span id="st-pts">0</span><small class="lim"${!canWrite && !scheme.limit ? " hidden" : ""}> / <button type="button" id="b-limit" class="lim-btn" ${canWrite ? "" : "disabled"} aria-label="Change points limit">${scheme.limit ? num(scheme.limit) : "set limit"}</button></small></b><span>Points</span><div class="wbar pts-bar" aria-hidden="true"><i id="pts-bar"></i></div><small id="st-pts-sub"></small></div>
+        <div class="wstat"><b id="st-units">0</b><span>Units</span><small id="st-models"></small></div>
+        <div class="wstat ready"><b id="st-done">0</b><span>Models painted</span><div class="wbar" aria-hidden="true"><i id="bar"></i></div></div>
+        <div class="wstat"><b id="st-pct">0%</b><span>Complete</span><small id="st-fin"></small></div>
+        <div class="wstat"><b id="st-time">0m</b><span>Painting time</span><small id="st-time-sub"></small></div>
+      </section>
       <div class="limit-edit" id="limit-edit" hidden>
         <span>Points limit</span>
         <div class="seg">${[500, 1000, 1500, 2000, 2500, 3000].map(v => `<button type="button" data-lim="${v}">${num(v)}</button>`).join("")}</div>
@@ -4329,12 +4365,10 @@ Redemptor Dreadnought (210 points)</pre>
         <button type="button" class="primary btn-sm" id="lim-save">Save</button>
         <button type="button" class="btn-sm" id="lim-cancel">Cancel</button>
       </div>
-      <div class="bar" aria-hidden="true"><i id="bar"></i></div>
       <div class="toolbar">
         ${canWrite ? noteHtml() : "<span></span>"}
         <div class="tools">
           ${canWrite ? `<button type="button" class="btn-sm share-btn${army.public ? " on" : ""}" id="b-share"><span class="dot${army.public ? " on" : ""}"></span><span id="share-label">${army.public ? "Shared" : "Share"}</span></button>` : ""}
-          ${canWrite ? `<button type="button" class="btn-sm primary" id="b-list">Add from a list</button>` : ""}
           <button type="button" class="btn-sm" id="b-paints">Paints &amp; recipes<span class="buy-badge" id="buy-badge" hidden></span></button>
           ${canWrite ? `<a class="btn btn-sm" href="#/army/${esc(army.id)}/colours">Edit colours</a>` : ""}
           <div class="more">
@@ -4357,7 +4391,6 @@ Redemptor Dreadnought (210 points)</pre>
         <section class="list" aria-labelledby="army-h">
           <div class="list-head">
             <h2 class="eyebrow" id="army-h">${canWrite ? "Your army" : "Their army"}</h2>
-            ${canWrite ? `<button type="button" class="primary btn-add" id="b-add">+ Add unit</button>` : ""}
             <div class="list-tools">
               <input type="search" class="search" id="q" placeholder="Search units" aria-label="Search units">
               <div class="filters" id="filters" role="group" aria-label="Filter by status">
@@ -4902,11 +4935,17 @@ Redemptor Dreadnought (210 points)</pre>
       const done = ownedUnits.reduce((a, u) => a + (+u.painted || 0), 0);
       const pts = units.reduce((a, u) => a + (+u.points || 0), 0);
       const pct = models ? Math.round(done / models * 100) : 0;
-      $("st-units").textContent = units.length; $("st-done").textContent = `${done}/${models}`; $("st-pct").textContent = pct + "%";
+      const fin = ownedUnits.filter(u => u.count && u.painted >= u.count).length, mins = units.reduce((a, u) => a + unitMins(u), 0);
+      $("st-units").textContent = units.length; $("st-done").innerHTML = `${num(done)}<small> / ${num(models)}</small>`; $("st-pct").textContent = pct + "%";
+      $("st-models").textContent = plural(models, "model") + (units.length > ownedUnits.length ? ` · ${units.length - ownedUnits.length} planned` : "");
+      $("st-fin").textContent = ownedUnits.length ? `${fin} of ${plural(ownedUnits.length, "unit")} finished` : "Nothing to paint yet";
+      $("st-time").textContent = hm(mins);
+      $("st-time-sub").textContent = mins && done ? `${hm(Math.round(mins / done))} a painted model` : mins ? "Keep going" : "Start a timer on a unit";
       $("st-pts").textContent = num(pts);
       const lim = scheme.limit || 0, sp = app.querySelector(".stat-pts");
       $("pts-bar").style.width = lim ? Math.min(100, pts / lim * 100) + "%" : "0";
       sp.classList.toggle("over", !!lim && pts > lim);
+      $("st-pts-sub").textContent = lim ? (pts > lim ? `${num(pts - lim)} over the limit` : `${num(lim - pts)} left`) : "No points limit";
       sp.title = lim ? (pts > lim ? `${num(pts - lim)} pts over your ${num(lim)} limit` : `${num(lim - pts)} pts left of ${num(lim)}`) : "No points limit set";
       $("bar").style.width = pct + "%";
       updateBuyBadge();

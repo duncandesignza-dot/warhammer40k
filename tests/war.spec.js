@@ -247,3 +247,17 @@ test("a Crusade force: battles give experience and requisition points, and each 
   await page.click('[data-rm="0"]');
   await expect(page.locator(".cr-t tbody tr")).toHaveCount(1);
 });
+
+test("an army's current force can be grouped and sorted, and the choice is remembered", async ({page}) => {
+  await seed(page);
+  await open(page, "#/war/army/a1");
+  await expect(page.locator(".wc-group h3")).toHaveText(["Character", "Battleline", "Infantry", "Vehicle"]);
+  await page.selectOption("#wa-g", "ready");
+  await expect(page.locator(".wc-group h3")).toHaveText(["Not battle ready", "Partly battle ready", "Battle ready"]);
+  await page.selectOption("#wa-g", "none"); await page.selectOption("#wa-s", "points");
+  await expect(page.locator(".wtable tbody th .linkish")).toHaveText(["Redemptor Dreadnought", "Terminator Squad", "Intercessor Squad", "Captain"]);
+  await expect(page.locator(".wtable tfoot")).toContainText("Total");
+  await open(page, "#/war/army/a1");
+  await expect(page.locator("#wa-g")).toHaveValue("none");
+  await expect(page.locator("#wa-s")).toHaveValue("points");
+});

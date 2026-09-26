@@ -23,10 +23,10 @@ test("a planned unit shows as planned and doesn't count until bought", async ({p
   await open(page, "#/army/a1");
   const card = page.locator('.card:has(.card-open:text-is("Gladiator Lancer"))');
   await expect(card.locator(".tag.plan")).toHaveText("Planned");
-  await expect(page.locator("#st-done")).toHaveText("7/17");
+  await expect(page.locator("#st-done")).toHaveText("7 / 17");
   await card.locator(".card-open").click();
   await page.click("[data-bought]");
-  await expect(page.locator("#st-done")).toHaveText("7/18");
+  await expect(page.locator("#st-done")).toHaveText("7 / 18");
   expect((await saved(page)).units.find(u => u.id === "u9").own).toBe("owned");
 });
 
