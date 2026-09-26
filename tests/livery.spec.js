@@ -164,3 +164,10 @@ test("the Livery collection (once the roster) lists units not in a ledger too, a
   await expect(loose).toContainText("Ultramarines");
   await expect(page.locator('.war-tabs a[aria-current="page"]')).toHaveText("Collection");
 });
+
+test("the ledger counts its units in the totals, leaving planned ones out", async ({page}) => {
+  await seed(page, `db.units.push({id: "u9", armyId: "a1", name: "Hellblaster Squad", datasheet: "Hellblaster Squad", role: "Infantry", count: 5, points: 115, painted: 0, stages: [], own: "planned"});`);
+  await open(page, "#/army/a1");
+  await expect(page.locator("#st-fin")).toHaveText("1 of 4 units finished");
+  await expect(page.locator("#st-models")).toHaveText("17 models");
+});

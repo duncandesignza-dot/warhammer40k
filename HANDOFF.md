@@ -24,7 +24,7 @@ Cloudflare needed `"previews": {}` in `wrangler.jsonc` for the Workers Builds ch
 ## Current state (at handoff)
 
 - `main` has the datasheet eye on War's army and collection tables and in the unit editor (PR #42), and faction pictures on the new army pages.
-- Tests pass (71).
+- Tests pass (74).
 - **Next step:** pick something from "Ideas that came up but aren't done".
 
 ## How we've been working
@@ -42,7 +42,7 @@ Cloudflare needed `"previews": {}` in `wrangler.jsonc` for the Workers Builds ch
 
 ```bash
 python3 -m http.server 8765          # from the repo root, then open http://localhost:8765
-cd tests && npm ci && npx playwright test     # the whole suite (~1.5 min, 71 tests)
+cd tests && npm ci && npx playwright test     # the whole suite (~1.5 min, 74 tests)
 npx playwright test war.spec.js -g "import an army"   # one test
 ```
 
@@ -98,7 +98,8 @@ python3 tools/build_factions.py bsdata && python3 tools/build_sheets.py bsdata
   - War: `#/war`, `#/war/{armies,collection,lists,battles,new}`, `#/war/new/<faction>`, `#/war/army/<id>`, `#/war/list/<id>`, `#/war/compare/<a>/<b>`.
   - Shared: `#/shame`, `#/settings`, `#/shared`, `#/painter/<id>`, and `#/` (landing).
 - **Page lifecycle:**
-  - `view.seq` goes up on every route, so an async page can tell it has been left.
+  - `route()` queues: one page loads at a time, and only the newest address is opened, so a slow page can't draw over the one you went to. `routeNow()` does the work.
+  - `view.seq` goes up on every route, so async work that outlives its page (not awaited by the view) can tell it has been left.
   - Listeners go through `onApp(handler)` (clicks on `#app`) and `onWin(type, handler, target)`. Both chain into `view.cleanup`.
 - **Dialogs:** `modal(title, bodyHtml, cls)` returns a `<dialog>` with a `<form>`. The sizes are `"wide"` (760px) and `"wide xwide"` (1120px). `flash(msg)` shows a toast.
 - **War data:** `warData()` returns `{armies, pools, units, lists, games, warMissing}`, and `D.byArmy(id)` gets an army's units.
@@ -107,7 +108,8 @@ python3 tools/build_factions.py bsdata && python3 tools/build_sheets.py bsdata
   - Lookups: `FBY[factionId]`, `sheetsOf(fid)`, `sheetByName(fid, name)`.
   - Sizes and points: `minModels(sh)`, `sheetPts(sh, count)`.
   - Detachments: `factionDets(fid)`, `detByName`, `enhOptions`.
-  - Factions: `allyFactions(fid)`, `fitsFaction(fid, sheet)`, `sameFamily(a, b)`.
+  - Factions: `allyFactions(fid)`, `fitsFaction(fid, sheet)`, `sameFamily(a, b)`, `sheetFaction(fid, name)` (which faction's datasheets hold a name).
+  - `rowSheetName(x)`: the datasheet of a list row (collection unit or list-only entry).
 - **Key War functions:**
   - Army cards and lists: `armyCard`, `listCard`, `listState(l, D)` (the rows with points), `listChecks(l, s, faction)` ("Things to check").
   - `latestChanges` (points-update warnings), and `crusadeState` / `crUnit` (Crusade).
@@ -176,6 +178,7 @@ python3 tools/build_factions.py bsdata && python3 tools/build_sheets.py bsdata
 - **"Coward's Bane"** is Lord Invocatus's own weapon, not an enhancement. Enhancements are only recognised if they're in the faction's detachment data.
 - **Cloud containers block newrecruit.eu.** To compare against New Recruit, ask the owner for screenshots.
 - **Supabase:**
+  - `setup.sql` has a policy "units: army is yours (update)" (a unit can't be moved into someone else's army). If the project was set up before it was added, run just that policy in the SQL editor.
   - Army lists and battles need `supabase/features.sql` (`warMissing` / `code: "nowar"` when missing).
   - Kits (pile of shame), comments, likes, follows and `games.opp_user` are also in features.sql. All of it has been run on the project.
 - **Store changes:** keep `cleanUnit` / `cleanList` in step with any new field, or it's silently dropped on save. That already happened once with list-entry `gear`.
