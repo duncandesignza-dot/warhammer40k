@@ -4333,7 +4333,7 @@ Redemptor Dreadnought (210 points)</pre>
       });
     }
     function renderPreview(){
-      $("s-preview").innerHTML = sch.tiers.map(t => `<div class="pv-tier">${tierBadge(sch, t, 60)}<span><strong>${esc(t.name || "Rank")}</strong><small>${esc(t.note || cname(t.color) + " " + PROF.head)}</small></span></div>`).join("");
+      $("s-preview").innerHTML = sch.tiers.map(t => `<div class="pv-tier"><span class="rank-sw" style="background:${ART.hexOk(t.color) ? t.color : "#1f1f22"}" aria-hidden="true"></span><span><strong>${esc(t.name || "Rank")}</strong><small>${esc(t.note || cname(t.color) + " " + PROF.head)}</small></span></div>`).join("");
       $("s-shapes").querySelectorAll("[data-shape]").forEach(b => { b.setAttribute("aria-pressed", b.dataset.shape === sch.shape); b.innerHTML = ART.shapeIcon(b.dataset.shape, sch.colors.emblem, 34) + esc(P.SHAPES.find(s => s[0] === b.dataset.shape)[1]); });
       renderCurrent();
       colorKeys().forEach(([k]) => slots[k].set({hex: sch.colors[k], paint: sch.slotPaints[k] || ""}));
