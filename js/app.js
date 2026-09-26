@@ -1125,7 +1125,7 @@
         ${warTabs("armies")}
         ${missingBanner(D)}
         <section class="war-stats five" aria-label="Army overview">
-          <div class="wstat"><b>${num(t.points)}</b><span>Points</span><small>${army.scheme.limit ? `Building to ${ptsText(army.scheme.limit)}` : "Total of all units"}</small></div>
+          ${(lim => `<div class="wstat${lim && t.points > lim ? " over" : ""}"><b>${num(t.points)}${lim ? `<small> / ${num(lim)}</small>` : ""}</b><span>Points</span>${lim ? `<div class="wbar" aria-hidden="true"><i style="width:${Math.min(100, pctOf(t.points, lim))}%"></i></div><small>${t.points > lim ? `${num(t.points - lim)} over the limit` : `${num(lim - t.points)} left`}</small>` : `<small>Total of all units</small>`}</div>`)(army.scheme.limit || 0)}
           <div class="wstat"><b>${num(t.models)}</b><span>Models</span><small>${plural(units.length - t.planned, "unit")}${t.planned ? ` · ${t.planned} planned` : ""}</small></div>
           <div class="wstat ready"><b>${num(t.ready)}<small> / ${num(t.models)}</small></b><span>Battle ready</span><div class="wbar" aria-hidden="true"><i style="width:${pctOf(t.ready, t.models)}%"></i></div></div>
           <div class="wstat"><b>${gs.length}</b><span>${gs.length === 1 ? "Game" : "Games"}</span><small>${gs[0] ? "Last on " + esc(dayText(gs[0].date)) : "None logged yet"}</small></div>
@@ -1136,9 +1136,9 @@
           <ul class="comp">${roles.map(([r, us]) => `<li><b>${us.length}</b><span>${esc(r)}</span><small>${plural(us.reduce((a, u) => a + readiness(u).owned, 0), "model")}</small></li>`).join("")}</ul>
         </section>
         <section class="war-sec" aria-labelledby="cf-h">
-          <div class="sec-h"><h2 id="cf-h">Current force</h2>
-            <div class="seg" role="group" aria-label="Show"><button type="button" data-filter="all" aria-pressed="${filter === "all"}">All units</button><button type="button" data-filter="notready" aria-pressed="${filter === "notready"}">Not battle ready</button><button type="button" data-filter="fav" aria-pressed="${filter === "fav"}">${STAR(true)} Starred</button></div></div>
-          <div class="list-tools arrange wa-arrange">
+          <h2 id="cf-h" class="sr-only">Current force</h2>
+          <div class="list-tools tools-fill wa-tools">
+            <div class="seg" role="group" aria-label="Show"><button type="button" data-filter="all" aria-pressed="${filter === "all"}">All units</button><button type="button" data-filter="notready" aria-pressed="${filter === "notready"}">Not battle ready</button><button type="button" data-filter="fav" aria-pressed="${filter === "fav"}">${STAR(true)} Starred</button></div>
             <label class="inline">Group by<select id="wa-g">${ARMY_GROUPS.map(([k, l]) => `<option value="${k}"${k === by ? " selected" : ""}>${l}</option>`).join("")}</select></label>
             <label class="inline">Sort by<select id="wa-s">${ARMY_SORTS.map(([k, l]) => `<option value="${k}"${k === sortBy ? " selected" : ""}>${l}</option>`).join("")}</select></label>
           </div>
@@ -4390,8 +4390,8 @@ Redemptor Dreadnought (210 points)</pre>
 
         <section class="list" aria-labelledby="army-h">
           <div class="list-head">
-            <h2 class="eyebrow" id="army-h">${canWrite ? "Your army" : "Their army"}</h2>
-            <div class="list-tools">
+            <h2 class="sr-only" id="army-h">${canWrite ? "Your army" : "Their army"}</h2>
+            <div class="list-tools tools-fill">
               <input type="search" class="search" id="q" placeholder="Search units" aria-label="Search units">
               <div class="filters" id="filters" role="group" aria-label="Filter by status">
                 <button type="button" data-f="all" aria-pressed="true">All</button>
@@ -4402,7 +4402,7 @@ Redemptor Dreadnought (210 points)</pre>
               </div>
             </div>
           </div>
-          <div class="list-tools arrange">
+          <div class="list-tools arrange tools-fill">
             ${canWrite ? `<button type="button" class="btn-sm b-select" id="b-select" aria-pressed="false"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="m8 12 3 3 5-6"/></svg>Select units</button>` : ""}
             <label class="inline">Group by<select id="g-by">
               <option value="none">Nothing</option><option value="role">Role</option><option value="rank">Rank</option><option value="status">Status</option></select></label>

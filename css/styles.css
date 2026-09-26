@@ -1769,3 +1769,10 @@ body.has-timer .site-foot{padding-bottom:80px}
 .tg-acts{display:flex;gap:6px;flex-wrap:wrap}
 .g-friend{color:inherit;text-decoration-color:var(--line-strong)}
 #w-gf-h{display:block;margin-top:4px;font-size:.8rem}
+/* Unit toolbars that fill the row: the search and the Group by / Sort by boxes stretch to fit. */
+.list-head .list-tools.tools-fill{flex:1 1 100%}
+.tools-fill .search{flex:1 1 220px;width:auto}
+.tools-fill label.inline{flex:1 1 200px;min-width:0}
+.tools-fill label.inline select{flex:1;width:100%;min-width:0}
+.arrange.tools-fill{justify-content:flex-start;margin:0 0 14px}
+.wa-tools{margin:0 0 16px}
