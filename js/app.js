@@ -3025,7 +3025,7 @@
     const nSheets = FACTIONS.reduce((n, f) => n + f.units.filter(u => !u.t).length, 0);
     const nSchemes = FACTIONS.reduce((n, f) => n + P.schemesFor(f.id).length, 0);
     const demo = P.presetFor("ultramarines"), c = demo.colors, sp = demo.slotPaints || {};
-    const b = (tierColor, size, extra) => ART.badge({...c, helmet: tierColor, shape: demo.shape, ...(extra || {})}, demo.style, size, "");
+    const b = (tierColor, size, extra) => soloBadge(ART.badge({...c, helmet: tierColor, shape: demo.shape, ...(extra || {})}, demo.style, size, ""), size);
     const show = ["ultramarines", "blood-angels", "necrons", "orks", "tau-empire", "death-guard", "adepta-sororitas", "tyranids", "space-wolves", "aeldari"].filter(id => FBY[id]);
     const swatch = (label, k) => `<div class="ill-row"><span class="sw" style="background:${ART.hexOk(c[k]) ? c[k] : "#777"}"></span><span>${label}</span><em>${esc(paintName(sp[k]) || cname(c[k]))}</em></div>`;
     const ICON = {
@@ -3152,7 +3152,7 @@ Redemptor Dreadnought (210 points)</pre>
           ${shot("community", "Shared armies from other painters", `<div class="ill ill-community">
             ${[["Brother Dmitri", "BD", "Crusade of Sigismund", "Black Templars", "black-templars", 47, 12, true], ["Kaylee R", "KR", "The Silver Host", "Necrons", "necrons", 81, 31, false]].filter(x => FBY[x[4]]).map(([who, ini, name, fac, fid, pct, likes, fol]) => `<div class="ill-card ill-share">
               <div class="owner-line"><span class="avatar" aria-hidden="true">${ini}</span><span><small>Collection of</small><strong>${who}</strong></span></div>
-              <div class="ill-top">${factionBadge(fid, 48)}<div><strong>${name}</strong><small>${fac}</small></div></div>
+              <div class="ill-top">${soloBadge(factionBadge(fid, 48), 48)}<div><strong>${name}</strong><small>${fac}</small></div></div>
               <div class="ill-prog"><i style="width:${pct}%"></i></div>
               <div class="ill-foot"><span>${pct}% painted</span><span class="ill-soc"><em class="like">♥ ${likes}</em><em class="${fol ? "on" : ""}">${fol ? "Following" : "Follow"}</em></span></div>
             </div>`).join("")}
@@ -3393,7 +3393,7 @@ Redemptor Dreadnought (210 points)</pre>
           <ul class="lp-ticks">
             <li>${tick}Free to use</li><li>${tick}Import your army list</li><li>${tick}Works on your phone</li>
           </ul>`}
-          <div class="lp-parade" aria-hidden="true">${show.map(id => `<span title="${esc(FBY[id].name)}">${factionBadge(id, 46)}</span>`).join("")}</div>
+          <div class="lp-parade" aria-hidden="true">${show.map(id => `<span title="${esc(FBY[id].name)}">${soloBadge(factionBadge(id, 46), 46)}</span>`).join("")}</div>
         </div>
         <div class="lp-side">
           ${me ? `<div class="panel lp-card lp-welcome">
@@ -3488,7 +3488,7 @@ Redemptor Dreadnought (210 points)</pre>
       </div>
       <article class="guide">
         <header class="g-head">
-          <div class="g-badges">${scheme.tiers.slice(0, 4).map(t => tierBadge(scheme, t, 64)).join("")}</div>
+          <div class="g-badges">${armyBadge(army, 64)}</div>
           <div>
             <p class="eyebrow">Painting guide</p>
             <h1>${esc(army.name)}</h1>
@@ -4861,7 +4861,7 @@ Redemptor Dreadnought (210 points)</pre>
     }
     function preview(){
       const u = readForm();
-      $("pv-svg").innerHTML = unitBadge(u, scheme, 120);
+      $("pv-svg").innerHTML = soloBadge(unitBadge(u, scheme, 120), 120);
       $("pv-name").textContent = u.name || u.datasheet || "Unnamed unit";
       const tier = scheme.tiers[u.tier];
       $("pv-meta").textContent = [u.datasheet || "Unit", tier && tier.name, plural(u.count, "model"), u.points ? u.points + "\u00a0pts" : ""].filter(Boolean).join(" · ");

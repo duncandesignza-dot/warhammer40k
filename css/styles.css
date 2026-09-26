@@ -1791,3 +1791,9 @@ dialog.wdlg.xwide{max-width:min(1120px,calc(100vw - 24px))}
 @media (min-width:900px){.wu-cols{grid-template-columns:1fr 1fr}}
 /* Rank key: each rank's colour as a swatch (the helmet preview is gone from Livery pages) */
 .rank-sw{width:34px;height:34px;border-radius:50%;flex:none;border:3px solid var(--line-strong);box-shadow:inset 0 0 0 1px rgba(0,0,0,.35)}
+/* Homepage: the faction emblems on their own, as round chips in one row (5 a row on phones) */
+.lp-parade{gap:12px}
+.lp-parade>span{padding:6px;border-radius:50%}
+@media (max-width:640px){.lp-parade{grid-template-columns:repeat(5,minmax(0,1fr));justify-items:center}.lp-parade>span{padding:4px}.lp-parade>span:nth-child(n+7){display:grid}}
+@media (max-width:370px){.lp-parade{grid-template-columns:repeat(5,minmax(0,1fr))}.lp-parade svg{width:40px;height:40px}}
+@media (min-width:641px){.lp-parade{display:grid;grid-template-columns:repeat(5,max-content)}}
