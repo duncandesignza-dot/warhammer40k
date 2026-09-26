@@ -3016,7 +3016,8 @@
     "adeptus-mechanicus": "Adeptus Mechanicus: a Tech-Priest leads red-robed Skitarii through a forge world",
     "astra-militarum": "Astra Militarum: Guardsmen advance under a regimental banner",
     "adepta-sororitas": "Adepta Sororitas: a Canoness leads Battle Sisters against Tyranids",
-    "adeptus-custodes": "Adeptus Custodes: Trajann Valoris and a Shield-Captain in golden armour"
+    "adeptus-custodes": "Adeptus Custodes: Trajann Valoris and a Shield-Captain in golden armour",
+    "imperial-knights": "Imperial Knights: blue and gold Knights of a noble house stride out to war"
   };
   const factionHero = fid => FACTION_HEROES[fid] ? `<figure class="faction-hero"><img src="img/heroes/${esc(fid)}.webp" alt="${esc(FACTION_HEROES[fid])}" width="800" height="250" decoding="async"></figure>` : "";
   // Second step of a new army: its name and the points you're building to.
