@@ -3011,7 +3011,12 @@
     "dark-angels": "Dark Angels: the Lion and a Chaplain lead Dark Angels tanks, a Dreadnought and a flyer",
     "space-wolves": "Space Wolves: a Wolf Lord, Fenrisian wolves and a Land Raider charge the Thousand Sons",
     "white-scars": "White Scars: jump pack Space Marines in white armour strike at Drukhari raiders",
-    "raven-guard": "Raven Guard: black-armoured Space Marines with jump packs drop onto the battlefield"
+    "raven-guard": "Raven Guard: black-armoured Space Marines with jump packs drop onto the battlefield",
+    "agents-of-the-imperium": "Agents of the Imperium: Inquisitors, Assassins and their retinues",
+    "adeptus-mechanicus": "Adeptus Mechanicus: a Tech-Priest leads red-robed Skitarii through a forge world",
+    "astra-militarum": "Astra Militarum: Guardsmen advance under a regimental banner",
+    "adepta-sororitas": "Adepta Sororitas: a Canoness leads Battle Sisters against Tyranids",
+    "adeptus-custodes": "Adeptus Custodes: Trajann Valoris and a Shield-Captain in golden armour"
   };
   const factionHero = fid => FACTION_HEROES[fid] ? `<figure class="faction-hero"><img src="img/heroes/${esc(fid)}.webp" alt="${esc(FACTION_HEROES[fid])}" width="800" height="250" decoding="async"></figure>` : "";
   // Second step of a new army: its name and the points you're building to.

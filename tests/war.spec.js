@@ -530,7 +530,7 @@ test("the eye on army and collection tables shows a unit's datasheet, and the un
 
 test("new army pages show the faction's picture under the army name, where there is one", async ({page}) => {
   await seed(page);
-  for(const f of ["black-templars", "blood-angels", "dark-angels", "deathwatch", "grey-knights", "imperial-fists", "iron-hands", "raven-guard", "salamanders", "space-wolves", "white-scars"]){
+  for(const f of ["adepta-sororitas", "adeptus-custodes", "adeptus-mechanicus", "agents-of-the-imperium", "astra-militarum", "black-templars", "blood-angels", "dark-angels", "deathwatch", "grey-knights", "imperial-fists", "iron-hands", "raven-guard", "salamanders", "space-wolves", "white-scars"]){
     await open(page, "#/war/new/" + f);
     const img = page.locator("#wn-form .faction-hero img");
     await expect(img).toHaveAttribute("alt", /.+/);
