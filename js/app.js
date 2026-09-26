@@ -6,6 +6,22 @@
   const STATUS = S.STATUS;
   const FACTIONS = DATA.factions;
   const FBY = Object.fromEntries(FACTIONS.map(f => [f.id, f]));
+  // A few datasheets' unit sizes disagree with their price brackets (Jakhals say 2 models but cost more from 11),
+  // and a few have brackets but no size. Where they disagree the brackets win: from one below the first bracket
+  // up to its end, or double that when it's open-ended (10 and 20 for Jakhals).
+  FACTIONS.forEach(f => (f.units || []).forEach(sh => {
+    const br = sh.pb || []; if(!br.length || br[0][0] <= 1 || (sh.ms && br[0][0] <= sh.ms[1])) return;
+    const from = br[0][0] - 1, top = br[br.length - 1];
+    sh.ms = [sh.ms && sh.ms[0] <= from && sh.ms[1] >= from ? sh.ms[0] : from, top[1] || Math.max(top[0], from * 2)];
+  }));
+  // Allies an army can take: Imperial Agents and Imperial Knights for the Imperium, Chaos Daemons and Chaos Knights for Chaos.
+  const ALLIES = {Imperium: ["agents-of-the-imperium", "imperial-knights"], Chaos: ["chaos-daemons", "chaos-knights"]};
+  const allyFactions = fid => (ALLIES[(FBY[fid] || {}).group] || []).filter(id => id !== fid && FBY[id]).map(id => FBY[id]);
+  // Whether a datasheet can be in an army of this faction: its own datasheets (a chapter has its parent's too) or an ally's.
+  const fitsFaction = (fid, sheet) => !sheet || ((FBY[fid] || {}).units || []).some(x => x.n === sheet) || allyFactions(fid).some(f => f.units.some(x => x.n === sheet));
+  // Armies of one faction family: the same faction, or a Space Marine chapter and Space Marines.
+  const aOrAn = w => (/^[aeiou]/i.test(w) ? "an " : "a ") + w;
+  const sameFamily = (a, b) => a === b || (FBY[a] || {}).parent === b || (FBY[b] || {}).parent === a;
   // Datasheet helpers: the smallest unit size, and the cost for a number of models.
   const minModels = sh => sh.ms ? sh.ms[0] : ["Epic Hero","Character","Vehicle","Monster","Dedicated Transport","Fortification"].includes(sh.r) ? 1
     : sh.pb && sh.pb[0] ? (sh.pb[0][0] === sh.pb[0][1] ? sh.pb[0][0] : Math.max(1, sh.pb[0][0] - 1)) : 5;
@@ -977,7 +993,7 @@
   // opts.armies / opts.pools: offer a choice of army, so a unit can be moved (or kept out of any army).
   function openUnit(army, u, done, opts){
     opts = opts || {};
-    const choices = opts.armies ? opts.armies.slice().sort((a, b) => (a.faction === army.faction ? 0 : 1) - (b.faction === army.faction ? 0 : 1) || a.name.localeCompare(b.name)) : null;
+    const choices = opts.armies ? opts.armies.filter(a => sameFamily(a.faction, army.faction)).sort((a, b) => (a.faction === army.faction ? 0 : 1) - (b.faction === army.faction ? 0 : 1) || a.name.localeCompare(b.name)) : null;
     const curArmy = isPool(army) || !army.id ? "" : army.id;
     const d = modal(u ? esc(u.name) : "Add a unit", `
       <div class="wu-cols"><div class="wu-col">
@@ -1038,6 +1054,9 @@
         const pick = $("w-army") ? $("w-army").value : curArmy;
         // A loose unit belongs with its datasheet's faction (a Necron unit moved out of a Tyranid army stays Necron).
         const ownFaction = row.datasheet && !sheetsOf(army.faction).some(x => x.n === row.datasheet) ? ((FACTIONS.find(f => f.units.some(x => x.n === row.datasheet)) || {}).id || army.faction) : army.faction;
+        // A unit can only go in an army its datasheet belongs to (no Chaos units in a Black Templars army).
+        const into = pick && (opts.armies || []).find(a => a.id === pick);
+        if(into && !fitsFaction(into.faction, row.datasheet)){ $("w-msg").textContent = `${row.datasheet} isn't ${aOrAn(factionName(into.faction))} datasheet, so it can't go in ${into.name}.`; b.disabled = false; return; }
         const target = pick ? pick : (isPool(army) && army.id && ownFaction === army.faction ? army.id : (await poolFor(ownFaction, opts.pools)).id);
         await store.saveUnit(target, row, u ? u.id : null, null, false, u || null);
         d.close(); flash(u ? (target !== army.id && u ? `Moved ${name}` : `Saved ${name}`) : `Added ${name}`); done();
@@ -1310,8 +1329,9 @@
       <label>Army<select id="w-ca"></select></label>
       <div class="row-actions"><button type="submit" class="primary">Next</button><span class="msg" id="w-msg" role="status"></span></div>`);
     const fillArmies = () => {
-      const fid = $("w-cf").value, same = D.armies.filter(a => a.faction === fid), other = D.armies.filter(a => a.faction !== fid);
-      $("w-ca").innerHTML = `<option value="">Not in an army</option>${same.map(a => `<option value="${esc(a.id)}"${pre && pre.id === a.id ? " selected" : ""}>${esc(a.name)}</option>`).join("")}${other.length ? `<optgroup label="Other armies">${other.map(a => `<option value="${esc(a.id)}">${esc(a.name)} (${esc(factionName(a.faction))})</option>`).join("")}</optgroup>` : ""}`;
+      // Only armies the faction's units can go in: that faction, or its Space Marine chapters.
+      const fid = $("w-cf").value, same = D.armies.filter(a => a.faction === fid || (FBY[a.faction] || {}).parent === fid);
+      $("w-ca").innerHTML = `<option value="">Not in an army</option>${same.map(a => `<option value="${esc(a.id)}"${pre && pre.id === a.id ? " selected" : ""}>${esc(a.name)}${a.faction !== fid ? ` (${esc(factionName(a.faction))})` : ""}</option>`).join("")}`;
     };
     $("w-cf").addEventListener("change", fillArmies); fillArmies();
     d.querySelector("form").addEventListener("submit", e => {
@@ -1565,6 +1585,11 @@
     rows.forEach(x => {
       const leaders = rows.filter(r => r.lead === x.k);
       if(leaders.length > 1) add("lead:" + x.k, `${x.name} is led by ${leaders.map(r => r.name).join(" and ")}.`, "A unit usually has one leader, unless a datasheet says it can have more.");
+    });
+    // Units from outside the army's faction (and its allies).
+    rows.forEach(x => {
+      const n = x.u ? x.u.datasheet : x.sheet;
+      if(n && !fitsFaction(faction, n)) add(`faction:${x.k}`, `${x.name} isn't ${aOrAn(factionName(faction))} unit.`, allyFactions(faction).length ? `Armies like this one can only take their own datasheets and allies from ${allyFactions(faction).map(f => f.name).join(" or ")}.` : "Armies like this one can only take their own datasheets.");
     });
     // Unit sizes from the datasheet.
     rows.forEach(x => {
@@ -3022,7 +3047,7 @@
     // Allied units (e.g. Imperial Knights in a Space Marine list) live in another faction's datasheets.
     function allySheet(text, prefer){
       const k = norm(text);
-      const order = [FBY[prefer], ...FACTIONS].filter(x => x && x.id !== army.faction);
+      const order = allyFactions(army.faction).sort((a, b) => (b.id === prefer) - (a.id === prefer));
       for(const fx of order){
         const sh = (fx.units || []).find(u => !u.t && norm(u.n) === k) || (fx.units || []).find(u => norm(u.n) === k);
         if(sh) return {sheet: sh, from: fx.name};
@@ -3060,7 +3085,7 @@
         const [id, size, extra] = entry, ex = extra && typeof extra === "object" ? extra : {};
         let sh = own.get(codeSlug(id)), ally = null;
         if(!sh){
-          for(const fx of [from, ...FACTIONS].filter(x => x && x.id !== army.faction)){
+          for(const fx of allyFactions(army.faction)){
             const hit = (fx.units || []).find(u => !u.t && codeSlug(u.n) === codeSlug(id)) || (fx.units || []).find(u => codeSlug(u.n) === codeSlug(id));
             if(hit){ sh = hit; ally = fx.name; break; }
           }

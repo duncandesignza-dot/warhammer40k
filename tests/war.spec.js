@@ -434,3 +434,40 @@ test("wargear is picked from the datasheet: imported units can be changed, and a
   await page.selectOption("#w-sheet", "Terminator Squad");
   await expect(page.locator("#w-ranged .gp-chips li span")).toHaveText(["Storm bolter", "Cyclone missile launcher", "Heavy Flamer", "Assault Cannon"]);
 });
+
+test("units stay in armies they belong to: only real allies are matched, and odd ones are flagged", async ({page}) => {
+  await seed(page, `db.lists[0].units.push({n: "Hive Tyrant", sheet: "Hive Tyrant", role: "Character", count: 1, points: 215, k: "z"});`);
+  await open(page, "#/war/list/l1");
+  // A Tyranid unit in an Ultramarines list is flagged.
+  await expect(page.locator(".tc-list")).toContainText("Hive Tyrant isn't an Ultramarines unit.");
+  // Pasting: Imperial Knights are allies; Tyranids aren't recognised.
+  await page.click("[data-import]");
+  await page.fill("#w-list", "Armiger Warglaive (140 points)\nTermagants (60 points)\nCaptain (80 points)");
+  await expect(page.locator("#w-found")).toContainText("2 units");
+  await expect(page.locator("#w-found")).toContainText("Armiger Warglaive");
+  await expect(page.locator("#w-found .hint")).toContainText("Not recognised: Termagants");
+  await page.keyboard.press("Escape");
+  // The unit editor only offers armies of the same faction family.
+  await open(page, "#/war/army/a1");
+  await page.click('.wtable [data-unit="u2"]');
+  const armies = await page.locator("#w-army option").allInnerTexts();
+  expect(armies).toContain("Ultramarines 2nd Company"); expect(armies.join()).not.toContain("Hive Fleet Leviathan");
+  await page.keyboard.press("Escape");
+  // Adding from the collection: a Tyranid unit can't pick an Ultramarines army.
+  await open(page, "#/war/collection");
+  await page.click("[data-coll-add]");
+  await page.selectOption("#w-cf", "tyranids");
+  expect(await page.locator("#w-ca option").allInnerTexts()).toEqual(["Not in an army", "Hive Fleet Leviathan"]);
+});
+
+test("datasheets whose sizes disagree with their points use the points brackets (Jakhals come in 10 or 20)", async ({page}) => {
+  await seed(page, `db.armies.push({id: "w1", faction: "world-eaters", name: "Butchers", scheme: window.LEDGER_PRESETS.presetFor("world-eaters"), createdAt: "2026-01-01", updatedAt: "2026-01-01"});
+    db.lists.push({id: "wl", armyId: "w1", name: "Test", limit: 2000, detachments: [], units: [], createdAt: "2026-09-01", updatedAt: "2026-09-01"});`);
+  await open(page, "#/war/list/wl");
+  await page.fill("#lb-dq", "jakhals");
+  await page.click('[data-sheet="Jakhals"]');
+  await expect(page.locator(".lb-in")).toContainText("Jakhals");
+  await expect(page.locator('[data-size="0"] option:checked')).toHaveText("10 models · 65 pts");
+  await page.selectOption('[data-size="0"]', "20");
+  await expect(page.locator(".lb-sum b")).toHaveText("130");
+});
