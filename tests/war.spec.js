@@ -397,18 +397,40 @@ test("build a list New Recruit style: battle size, detachment, datasheets, unit 
   await page.fill("#lb-dq", "intercessor squ");
   await expect(page.locator('#lb-dlist li:has([data-sheet="Intercessor Squad"])')).toContainText("2 in list");
   // Wargear on a unit that's only in the list is kept, and exported.
-  await page.click('[data-opts="1"]');
+  // Clicking a list-only unit's name opens its options; wargear comes from the datasheet's weapons.
+  await page.click('.lb-in .lb-title [data-opts="1"]');
   await page.selectOption("#w-emc", "5");
   await expect(page.locator("#w-ep")).toHaveValue("80");
-  await page.fill("#w-egear", "Bolt rifle, Astartes grenade launcher");
+  await page.selectOption("#w-egear .gp-add", "Bolt Rifle");
+  await page.selectOption("#w-egear .gp-add", "Astartes grenade launcher");
   await page.click("dialog[open] [type=submit]");
   await expect(page.locator(".lb-sum b")).toHaveText("230");
-  await expect.poll(async () => (await list()).units.map(e => [e.count, e.points, e.gear])).toEqual([[10, 150, undefined], [5, 80, "Bolt rifle, Astartes grenade launcher"]]);
+  await expect.poll(async () => (await list()).units.map(e => [e.count, e.points, e.gear])).toEqual([[10, 150, undefined], [5, 80, "Bolt Rifle, Astartes grenade launcher"]]);
   await open(page, "#/war/list/nb");
   await page.click("[data-export]");
-  expect((await page.inputValue("#w-exp")).split("\n")).toContain("5x Intercessor Squad (80 pts): Bolt rifle, Astartes grenade launcher");
+  expect((await page.inputValue("#w-exp")).split("\n")).toContain("5x Intercessor Squad (80 pts): Bolt Rifle, Astartes grenade launcher");
   await page.keyboard.press("Escape");
   // Your collection is the other tab.
   await page.click('[data-add-tab="coll"]');
   await expect(page.locator("#lb-q")).toBeVisible();
+});
+
+test("wargear is picked from the datasheet: imported units can be changed, and anything else typed in", async ({page}) => {
+  await seed(page, `db.units.push({id: "u9", armyId: "a1", name: "Intercessor Squad", datasheet: "Intercessor Squad", role: "Battleline", count: 5, points: 80, painted: 0, stages: [], own: "planned", ranged: "Bolt Rifle, Bolt pistol", melee: "Close combat weapon"});`);
+  await open(page, "#/war/army/a1");
+  await page.click('.wtable [data-unit="u9"]');
+  // What the unit has shows as chips; the dropdown offers the rest of the datasheet's weapons.
+  await expect(page.locator("#w-ranged .gp-chips li span")).toHaveText(["Bolt Rifle", "Bolt pistol"]);
+  const offered = await page.locator("#w-ranged .gp-add option").allInnerTexts();
+  expect(offered).toContain("Astartes grenade launcher"); expect(offered).not.toContain("Bolt Rifle");
+  await page.click('#w-ranged [aria-label="Remove Bolt pistol"]');
+  await page.selectOption("#w-ranged .gp-add", "Plasma pistol");
+  await page.selectOption("#w-melee .gp-add", "Power fist");
+  await page.click("dialog[open] [type=submit]");
+  await expect.poll(async () => { const u = (await saved(page)).units.find(x => x.id === "u9"); return [u.ranged, u.melee]; })
+    .toEqual(["Bolt Rifle, Plasma pistol", "Close combat weapon, Power fist"]);
+  // Choosing a datasheet for a new unit starts it with that datasheet's weapons.
+  await page.click("[data-add-unit]");
+  await page.selectOption("#w-sheet", "Terminator Squad");
+  await expect(page.locator("#w-ranged .gp-chips li span")).toHaveText(["Storm bolter", "Cyclone missile launcher", "Heavy Flamer", "Assault Cannon"]);
 });

@@ -940,6 +940,38 @@
     return row;
   }
 
+  /* ---------- wargear: picked from the datasheet ----------
+     A chip for each weapon taken and a dropdown to add another, or to type one the datasheet doesn't list.
+     The value is the usual comma-separated text, so lists, exports and Livery Ledger read it as before. */
+  const splitGear = t => { const out = []; String(t || "").split(/,(?![^()]*\))/).map(x => x.trim()).filter(Boolean).forEach(x => { if(!out.some(o => o.toLowerCase() === x.toLowerCase())) out.push(x); }); return out; };
+  function gearPicker(box, {kind, options, value}){
+    let opts = options || [], picked = splitGear(value), typing = false;
+    const draw = focus => {
+      const left = opts.filter(o => !picked.some(p => p.toLowerCase() === o.toLowerCase()));
+      box.innerHTML = `<ul class="gp-chips" aria-label="${esc(kind[0].toUpperCase() + kind.slice(1))}s chosen">${picked.length ? picked.map((p, i) => `<li><span>${esc(p)}</span><button type="button" class="gp-x" data-gp-rm="${i}" aria-label="Remove ${esc(p)}">×</button></li>`).join("") : `<li class="gp-none">None chosen</li>`}</ul>
+        ${typing ? `<div class="gp-row"><input class="gp-other" maxlength="80" placeholder="Name of the ${esc(kind)}" aria-label="Name of the ${esc(kind)}"><button type="button" class="btn-sm primary gp-ok">Add</button><button type="button" class="btn-sm gp-cancel">Cancel</button></div>`
+          : `<div class="gp-row"><select class="gp-add" aria-label="Add a ${esc(kind)}"><option value="">+ Add a ${esc(kind)}…</option>${left.map(o => `<option>${esc(o)}</option>`).join("")}<option value="__other">Something else…</option></select></div>`}`;
+      const f = focus && box.querySelector(focus); if(f) f.focus();
+    };
+    const add = name => { name = String(name || "").trim(); if(name && !picked.some(p => p.toLowerCase() === name.toLowerCase())) picked.push(name); };
+    box.addEventListener("change", e => {
+      const sel = e.target.closest(".gp-add"); if(!sel || !sel.value) return;
+      if(sel.value === "__other"){ typing = true; draw(".gp-other"); return; }
+      add(sel.value); draw(".gp-add");
+    });
+    const typed = () => { add((box.querySelector(".gp-other") || {}).value); typing = false; draw(".gp-add"); };
+    box.addEventListener("click", e => {
+      const rm = e.target.closest("[data-gp-rm]");
+      if(rm){ picked.splice(+rm.dataset.gpRm, 1); draw(".gp-add"); return; }
+      if(e.target.closest(".gp-ok")) typed();
+      else if(e.target.closest(".gp-cancel")){ typing = false; draw(".gp-add"); }
+    });
+    // Enter adds the typed weapon rather than submitting the dialog.
+    box.addEventListener("keydown", e => { if(e.key === "Enter" && e.target.closest(".gp-other")){ e.preventDefault(); typed(); } });
+    draw();
+    return {get value(){ return picked.join(", "); }, setOptions(o, fill){ opts = o || []; if(fill && !picked.length) picked = fill.slice(); draw(); }};
+  }
+
   /* ---------- a unit's record ---------- */
   // army: the unit's army, a holder army, or {faction, pool: true} for a new unit not in an army yet.
   // opts.armies / opts.pools: offer a choice of army, so a unit can be moved (or kept out of any army).
@@ -963,8 +995,8 @@
       </div><div class="wu-col">
       <fieldset class="wfs"><legend>Wargear</legend>
         <div class="wgrid">
-          <label class="span3">Ranged weapons<input id="w-ranged" maxlength="600" value="${esc(u ? u.ranged : "")}" placeholder="e.g. Bolt rifles, Astartes grenade launcher"></label>
-          <label class="span3">Melee weapons<input id="w-melee" maxlength="600" value="${esc(u ? u.melee : "")}" placeholder="e.g. Close combat weapons"></label>
+          <div class="span3 gp-field"><span class="gp-label" id="w-ranged-l">Ranged weapons</span><div class="gear-pick" id="w-ranged" role="group" aria-labelledby="w-ranged-l"></div></div>
+          <div class="span3 gp-field"><span class="gp-label" id="w-melee-l">Melee weapons</span><div class="gear-pick" id="w-melee" role="group" aria-labelledby="w-melee-l"></div></div>
         </div>
       </fieldset>
       <label>Notes<textarea id="w-notes" rows="2" maxlength="600">${esc(u ? u.notes : "")}</textarea></label>
@@ -974,6 +1006,9 @@
     // Points follow the datasheet and the number of models, until you type your own.
     let ptsTouched = !!u;
     const sheetNow = () => sheetByName(army.faction, v("w-sheet"));
+    const sh0 = sheetNow();
+    const rangedPick = gearPicker($("w-ranged"), {kind: "ranged weapon", options: sh0 ? sh0.wr : [], value: u ? u.ranged : ""});
+    const meleePick = gearPicker($("w-melee"), {kind: "melee weapon", options: sh0 ? sh0.wm : [], value: u ? u.melee : ""});
     const ptsHint = () => { const sh = sheetNow(); $("w-ptshint").innerHTML = sh ? pointsHint(sh, Math.max(1, n("w-count", 99)), n("w-pts", 9999), "w-pts-reset") : ""; };
     const autoPts = () => { const sh = sheetNow(); if(sh && !ptsTouched){ const p = sheetPts(sh, Math.max(1, n("w-count", 99))); if(p != null) $("w-pts").value = p; } ptsHint(); };
     $("w-pts").addEventListener("input", () => { ptsTouched = true; ptsHint(); });
@@ -984,8 +1019,8 @@
       const def = sheetDefaults(sh);
       $("w-role").value = def.role;
       if(!u){ $("w-count").value = def.count;
-        if(!$("w-ranged").value && sh.wr) $("w-ranged").value = sh.wr.slice(0, 4).join(", ");
-        if(!$("w-melee").value && sh.wm) $("w-melee").value = sh.wm.slice(0, 3).join(", "); }
+        rangedPick.setOptions(sh.wr, (sh.wr || []).slice(0, 4)); meleePick.setOptions(sh.wm, (sh.wm || []).slice(0, 3)); }
+      else { rangedPick.setOptions(sh.wr); meleePick.setOptions(sh.wm); }
       autoPts();
     });
     ptsHint();
@@ -996,7 +1031,7 @@
       if(!name){ $("w-msg").textContent = "Choose a datasheet or give the unit a name."; $("w-uname").focus(); return; }
       const count = Math.max(1, n("w-count", 99));
       const row = mergeUnit(u || unitRow(army, sh, {}), {datasheet: sh ? sh.n : (u ? u.datasheet : ""), role: v("w-role"), name, count, points: n("w-pts", 9999),
-        ranged: v("w-ranged").trim(), melee: v("w-melee").trim(), notes: v("w-notes").trim(), fav: $("w-fav").checked, own: $("w-owned").checked ? "owned" : "planned"});
+        ranged: rangedPick.value, melee: meleePick.value, notes: v("w-notes").trim(), fav: $("w-fav").checked, own: $("w-owned").checked ? "owned" : "planned"});
       const b = e.submitter || d.querySelector("[type=submit]"); b.disabled = true; $("w-msg").textContent = "Saving…";
       try {
         // Where it goes: the chosen army, or the faction's holder when it isn't in an army.
@@ -1782,7 +1817,7 @@
             ${configRow()}
             ${s.rows.length ? byRole(s.rows.filter(x => !x.gone)).map(([role, rows]) => `<h3 class="lb-role">${esc(role)} <small>${ptsText(rows.reduce((a, x) => a + x.points, 0))}</small></h3>
               <ul class="lb-rows">${rows.map(x => { const extra = entryNotes(x, s.rows); return `<li>
-                <span class="lb-name"><span class="lb-title">${x.u ? `<button type="button" class="linkish" data-unit="${esc(x.u.id)}">${x.u.fav ? `<span class="star on" aria-label="Starred">${STAR(true)}</span> ` : ""}${esc(x.name)}</button>` : esc(x.name)}${x.warlord ? `<span class="tag wl">Warlord</span>` : ""}</span>${sizePick(x)}${extra ? `<small class="lb-extra">${extra}</small>` : ""}</span>
+                <span class="lb-name"><span class="lb-title">${x.u ? `<button type="button" class="linkish" data-unit="${esc(x.u.id)}">${x.u.fav ? `<span class="star on" aria-label="Starred">${STAR(true)}</span> ` : ""}${esc(x.name)}</button>` : `<button type="button" class="linkish" data-opts="${x.i}">${esc(x.name)}</button>`}${x.warlord ? `<span class="tag wl">Warlord</span>` : ""}</span>${sizePick(x)}${extra ? `<small class="lb-extra">${extra}</small>` : ""}</span>
                 <span class="lb-pts">${num(x.points)}</span>
                 <button type="button" class="btn-sm icon-x" data-opts="${x.i}" aria-label="Options for ${esc(x.name)} in this list" title="Models, wargear, warlord, enhancement, leader and points">${DOTS}</button>
                 <button type="button" class="btn-sm icon-x" data-dupe="${x.i}" aria-label="Add another ${esc(x.name)}" title="Add another">${COPY_ICON}</button>
@@ -1910,13 +1945,12 @@
       const opts = enhOptions(army.faction, list.detachments);
       opts.forEach(([n, p, only, det]) => { known[n] = p; labels[n] = [`${p} pts`, det, only ? only.join(" or ") + " only" : ""].filter(Boolean).join(" · "); });
       const bodies = s.rows.filter(r => !r.gone && r.i !== i && !isCharRole(r.role));
-      const sh = !x.u && entrySheet(x), sizes = sizesOf(sh), gearOpts = sh ? [...(sh.wr || []), ...(sh.wm || [])] : [];
+      const sh = !x.u && entrySheet(x), sizes = sizesOf(sh), gearOpts = sh ? [...new Set([...(sh.wr || []), ...(sh.wm || [])])] : [];
       const d = modal(`${esc(x.name)} in this list`, `
         ${x.u ? "" : `<div class="wgrid">
-          <label>Models${sizes.length ? `<select id="w-emc">${(sizes.includes(x.count) ? sizes : [...sizes, x.count].sort((a, b) => a - b)).map(n => `<option value="${n}"${n === x.count ? " selected" : ""}>${n}${sheetPts(sh, n) != null ? ` · ${sheetPts(sh, n)} pts` : ""}</option>`).join("")}</select>` : `<input id="w-emc" type="number" min="1" max="99" inputmode="numeric" value="${x.count}">`}</label>
-          <label class="span2">Wargear<input id="w-egear" maxlength="600" list="w-egear-dl" value="${esc(e.gear || "")}" placeholder="${esc(gearOpts.slice(0, 3).join(", ") || "e.g. Bolt rifle, Close combat weapon")}"></label>
-          <datalist id="w-egear-dl">${gearOpts.map(g => `<option value="${esc(g)}">`).join("")}</datalist>
-        </div>`}
+          <label class="span3">Models${sizes.length ? `<select id="w-emc">${(sizes.includes(x.count) ? sizes : [...sizes, x.count].sort((a, b) => a - b)).map(n => `<option value="${n}"${n === x.count ? " selected" : ""}>${n}${sheetPts(sh, n) != null ? ` · ${sheetPts(sh, n)} pts` : ""}</option>`).join("")}</select>` : `<input id="w-emc" type="number" min="1" max="99" inputmode="numeric" value="${x.count}">`}</label>
+        </div>
+        <div class="gp-field"><span class="gp-label" id="w-egear-l">Wargear</span><div class="gear-pick" id="w-egear" role="group" aria-labelledby="w-egear-l"></div></div>`}
         <label>Points in this list<input id="w-ep" type="number" min="0" max="9999" inputmode="numeric" value="${x.u ? (e.pts ?? "") : e.points}" placeholder="${x.u ? num(+x.u.points || 0) : ""}"></label>
         <p class="hint">${x.u ? `Leave blank to use the unit's own points (${num(+x.u.points || 0)}). A change here only affects this list.` : "The points this unit costs in this list."}</p>
         ${ch ? `<label class="chk"><input type="checkbox" id="w-ewl"${x.warlord ? " checked" : ""}><span>Warlord of this list</span></label>
@@ -1934,12 +1968,13 @@
         const p = known[ev.target.value.trim()], cur = $("w-eep").value;
         if(p != null && (!cur || cur === autoP)){ $("w-eep").value = p || ""; autoP = String(p || ""); }
       });
+      const gearPick = x.u ? null : gearPicker($("w-egear"), {kind: "weapon", options: gearOpts, value: e.gear || ""});
       // Changing the unit size fills in the datasheet's points for that size.
       if($("w-emc") && sh) $("w-emc").addEventListener("input", () => { const p = sheetPts(sh, +$("w-emc").value || 1); if(p != null) $("w-ep").value = p; });
       d.querySelector("form").addEventListener("submit", ev => {
         ev.preventDefault();
         const pv = $("w-ep").value.trim(), n = {...e};
-        if(!x.u){ n.count = Math.min(99, Math.max(1, parseInt($("w-emc").value, 10) || 1)); const g = $("w-egear").value.trim(); if(g) n.gear = g; else delete n.gear; }
+        if(!x.u){ n.count = Math.min(99, Math.max(1, parseInt($("w-emc").value, 10) || 1)); const g = gearPick.value; if(g) n.gear = g; else delete n.gear; }
         if(x.u){ if(pv === "") delete n.pts; else n.pts = Math.max(0, parseInt(pv, 10) || 0); } else n.points = Math.max(0, parseInt(pv, 10) || 0);
         let wl = false;
         if(ch){
