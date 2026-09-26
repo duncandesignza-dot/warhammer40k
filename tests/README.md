@@ -15,7 +15,7 @@ You need Node.js 20 or newer and Python 3.
 cd tests
 npm ci
 npx playwright install chromium   # once
-npx playwright test               # all 49, about a minute
+npx playwright test               # all 56, about a minute
 npx playwright test war           # just the files matching "war"
 npx playwright test --ui          # watch them run, step by step
 ```
@@ -27,12 +27,12 @@ The tests start their own copy of the site on http://localhost:8765 (Python's we
 | File | What it checks |
 |---|---|
 | `smoke.spec.js` | Every page opens with no errors and no sideways scrolling, on a desktop, a phone and a 320px phone |
-| `a11y.spec.js` | No accessibility problems on the main pages, the list dialogs, a Crusade force and the compare page |
-| `livery.spec.js` | Making a ledger and adding units, planned units, the colours prompt, the delete warning |
+| `a11y.spec.js` | No accessibility problems on the main pages, the list dialogs, a Crusade force, the compare page and the painting timer |
+| `livery.spec.js` | Making a ledger and adding units, planned units, the colours prompt, the delete warning, painting time, the floating Add unit button |
 | `war.spec.js` | Mustering an army, units not in an army, planned units, list details, unit options, things to check, points changes, comparing lists, Crusade forces, battles and battle stats |
 | `editors.spec.js` | Livery Ledger's and War Ledger's unit editors follow the same rules and never undo each other's work |
-| `backup.spec.js` | Downloading everything and restoring it, with lists and battles still linked to their units |
-| `online.spec.js` | The online version against the pretend Supabase |
+| `backup.spec.js` | Downloading everything and restoring it, with lists and battles still linked to their units; photos kept in the browser's photo store |
+| `online.spec.js` | The online version against the pretend Supabase, including comments, painter profiles and battles against friends |
 | `nav.spec.js` | The tab bar on phones, the page for unknown addresses, and the link preview picture |
 | `data.spec.js` | The datasheet data file: factions (chapters included), detachments, battle sizes, unit sizes |
 

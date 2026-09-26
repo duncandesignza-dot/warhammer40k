@@ -45,3 +45,12 @@ test("Crusade force, compare and battle stats", async ({page}) => {
   await page.setViewportSize({width: 320, height: 700});
   for(const r of ["#/war/list/l2", "#/war/compare/l1/l2", "#/war/battles"]){ await open(page, r); expect(await noSidewaysScroll(page), r + " at 320px").toBe(0); }
 });
+
+test("painting time: the timer bar and Painting activity", async ({page}) => {
+  await seed(page, `db.units[0].tlog = [{d: "2026-09-20", m: 95}];`);
+  await page.evaluate(() => localStorage.setItem("ll-timer", JSON.stringify({armyId: "a1", unitId: "u2", name: "Intercessor Squad", start: Date.now() - 60000})));
+  await page.reload();
+  for(const r of ["#/livery/activity", "#/army/a1"]){ await open(page, r); expect(await axe(page), r).toEqual([]); }
+  await page.click("[data-tstop]");
+  expect(await axe(page, "dialog[open]"), "stop the timer").toEqual([]);
+});

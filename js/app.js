@@ -361,8 +361,11 @@
   }
   /* ---------- backups ---------- */
   // A backup keeps each item's id so a restore can link lists to their units and battles to their lists.
-  const backupUnit = u => ({...S.cleanUnit(u), id: u.id, image: u.image || "", photos: (u.photos || []).map(p => store.photoUrl(p))});
-  const backupLedger = (a, units) => ({id: a.id, faction: a.faction, name: a.name, scheme: a.scheme, public: a.public, units: units.filter(u => u.armyId === a.id).map(backupUnit)});
+  // Photos saved in this browser are written into the file itself (online ones are web addresses).
+  const photoForBackup = src => store.inlinePhoto ? store.inlinePhoto(src).catch(() => "") : src;
+  const backupUnit = async u => ({...S.cleanUnit(u), id: u.id, image: u.image ? await photoForBackup(u.image) : "", photos: (await Promise.all((u.photos || []).map(p => photoForBackup(store.photoUrl(p))))).filter(Boolean)});
+  const backupUnits = units => Promise.all(units.map(backupUnit));
+  const backupLedger = async (a, units) => ({id: a.id, faction: a.faction, name: a.name, scheme: a.scheme, public: a.public, units: await backupUnits(units.filter(u => u.armyId === a.id))});
   async function warRecords(armyIds){
     try {
       const [ls, gs] = await Promise.all([store.listLists(), store.listGames()]);
@@ -375,7 +378,7 @@
     const war = await warRecords([army.id]);
     downloadJSON({app: "livery-ledger", kind: "army", version: 6, exported: new Date().toISOString(),
       army: {id: army.id, faction: army.faction, name: army.name, scheme: army.scheme},
-      units: units.map(backupUnit), lists: war.lists, games: war.games}, `livery-${slug(army.name)}-${new Date().toISOString().slice(0, 10)}.json`);
+      units: await backupUnits(units), lists: war.lists, games: war.games}, `livery-${slug(army.name)}-${new Date().toISOString().slice(0, 10)}.json`);
   }
   // An army is the same in both tools, so deleting it from either asks the same way: exactly what goes, and a
   // chance to download a backup first.
@@ -515,6 +518,7 @@
       else if(parts[0] === "army" && parts[1] && parts[2] === "unit" && parts[3]) await viewLedger(parts[1], parts[3]);
       else if(parts[0] === "army" && parts[1]) await viewLedger(parts[1]);
       // The list of shared armies is for logged-in painters; a shared ledger itself still opens from its link.
+      else if(parts[0] === "painter" && parts[1]) await viewPainter(parts[1]);
       else if(parts[0] === "shame"){
         if(store.kind === "supabase" && !store.session){ await viewLanding(); setTimeout(() => openAuth("in", "Log in to see your pile of shame."), 0); }
         else await viewShame();
@@ -680,6 +684,71 @@
     const prev = view.cleanup;
     view.cleanup = () => { app.removeEventListener("click", handler); if(prev) prev(); };
   }
+  // A window or document listener that lasts as long as the page on screen.
+  function onWin(type, handler, target = window){
+    target.addEventListener(type, handler);
+    const prev = view.cleanup;
+    view.cleanup = () => { target.removeEventListener(type, handler); if(prev) prev(); };
+  }
+
+  /* ---------- painting time ---------- */
+  // Each unit keeps minutes painted per day (tlog). One timer runs at a time, kept in this browser so it
+  // survives a reload, and shown in a small bar on every page until it's stopped.
+  const TIMER_KEY = "ll-timer";
+  const unitMins = u => (u.tlog || []).reduce((a, e) => a + e.m, 0);
+  const hm = m => m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ""}`;
+  const addTime = (tlog, mins, day = isoDay(new Date())) => [...(tlog || []), {d: day, m: mins}];
+  const getTimer = () => { try { const t = JSON.parse(localStorage.getItem(TIMER_KEY) || "null"); return t && t.unitId && t.start ? t : null; } catch(e){ return null; } };
+  const setTimer = t => { try { if(t) localStorage.setItem(TIMER_KEY, JSON.stringify(t)); else localStorage.removeItem(TIMER_KEY); } catch(e){} drawTimer(); window.dispatchEvent(new Event("timer-change")); };
+  let timerTick = 0;
+  function startTimer(armyId, u){
+    const t = getTimer();
+    if(t && t.unitId !== u.id){ flash(`Stop the timer on ${t.name} first.`); return; }
+    setTimer({armyId, unitId: u.id, name: u.name, start: Date.now()});
+  }
+  function drawTimer(){
+    const t = getTimer();
+    let bar = $("ptimer");
+    clearInterval(timerTick);
+    if(!t){ if(bar) bar.remove(); document.body.classList.remove("has-timer"); return; }
+    if(!bar){ bar = document.createElement("div"); bar.id = "ptimer"; bar.className = "ptimer"; bar.setAttribute("role", "region"); bar.setAttribute("aria-label", "Painting timer"); document.body.appendChild(bar);
+      bar.addEventListener("click", e => { if(e.target.closest("[data-tstop]")) stopTimer(); }); }
+    bar.innerHTML = `<span class="pt-dot" aria-hidden="true"></span><a href="#/army/${esc(t.armyId)}">Painting <b>${esc(t.name)}</b></a><span class="pt-clock"></span><button type="button" class="btn-sm" data-tstop>Stop</button>`;
+    document.body.classList.add("has-timer");
+    const tick = () => { const s = Math.max(0, Math.floor((Date.now() - t.start) / 1000)), c = bar.querySelector(".pt-clock"); if(c) c.textContent = `${Math.floor(s / 3600)}:${String(Math.floor(s / 60) % 60).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`; };
+    tick(); timerTick = setInterval(tick, 1000);
+  }
+  // Stopping asks how much to add, so a timer left running overnight can be put right.
+  function stopTimer(){
+    const t = getTimer(); if(!t) return;
+    const mins = Math.max(1, Math.round((Date.now() - t.start) / 60000));
+    askTime(`Add painting time to ${esc(t.name)}`, mins, async add => {
+      if(add){
+        const u = (await store.listUnits(t.armyId)).find(x => x.id === t.unitId);
+        if(!u){ setTimer(null); flash("That unit has been deleted, so the time wasn't saved."); return; }
+        const row = await store.saveUnit(t.armyId, mergeUnit(u, {tlog: addTime(u.tlog, add)}), u.id, null, false, u);
+        window.dispatchEvent(new CustomEvent("unit-updated", {detail: row}));
+        flash(`Added ${hm(add)} to ${u.name}.`);
+      }
+      setTimer(null);
+    }, "Discard");
+  }
+  // Hours and minutes to add; done(0) for Discard. Errors show in the dialog.
+  function askTime(title, mins, done, cancelLabel){
+    const d = modal(title, `
+      <div class="wgrid"><label>Hours<input id="pt-h" type="number" min="0" max="23" inputmode="numeric" value="${Math.floor(mins / 60) || ""}" placeholder="0"></label><label>Minutes<input id="pt-m" type="number" min="0" max="59" inputmode="numeric" value="${mins % 60 || ""}" placeholder="0"></label></div>
+      <p class="hint">Counted as painting time today.</p>
+      <div class="row-actions"><button type="submit" class="primary">Add time</button>${cancelLabel ? `<button type="button" id="pt-no">${cancelLabel}</button>` : ""}<span class="msg" id="pt-msg" role="status"></span></div>`);
+    const run = async add => { try { await done(add); d.close(); } catch(err){ console.error(err); $("pt-msg").textContent = "Couldn't save: " + errText(err); } };
+    d.querySelector("form").addEventListener("submit", e => {
+      e.preventDefault();
+      const add = Math.min(1440, (parseInt($("pt-h").value, 10) || 0) * 60 + (parseInt($("pt-m").value, 10) || 0));
+      if(!add){ $("pt-msg").textContent = "Enter some time to add."; return; }
+      run(add);
+    });
+    if(cancelLabel) $("pt-no").addEventListener("click", () => run(0));
+    $("pt-h").focus();
+  }
   // A dialog built on the fly and removed when it closes.
   function modal(title, body, cls){
     const d = document.createElement("dialog");
@@ -754,7 +823,7 @@
     return `<ul class="games">${games.map(g => `<li class="game r-${g.result}">
         <span class="res" aria-label="${RES[g.result]}">${g.result.toUpperCase()}</span>
         <div class="g-main"><strong>${esc(an(g.armyId))}${ln(g.listId) ? ` <small>· ${esc(ln(g.listId))}</small>` : ""}</strong>
-          <small>vs ${esc(g.oppName || factionName(g.opp))}${g.mission ? ` · ${esc(g.mission)}` : ""} · ${esc(dayText(g.date))}</small></div>
+          <small>vs ${g.oppUser && store.canShare ? `<a href="#/painter/${esc(g.oppUser)}" class="g-friend">${esc(g.oppName || g.oppUserName || factionName(g.opp))}</a>` : esc(g.oppName || factionName(g.opp))}${g.mission ? ` · ${esc(g.mission)}` : ""} · ${esc(dayText(g.date))}</small></div>
         ${g.us != null || g.them != null ? `<span class="score">${g.us ?? "–"}–${g.them ?? "–"}</span>` : ""}
         <button type="button" class="btn-sm" data-game="${esc(g.id)}" aria-label="Edit battle on ${esc(dayText(g.date))}">Edit</button>
       </li>`).join("")}</ul>`;
@@ -764,7 +833,10 @@
   async function viewWarDash(){
     view.name = "war"; document.title = "Overview · War Ledger";
     let D = null;
-    const render = async () => { D = await warData(true); drawWarDash(D); };
+    const render = async () => {
+      D = await warData(true); drawWarDash(D);
+      taggedFor(D).then(t => { const el = $("wd-tag"); if(el && t.length) el.innerHTML = `<div class="banner tag-b"><span class="dot on"></span><span>${t.length === 1 ? `${esc(t[0].byName || "A friend")} logged a battle against you.` : `${t.length} battles friends logged against you are waiting.`} <a href="#/war/battles">Add ${t.length === 1 ? "it" : "them"} to your record</a></span></div>`; }).catch(() => {});
+    };
     await render();
     onApp(e => warClicks(e, D, render));
   }
@@ -777,6 +849,7 @@
         actions: D.armies.length ? `<a class="btn btn-sm" href="#/war/collection">${LIST_ICON}Your collection<span class="count">${num(D.units.filter(u => D.armies.concat(D.pools).some(a => a.id === u.armyId)).length)}</span></a>${shameBtn()}${settingsBtn}` : ""})}
       ${warTabs("")}
       ${missingBanner(D)}
+      <div id="wd-tag"></div>
       ${D.armies.length ? `
       <section class="panel war-status" aria-labelledby="ws-h">
         <h2 class="ph" id="ws-h">Collection status <small class="ws-rule">${esc(readyRuleText())}</small></h2>
@@ -1928,6 +2001,38 @@
       }
     } catch(e){ console.warn("Couldn't update the army record", e); }
   }
+  // Painters you follow, with the name from their shared armies, for tagging an opponent.
+  let friendsCache = null;
+  async function friendsList(){
+    if(friendsCache) return friendsCache;
+    const social = await store.communityState([]);
+    if(!social || !social.following.size) return [];
+    const {armies} = await store.listShared(), names = {};
+    armies.forEach(a => { if(social.following.has(a.owner) && !names[a.owner]) names[a.owner] = (a.scheme && a.scheme.by) || "A painter"; });
+    return (friendsCache = [...social.following].map(id => ({id, name: names[id] || "A painter"})).sort((a, b) => a.name.localeCompare(b.name)));
+  }
+  // Battles friends logged against you that aren't on your record yet (and that you haven't dismissed).
+  const TAG_HIDE = "ll-tag-dismissed";
+  const tagHidden = () => { try { return JSON.parse(localStorage.getItem(TAG_HIDE) || "[]"); } catch(e){ return []; } };
+  async function taggedFor(D){
+    if(!store.listTagged || !store.session) return [];
+    const rows = await store.listTagged(); if(!rows) return [];
+    const mine = new Set(D.games.map(g => g.id)), added = new Set(D.games.map(g => g.mirror).filter(Boolean)), hid = new Set(tagHidden());
+    return rows.filter(g => !added.has(g.id) && !mine.has(g.mirror) && !hid.has(g.id));
+  }
+  const FLIP = {w: "l", l: "w", d: "d"};
+  function taggedSection(tagged){
+    return tagged.length ? `<section class="panel tagged" aria-labelledby="tg-h"><h2 class="ph" id="tg-h">Battles against you</h2>
+      <p class="hint">Friends logged these games and tagged you as their opponent. Add one to put it on your record too.</p>
+      <ul class="tg-list">${tagged.map(g => `<li><span class="res r-${FLIP[g.result]}" aria-label="${RES[FLIP[g.result]]} for you">${FLIP[g.result].toUpperCase()}</span>
+        <span class="tg-main"><strong>${esc(g.byName || "A painter")}</strong> <small>with ${esc(g.byArmy || "their army")}${g.byFaction ? ` (${esc(factionName(g.byFaction))})` : ""} · ${esc(dayText(g.date))}${g.us != null && g.them != null ? ` · ${g.them}–${g.us} to you` : ""}${g.mission ? ` · ${esc(g.mission)}` : ""}</small></span>
+        <span class="tg-acts"><button type="button" class="btn-sm primary" data-tag-add="${esc(g.id)}">Add to my record</button><button type="button" class="btn-sm" data-tag-hide="${esc(g.id)}">Dismiss</button></span></li>`).join("")}</ul></section>` : "";
+  }
+  // Your side of a friend's battle: the result the other way round, their army as your opponent, linked both ways.
+  function addTagged(D, g, again){
+    openGame(D, {date: g.date, opp: g.byFaction, oppName: g.byName, mission: g.mission, result: FLIP[g.result], us: g.them, them: g.us,
+      notes: "", mirror: g.id, oppUser: g.owner, oppUserName: g.byName}, again);
+  }
   function openGame(D, g, again){
     if(!D.armies.length){ flash("Create an army first."); return; }
     if(D.warMissing){ flash("Run supabase/features.sql in Supabase to turn on battle reports."); return; }
@@ -1940,6 +2045,7 @@
         <label class="span3">Army list<select id="w-gl"></select></label>
         <label class="span2">Opponent's faction${factionSelect("w-go", seed.opp || "", "Not sure / other")}</label>
         <label><span>Opponent <span class="opt">(optional)</span></span><input id="w-gp" maxlength="60" value="${esc(seed.oppName || "")}" placeholder="Name"></label>
+        <label class="span3" id="w-gf-l" hidden><span>Tag a friend <span class="opt">(optional)</span></span><select id="w-gf"><option value="">No one</option></select><small class="hint" id="w-gf-h">They'll see this battle and can add it to their own record.</small></label>
         <label class="span3"><span>Mission <span class="opt">(optional)</span></span><input id="w-gm" maxlength="80" value="${esc(seed.mission || "")}"></label>
       </div>
       <fieldset class="wfs"><legend>Result</legend>
@@ -1969,10 +2075,25 @@
         <label>Marked for Greatness<select id="w-gmfg"><option value="">None</option>${rows.map(x => `<option value="${esc(x.k)}"${same && seed.mfg === x.k ? " selected" : ""}>${esc(x.name)}</option>`).join("")}</select></label>`;
     };
     $("w-ga").addEventListener("change", () => { fill(); crFill(); }); $("w-gl").addEventListener("change", crFill); fill(); crFill();
+    // Online: painters you follow can be tagged as the opponent.
+    if(store.listTagged && store.session) friendsList().then(fs => {
+      if(!d.open) return;
+      const cur = seed.oppUser && !fs.some(f => f.id === seed.oppUser) ? [{id: seed.oppUser, name: seed.oppUserName || "A painter"}] : [];
+      const all = cur.concat(fs);
+      $("w-gf-l").hidden = false;
+      if(!all.length){ $("w-gf").disabled = true; $("w-gf-h").textContent = "Follow painters on Shared armies to tag them as your opponent."; return; }
+      $("w-gf").insertAdjacentHTML("beforeend", all.map(f => `<option value="${esc(f.id)}"${f.id === seed.oppUser ? " selected" : ""}>${esc(f.name)}</option>`).join(""));
+      $("w-gf").addEventListener("change", () => { const f = all.find(x => x.id === $("w-gf").value); if(f && !$("w-gp").value.trim()) $("w-gp").value = f.name; });
+    }).catch(err => console.warn("Couldn't load friends", err));
     d.querySelector("form").addEventListener("submit", async e => {
       e.preventDefault();
       const row = {armyId: $("w-ga").value, listId: $("w-gl").value, date: $("w-gd").value, opp: $("w-go").value, oppName: $("w-gp").value.trim(), mission: $("w-gm").value.trim(),
-        result: (d.querySelector("[name=w-gr]:checked") || {}).value || "w", us: $("w-gu").value, them: $("w-gt").value, mvp: $("w-gv").value, notes: $("w-gn").value.trim(), took: [], mfg: ""};
+        result: (d.querySelector("[name=w-gr]:checked") || {}).value || "w", us: $("w-gu").value, them: $("w-gt").value, mvp: $("w-gv").value, notes: $("w-gn").value.trim(), took: [], mfg: "",
+        mirror: seed.mirror || ""};
+      // A tagged friend sees who logged it, with which army.
+      const fr = $("w-gf").value;
+      if(fr){ const a = D.armies.find(x => x.id === row.armyId) || {}, me = acct();
+        Object.assign(row, {oppUser: fr, oppUserName: $("w-gf").selectedOptions[0].textContent, byName: me ? me.name : "", byArmy: a.name || "", byFaction: a.faction || ""}); }
       const cl = crList();
       if(cl){
         row.took = [...d.querySelectorAll("[name=w-took]:checked")].map(x => x.value); row.mfg = $("w-gmfg").value;
@@ -2045,8 +2166,9 @@
   }
   async function viewWarBattles(){
     view.name = "war-battles"; document.title = "Battles · War Ledger";
-    let D = await warData(false), armyF = "";
-    const again = async () => { D = await warData(false); draw(); };
+    let D = await warData(false), armyF = "", tagged = [];
+    const loadTagged = () => taggedFor(D).then(t => { tagged = t; if(view.name === "war-battles") draw(); }).catch(err => console.warn("Couldn't load tagged battles", err));
+    const again = async () => { D = await warData(false); draw(); loadTagged(); };
     app.innerHTML = `
       <section class="page-head war-head">
         <div><p class="eyebrow">War Ledger</p><h1>Battle reports</h1><p class="sub">Every game you've played, and how each army and list has fared.</p></div>
@@ -2075,6 +2197,7 @@
       const gs = D.games.filter(g => !armyF || g.armyId === armyF), rec = recordOf(gs);
       const an = id => { const a = D.armies.find(x => x.id === id); return a ? esc(a.name) : "Deleted army"; };
       $("wb-out").innerHTML = `
+        ${taggedSection(tagged)}
         <div class="war-filters"><select id="wb-army" aria-label="Army"><option value="">All armies</option>${D.armies.map(a => `<option value="${esc(a.id)}"${a.id === armyF ? " selected" : ""}>${esc(a.name)}</option>`).join("")}</select></div>
         ${gs.length ? `
         <section class="war-stats five" aria-label="Record">
@@ -2099,8 +2222,11 @@
       $("wb-army").addEventListener("change", e => { armyF = e.target.value; draw(); });
       wireMarginChart();
     }
-    draw();
+    draw(); loadTagged();
     onApp(e => {
+      const ta = e.target.closest("[data-tag-add]"), th = e.target.closest("[data-tag-hide]");
+      if(ta){ const g = tagged.find(x => x.id === ta.dataset.tagAdd); if(g) addTagged(D, g, again); return; }
+      if(th){ try { localStorage.setItem(TAG_HIDE, JSON.stringify([...tagHidden(), th.dataset.tagHide].slice(-200))); } catch(err){} tagged = tagged.filter(x => x.id !== th.dataset.tagHide); draw(); return; }
       const b = e.target.closest("[data-unit]"), u = b && D.units.find(x => x.id === b.dataset.unit);
       if(u){ openUnit(armyById(D, u.armyId), u, again, {armies: D.armies, pools: D.pools}); return; }
       warClicks(e, D, again);
@@ -2266,7 +2392,7 @@
     app.innerHTML = `${tabHead("Livery Ledger", "Painting activity", "Models you've marked painted across all your ledgers, month by month.", "")}
       ${livTabs("activity")}
       <section class="activity panel" id="activity" aria-labelledby="act-h"><h2 class="act-title" id="act-h">Painting activity</h2><p class="loading">Adding up your painting…</p></section>`;
-    try { const us = await store.listAllUnits(); if($("activity")) drawActivity(us); }
+    try { const [us, as] = await Promise.all([store.listAllUnits(), store.listArmies()]); actArmies = as; if($("activity")) drawActivity(us); }
     catch(err){ console.error(err); if($("activity")) $("activity").querySelector(".loading").textContent = "Couldn't load your painting history."; }
   }
 
@@ -3275,24 +3401,7 @@ Redemptor Dreadnought (210 points)</pre>
       $("sh-count").textContent = armies.length ? (list.length === armies.length ? `${armies.length} ${armies.length === 1 ? "army" : "armies"}` : `${list.length} of ${armies.length}`) : "";
       if(!armies.length){ $("sh-list").innerHTML = `<div class="ro-empty"><strong>No shared armies yet</strong><p>Be the first: open one of your ledgers and press Share.</p></div>`; return; }
       if(!list.length){ $("sh-list").innerHTML = `<p class="hint">${show === "following" && !q && !fid ? "You're not following anyone yet, or they haven't shared anything. Follow a painter from one of their armies." : "No shared armies match. Try a different search or faction."}</p>`; return; }
-      $("sh-list").innerHTML = `<h2 class="sr-only">Armies</h2><div class="ledgers">${list.map(a => {
-        const s = sum[a.id] || {units: 0, models: 0, done: 0}, f = FBY[a.faction];
-        const pct = s.models ? Math.round(s.done / s.models * 100) : 0;
-        PROF = P.profileFor(a.faction);
-        const liked = social && social.liked.has(a.id), n = likesOf(a), follows = social && social.following.has(a.owner);
-        return `<div class="lcard shcard">
-          <a class="sh-open" href="#/army/${esc(a.id)}">
-            ${ownerLine(a)}
-            <div class="card-top">${tierBadge(a.scheme, a.scheme.tiers[0], 56)}<div><h3>${esc(a.name)}</h3><div class="meta">${esc(f ? f.name : a.faction)}${(a.scheme.rec.w + a.scheme.rec.l + a.scheme.rec.d) ? ` · <span class="rec-chip" title="Battle record: wins–losses${a.scheme.rec.d ? "–draws" : ""}">${recText(a.scheme.rec)}</span>` : ""}</div></div></div>
-            <div class="prog" aria-hidden="true"><i style="width:${pct}%"></i></div>
-            <div class="foot"><span>${plural(s.units, "unit")} · ${plural(s.models, "model")}</span><span>${pct}% painted</span></div>
-          </a>
-          ${social ? `<div class="sh-actions">
-            <button type="button" class="btn-sm like${liked ? " on" : ""}" data-like="${esc(a.id)}" aria-pressed="${!!liked}" aria-label="${liked ? "Unlike" : "Like"} ${esc(a.name)}${n ? `, ${plural(n, "like")}` : ""}">${HEART(liked)}<span>${n || ""}</span></button>
-            ${a.owner !== mine ? `<button type="button" class="btn-sm follow${follows ? " on" : ""}" data-follow="${esc(a.owner)}" aria-pressed="${!!follows}">${follows ? "Following" : "Follow"}${a.scheme.by ? ` ${esc(a.scheme.by)}` : " painter"}</button>` : ""}
-          </div>` : ""}
-        </div>`;
-      }).join("")}</div>`;
+      $("sh-list").innerHTML = `<h2 class="sr-only">Armies</h2><div class="ledgers">${list.map(a => sharedCard(a, sum, social, mine, likesOf(a))).join("")}</div>`;
       PROF = keep;
     }
     $("sh-q").addEventListener("input", draw);
@@ -3302,24 +3411,116 @@ Redemptor Dreadnought (210 points)</pre>
       const b = e.target.closest("[data-show]"); if(!b) return;
       show = b.dataset.show; $("sh-show").querySelectorAll("[data-show]").forEach(x => x.setAttribute("aria-pressed", x === b)); draw();
     });
-    $("sh-list").addEventListener("click", async e => {
-      const lk = e.target.closest("[data-like]"), fo = e.target.closest("[data-follow]");
-      if(!social || (!lk && !fo)) return;
-      const btn = lk || fo; btn.disabled = true;
-      try {
-        if(lk){
-          const id = lk.dataset.like, on = !social.liked.has(id);
-          await store.setLike(id, on);
-          if(on){ social.liked.add(id); social.likes[id] = (social.likes[id] || 0) + 1; } else { social.liked.delete(id); social.likes[id] = Math.max(0, (social.likes[id] || 1) - 1); }
-        } else {
-          const uid = fo.dataset.follow, on = !social.following.has(uid);
-          await store.setFollow(uid, on);
-          if(on) social.following.add(uid); else social.following.delete(uid);
-        }
-        draw();
-      } catch(err){ btn.disabled = false; alertBanner("Couldn't save that: " + errText(err)); }
-    });
+    $("sh-list").addEventListener("click", e => socialClick(e, social, draw));
     draw();
+  }
+  // A shared army's card: whose it is (a link to their profile), the army, and like and follow buttons.
+  function sharedCard(a, sum, social, mine, n){
+    const s = sum[a.id] || {units: 0, models: 0, done: 0}, f = FBY[a.faction];
+    const pct = s.models ? Math.round(s.done / s.models * 100) : 0;
+    PROF = P.profileFor(a.faction);
+    const liked = social && social.liked.has(a.id), follows = social && social.following.has(a.owner);
+    return `<div class="lcard shcard">
+      ${a.owner ? `<a class="sh-owner" href="#/painter/${esc(a.owner)}" aria-label="${esc(ownerOf(a).you ? "Your profile" : `${ownerOf(a).name}'s profile`)}">${ownerLine(a)}</a>` : ownerLine(a)}
+      <a class="sh-open" href="#/army/${esc(a.id)}">
+        <div class="card-top">${tierBadge(a.scheme, a.scheme.tiers[0], 56)}<div><h3>${esc(a.name)}</h3><div class="meta">${esc(f ? f.name : a.faction)}${(a.scheme.rec.w + a.scheme.rec.l + a.scheme.rec.d) ? ` · <span class="rec-chip" title="Battle record: wins–losses${a.scheme.rec.d ? "–draws" : ""}">${recText(a.scheme.rec)}</span>` : ""}</div></div></div>
+        <div class="prog" aria-hidden="true"><i style="width:${pct}%"></i></div>
+        <div class="foot"><span>${plural(s.units, "unit")} · ${plural(s.models, "model")}</span><span>${pct}% painted</span></div>
+      </a>
+      ${social ? `<div class="sh-actions">
+        <button type="button" class="btn-sm like${liked ? " on" : ""}" data-like="${esc(a.id)}" aria-pressed="${!!liked}" aria-label="${liked ? "Unlike" : "Like"} ${esc(a.name)}${n ? `, ${plural(n, "like")}` : ""}">${HEART(liked)}<span>${n || ""}</span></button>
+        ${a.owner !== mine ? `<button type="button" class="btn-sm follow${follows ? " on" : ""}" data-follow="${esc(a.owner)}" aria-pressed="${!!follows}">${follows ? "Following" : "Follow"}${a.scheme.by ? ` ${esc(a.scheme.by)}` : " painter"}</button>` : ""}
+      </div>` : ""}
+    </div>`;
+  }
+  // Like and follow buttons, wherever shared armies are listed.
+  async function socialClick(e, social, redraw){
+    const lk = e.target.closest("[data-like]"), fo = e.target.closest("[data-follow]");
+    if(!social || (!lk && !fo)) return;
+    const btn = lk || fo; btn.disabled = true;
+    try {
+      if(lk){
+        const id = lk.dataset.like, on = !social.liked.has(id);
+        await store.setLike(id, on);
+        if(on){ social.liked.add(id); social.likes[id] = (social.likes[id] || 0) + 1; } else { social.liked.delete(id); social.likes[id] = Math.max(0, (social.likes[id] || 1) - 1); }
+      } else {
+        const uid = fo.dataset.follow, on = !social.following.has(uid);
+        await store.setFollow(uid, on); friendsCache = null;
+        if(on) social.following.add(uid); else social.following.delete(uid);
+      }
+      redraw();
+    } catch(err){ btn.disabled = false; alertBanner("Couldn't save that: " + errText(err)); }
+  }
+
+  /* ---------- comments on shared armies ---------- */
+  // Shown under a shared ledger. Anyone can read them; logged-in painters can add one. You can delete your
+  // own, and the army's owner can delete any.
+  async function drawComments(army){
+    const box = $("comments-box"); if(!box || !store.canShare || !army.public) return;
+    let list;
+    try { list = await store.listComments(army.id); } catch(err){ console.warn("Couldn't load comments", err); return; }
+    if(list === null || !$("comments-box")) return;   // not set up yet, or the page was left
+    const me = store.session ? store.session.user.id : null, owns = me && army.owner === me;
+    const who = c => { const bits = (c.byName || "A painter").split(/[\s._-]+/).filter(Boolean); return {name: c.byName || "A painter", avatar: c.byPic, initials: bits.length ? (bits[0][0] + (bits[1] ? bits[bits.length - 1][0] : bits[0].slice(1, 2))).toUpperCase() : "?"}; };
+    const paint = () => {
+      box.innerHTML = `<section class="panel comments" aria-labelledby="cm-h"><h2 class="ph" id="cm-h">Comments${list.length ? ` <small>${list.length}</small>` : ""}</h2>
+        ${list.length ? `<ul class="cm-list">${list.map(c => `<li>${avatarHtml(who(c))}<div class="cm-body"><div class="cm-top"><a href="#/painter/${esc(c.owner)}">${esc(c.owner === me ? "You" : who(c).name)}</a><time datetime="${esc(c.createdAt || "")}">${esc(dayText(String(c.createdAt || "").slice(0, 10)))}</time>
+          ${c.owner === me || owns ? `<button type="button" class="linkish cm-del" data-cdel="${esc(c.id)}" aria-label="Delete this comment">Delete</button>` : ""}</div><p>${esc(c.body)}</p></div></li>`).join("")}</ul>`
+          : `<p class="hint">No comments yet.${me && !owns ? " Say what you like about this army." : ""}</p>`}
+        ${me ? `<form class="cm-form" id="cm-form"><label class="sr-only" for="cm-in">Add a comment</label><textarea id="cm-in" rows="2" maxlength="1000" placeholder="${owns ? "Reply to your visitors" : "What do you think of this army?"}"></textarea>
+          <div class="row-actions"><button type="submit" class="primary btn-sm">Post comment</button><span class="msg" id="cm-msg" role="status"></span></div></form>`
+          : `<p class="hint"><button type="button" class="linkish" id="cm-login">Log in</button> to leave a comment.</p>`}
+      </section>`;
+      if($("cm-login")) $("cm-login").addEventListener("click", () => openAuth("in", "Log in to leave a comment."));
+      if($("cm-form")) $("cm-form").addEventListener("submit", async e => {
+        e.preventDefault();
+        const t = $("cm-in").value.trim(); if(!t){ $("cm-in").focus(); return; }
+        const b = e.submitter || $("cm-form").querySelector("[type=submit]"); b.disabled = true;
+        try { list = list.concat(await store.addComment(army.id, t)); paint(); $("cm-in").focus(); }
+        catch(err){ console.error(err); $("cm-msg").textContent = "Couldn't post: " + errText(err); b.disabled = false; }
+      });
+      box.querySelectorAll("[data-cdel]").forEach(b => armButton(b, "Press again to delete", async () => {
+        try { await store.removeComment(b.dataset.cdel); list = list.filter(c => c.id !== b.dataset.cdel); paint(); }
+        catch(err){ alertBanner("Couldn't delete the comment: " + errText(err)); }
+      }));
+    };
+    paint();
+  }
+
+  /* ---------- a painter's profile ---------- */
+  // Everything one painter has shared: their armies, how far along the painting is, and their battle record.
+  async function viewPainter(id){
+    view.name = "painter"; document.title = `Painter · ${toolName()}`;
+    app.innerHTML = `<p class="loading">Loading…</p>`;
+    if(!store.canShare){ viewNotFound(); return; }
+    let data;
+    try { data = await store.listSharedBy(id); }
+    catch(err){ console.error(err); app.innerHTML = `<div class="banner"><span class="dot warn"></span><span>Couldn't load this painter: ${esc(errText(err))}</span></div>`; return; }
+    if(view.name !== "painter") return;
+    const {armies, sum} = data, mine = store.session ? store.session.user.id : null;
+    let social = null;
+    if(store.session){ try { social = await store.communityState(armies.map(a => a.id)); } catch(err){ console.warn(err); } }
+    const draw = () => {
+      const newest = armies[0], o = newest ? ownerOf(newest) : {name: "A painter", initials: "?", avatar: ""};
+      const t = armies.reduce((x, a) => { const s = sum[a.id] || {}; x.models += s.models || 0; x.done += s.done || 0; ["w", "l", "d"].forEach(k => x.rec[k] += a.scheme.rec[k]); return x; }, {models: 0, done: 0, rec: {w: 0, l: 0, d: 0}});
+      const played = t.rec.w + t.rec.l + t.rec.d, follows = social && social.following.has(id);
+      if(newest) document.title = `${o.you ? "Your profile" : o.name} · ${toolName()}`;
+      const keep = PROF;
+      app.innerHTML = `
+        <div class="crumbs"><a href="#/shared">Shared armies</a> / ${esc(o.you ? "You" : o.name)}</div>
+        <section class="painter-head">
+          ${avatarHtml(o, "xl")}
+          <div><p class="eyebrow">Painter</p><h1>${esc(o.you ? `${o.name} (you)` : o.name)}</h1>
+            <p class="sub">${armies.length ? `${plural(armies.length, "shared army")}${t.models ? ` · ${num(t.done)} of ${plural(t.models, "model")} painted` : ""}${played ? ` · ${recText(t.rec)} battle record` : ""}` : "Nothing shared yet."}</p>
+            ${social && id !== mine ? `<div class="sh-actions painter-acts"><button type="button" class="btn-sm follow${follows ? " on" : ""}" data-follow="${esc(id)}" aria-pressed="${!!follows}">${follows ? "Following" : "Follow"}</button></div>` : ""}
+          </div>
+        </section>
+        ${armies.length ? `<h2 class="sr-only">Shared armies</h2><div class="ledgers" id="pp-list">${armies.map(a => sharedCard(a, sum, social, mine, (social && social.likes[a.id]) || 0)).join("")}</div>`
+          : `<div class="ro-empty"><strong>No shared armies</strong><p>${id === mine ? "Open one of your ledgers and press Share to show it here." : "This painter hasn't shared any armies, or has stopped sharing them."}</p></div>`}`;
+      PROF = keep;
+    };
+    draw();
+    onApp(e => socialClick(e, social, draw));
   }
 
   /* ============================================================
@@ -3606,7 +3807,7 @@ Redemptor Dreadnought (210 points)</pre>
         const war = await warRecords(null);
         downloadJSON({app: "livery-ledger", kind: "everything", version: 6, exported: new Date().toISOString(), account: me ? {name: me.name, email: me.email} : null,
           settings, goal: getGoal(), paintsOwned: paints, recipeLibrary: library, pileOfShame: shame,
-          ledgers: armies.map(a => backupLedger(a, units)), lists: war.lists, games: war.games},
+          ledgers: await Promise.all(armies.map(a => backupLedger(a, units))), lists: war.lists, games: war.games},
           `livery-ledger-everything-${new Date().toISOString().slice(0, 10)}.json`);
       } catch(err){ alertBanner("Couldn't prepare your data: " + errText(err)); }
       finally { b.disabled = false; b.textContent = "Download all my data"; }
@@ -3667,6 +3868,26 @@ Redemptor Dreadnought (210 points)</pre>
     const total = [...byDay.values()].reduce((a, b) => a + b, 0);
     return {months, thisMonth: months[11].n, lastMonth: months[10], thisYear: sumWhere(String(now.getFullYear())), streak, best, total};
   }
+  let actArmies = [];
+  // Time painted: totals, this month and year, per painted model, and the units that took longest.
+  function timeSection(units){
+    const now = new Date(), month = monthKey(now), year = String(now.getFullYear());
+    const all = units.flatMap(u => u.tlog || []), sum = pre => all.filter(e => e.d.startsWith(pre)).reduce((a, e) => a + e.m, 0);
+    const total = sum(""), timed = units.filter(u => unitMins(u)), painted = timed.reduce((a, u) => a + (+u.painted || 0), 0);
+    const top = timed.sort((a, b) => unitMins(b) - unitMins(a)).slice(0, 5);
+    const an = id => (actArmies.find(a => a.id === id) || {}).name || "";
+    return `<section class="act-time" aria-labelledby="at-h"><div class="act-head"><h2 class="act-title" id="at-h">Painting time</h2><small>From the timer and time you've added to units</small></div>
+      ${total ? `<div class="act-stats">
+        <div class="stat"><b>${hm(sum(month))}</b><span>This month</span></div>
+        <div class="stat"><b>${hm(sum(year))}</b><span>This year</span></div>
+        <div class="stat"><b>${hm(total)}</b><span>All time</span></div>
+        <div class="stat"><b>${painted ? hm(Math.round(total / painted)) : "–"}</b><span>Per painted model</span><em>${painted ? `Over ${plural(painted, "model")}` : "&nbsp;"}</em></div>
+      </div>
+      <h3 class="at-sub">Longest in the painting chair</h3>
+      <ul class="at-top">${top.map(u => `<li><a href="#/army/${esc(u.armyId)}/unit/${esc(u.id)}">${esc(u.name)}</a><small>${esc(an(u.armyId))}</small><b>${hm(unitMins(u))}</b></li>`).join("")}</ul>`
+      : `<p class="hint">Start the timer from a unit in one of your ledgers when you sit down to paint, or add time by hand. It all adds up here.</p>`}
+    </section>`;
+  }
   function drawActivity(units){
     const box = $("activity"), A = activityOf(units), goal = getGoal();
     const max = Math.max(...A.months.map(m => m.n), goal || 0, 4);
@@ -3707,7 +3928,8 @@ Redemptor Dreadnought (210 points)</pre>
           </div>`).join("")}
         </div>
         ${!A.total ? `<p class="hint act-empty">Your chart fills in as you mark models painted. History starts from today, so models painted before now aren't dated.</p>` : ""}
-      </figure>`;
+      </figure>
+      ${timeSection(units)}`;
     box.querySelectorAll("[data-goal]").forEach(b => b.addEventListener("click", () => editGoal(units)));
   }
   function editGoal(units){
@@ -4087,7 +4309,7 @@ Redemptor Dreadnought (210 points)</pre>
       <div class="crumbs">${canWrite ? `<a href="#/livery">Livery Ledger</a> / <a href="#/livery/ledgers">Ledgers</a>` : store.session ? `<a href="#/shared">Shared armies</a>` : `<a href="#/">Livery Ledger</a>`} / ${esc(army.name)}</div>
       <header class="top">
         <div class="wh-id">${armyBadge(army, 64)}<div>
-          ${!canWrite ? ownerLine(army, "big") : ""}
+          ${!canWrite ? (army.owner && store.canShare ? `<a class="owner-link" href="#/painter/${esc(army.owner)}">${ownerLine(army, "big")}</a>` : ownerLine(army, "big")) : ""}
           <p class="eyebrow">${esc(f.name)}</p>
           <h1>${esc(army.name)}</h1>
           <p class="sub">${canWrite ? `<a href="#/war/army/${esc(army.id)}">Open in War Ledger</a> to plan its lists and battles.`
@@ -4156,6 +4378,7 @@ Redemptor Dreadnought (210 points)</pre>
           </div>
           <div class="cards" id="cards"><div class="empty">Loading units…</div></div>
         </section>
+      <div id="comments-box"></div>
       ${canWrite ? `<button type="button" class="fab primary" id="b-fab" aria-label="Add a unit">+ Add unit</button>
       <div class="batch-bar" id="batch-bar" role="toolbar" aria-label="Update the selected units" hidden>
         <span class="bb-count" id="bb-count" aria-live="polite">0 selected</span>
@@ -4194,6 +4417,7 @@ Redemptor Dreadnought (210 points)</pre>
             <label class="full painted-row">Models painted
               <span class="painted-ctl"><button type="button" class="btn-sm" id="pm-minus" aria-label="One fewer painted">−</button><input id="f-painted" type="number" inputmode="numeric" min="0" max="99" value="0"><span id="painted-of">of 5</span><button type="button" class="btn-sm" id="pm-plus" aria-label="One more painted">+</button><button type="button" class="btn-sm" id="pm-all">All done</button></span>
             </label>
+            <div class="full ptime" id="f-ptime"></div>
           </fieldset>
             </div>
             <div class="ed-col ed-right">
@@ -4459,6 +4683,22 @@ Redemptor Dreadnought (210 points)</pre>
     const setDirty = v => { dirty = v; $("dirty").hidden = !v; };
     const disarm = () => { armed = false; const b = $("b-del"); b.classList.remove("armed"); b.textContent = "Delete"; };
     const currentUnit = () => units.find(x => x.id === selId);
+    // Painting time in the editor: the total, the timer and adding time by hand. It saves straight away.
+    function drawPtime(){
+      const box = $("f-ptime"); if(!box) return;
+      const cur = currentUnit(), t = getTimer(), mine = t && cur && t.unitId === cur.id;
+      box.innerHTML = !cur ? `<span class="hint">Add the unit first to track painting time.</span>` : `<span class="pt-total">Painting time <b>${hm(unitMins(cur))}</b>${cur.painted ? ` <small>${hm(Math.round(unitMins(cur) / cur.painted))} a model</small>` : ""}</span>
+        ${canWrite ? `<span class="pt-btns"><button type="button" class="btn-sm${mine ? " on" : ""}" id="pt-go">${mine ? "Stop timer" : "Start timer"}</button><button type="button" class="btn-sm" id="pt-add">Add time</button></span>` : ""}`;
+      if(!cur || !canWrite) return;
+      $("pt-go").addEventListener("click", () => mine ? stopTimer() : startTimer(army.id, cur));
+      $("pt-add").addEventListener("click", () => askTime(`Add painting time to ${esc(cur.name)}`, 0, async add => {
+        const u = currentUnit(), row = await store.saveUnit(army.id, mergeUnit(u, {tlog: addTime(u.tlog, add)}), u.id, null, false, u);
+        units = units.map(x => x.id === row.id ? row : x); drawPtime(); render(); redetail(); flash(`Added ${hm(add)} to ${u.name}.`);
+      }));
+    }
+    const redetail = () => { const d = $("detail"); if(d && d.open && d.dataset.unit) openDetail(d.dataset.unit); };
+    onWin("timer-change", () => { drawPtime(); redetail(); });
+    onWin("unit-updated", e => { const row = e.detail; if(row && units.some(x => x.id === row.id)){ units = units.map(x => x.id === row.id ? row : x); drawPtime(); render(); redetail(); } });
     function setPhotoUI(){
       const cur = currentUnit();
       const url = pendingPhoto ? pendingPhoto.url : (!removePhoto && cur ? safeImg(cur.image) : "");
@@ -4468,6 +4708,7 @@ Redemptor Dreadnought (210 points)</pre>
     }
     function clearPending(){ if(pendingPhoto) URL.revokeObjectURL(pendingPhoto.url); pendingPhoto = null; removePhoto = false; }
     function setEditing(u){
+      drawPtime();
       $("ed-title").textContent = u ? "Edit unit" : "New unit";
       $("b-save").textContent = u ? "Save changes" : "Add unit";
       $("b-del").hidden = !u || !canWrite;
@@ -4710,7 +4951,8 @@ Redemptor Dreadnought (210 points)</pre>
             ${u.own === "planned" ? `<p class="plan-note">${PLANNED_TAG}<span>Not bought yet. Plan its colours now; it counts towards your totals once you buy it.</span>${canWrite ? `<button type="button" class="btn-sm" data-bought="${esc(u.id)}">I bought it</button>` : ""}</p>` : ""}</div>
           <div class="row">${img ? unitBadge(u, scheme, 64) : ""}<span class="row-end">${starBtn(u, true)}<span class="pill s-${esc(u.status)}">${esc(u.status === "done" ? "Painted" : stageLabel(u))}</span></span></div>
           ${box("painting", "Painting", `<div class="stage-list">${STAGES.map(([k, l]) => `<span class="${(u.stages || []).includes(k) ? "on" : ""}">${l}</span>`).join("")}</div>
-            <p class="prose" style="margin-top:10px">${u.painted} of ${plural(u.count, "model")} painted</p>`)}
+            <p class="prose" style="margin-top:10px">${u.painted} of ${plural(u.count, "model")} painted</p>
+            ${unitMins(u) || canWrite ? `<p class="pt-line"><span>Painting time <b>${hm(unitMins(u))}</b></span>${canWrite ? (t => `<button type="button" class="btn-sm${t && t.unitId === u.id ? " on" : ""}" data-timer="${esc(u.id)}">${t && t.unitId === u.id ? "Stop timer" : "Start timer"}</button>`)(getTimer()) : ""}</p>` : ""}`)}
           ${recipesOf(u).map(r => box("recipes", `Recipe · ${esc(r.name)}${r.area ? " · " + esc(r.area) : ""}`, stepsHtml(r), false)).join("")}
           ${sec("Rank", [["Rank", esc(tier.name)], ["Who", esc(tier.note)]], "rank")}
           ${u.head === "none" ? sec(esc(PROF.legends.head), [["Head", "None (vehicle or monster)"]], "head")
@@ -4966,6 +5208,8 @@ Redemptor Dreadnought (210 points)</pre>
       const ed = e.target.closest("[data-edit]"), dup = e.target.closest("[data-dup]"), del = e.target.closest("[data-del]");
       const sr = e.target.closest("[data-star]");
       if(sr){ toggleStar(sr.dataset.star); return; }
+      const tm = e.target.closest("[data-timer]");
+      if(tm){ const t = getTimer(), u = units.find(x => x.id === tm.dataset.timer); if(t && t.unitId === tm.dataset.timer) stopTimer(); else if(u) startTimer(army.id, u); return; }
       const bo = e.target.closest("[data-bought]");
       if(bo){ markBought(bo.dataset.bought); return; }
       const sh = e.target.closest("[data-show]");
@@ -5030,6 +5274,7 @@ Redemptor Dreadnought (210 points)</pre>
             $("b-share").classList.toggle("on", army.public);
             $("b-share").querySelector(".dot").classList.toggle("on", army.public);
             $("sh-msg").textContent = army.public ? "Sharing is on. Copy the link and send it to anyone." : "Sharing is off. The link no longer works.";
+            if(army.public) drawComments(army); else $("comments-box").innerHTML = "";
           } catch(err){
             e.target.checked = !on;
             $("sh-msg").textContent = "Couldn't change sharing: " + errText(err) + (/column|public/i.test(errText(err)) ? " Run supabase/setup.sql in Supabase to add sharing." : "");
@@ -5102,7 +5347,7 @@ Redemptor Dreadnought (210 points)</pre>
     // One ledger, with its photos and the army's lists and battle reports from War Ledger.
     $("b-export").addEventListener("click", async () => {
       if(canWrite) await downloadArmyBackup(army, units);
-      else downloadJSON({app: "livery-ledger", kind: "army", version: 6, exported: new Date().toISOString(), army: {faction: army.faction, name: army.name, scheme: army.scheme}, units: units.map(backupUnit)}, `livery-${slug(army.name)}.json`);
+      else downloadJSON({app: "livery-ledger", kind: "army", version: 6, exported: new Date().toISOString(), army: {faction: army.faction, name: army.name, scheme: army.scheme}, units: await backupUnits(units)}, `livery-${slug(army.name)}.json`);
       msg("Backup downloaded.");
     });
     if(canWrite){
@@ -5136,7 +5381,17 @@ Redemptor Dreadnought (210 points)</pre>
     const onKeyMore = e => { if(e.key === "Escape" && !$("more-menu").hidden){ moreOpen(false); $("b-more").focus(); } };
     document.addEventListener("click", onDocMore); document.addEventListener("keydown", onKeyMore);
     view.guard = () => okToLeave();
+    // On phones the floating Add unit button waits until the page's own buttons have scrolled away.
+    let fabIo = null;
+    if(canWrite && "IntersectionObserver" in window){
+      const seen = new Set();
+      fabIo = new IntersectionObserver(es => { es.forEach(e => e.isIntersecting ? seen.add(e.target) : seen.delete(e.target)); $("b-fab").classList.toggle("fab-off", seen.size > 0); });
+      [app.querySelector(".toolbar .tools"), $("b-add")].filter(Boolean).forEach(el => fabIo.observe(el));
+    }
+    const before = view.cleanup;
     view.cleanup = () => {
+      if(before) before();
+      if(fabIo) fabIo.disconnect();
       document.removeEventListener("keydown", onBatchKey); document.body.classList.remove("selecting");
       document.removeEventListener("click", onDocMore); document.removeEventListener("keydown", onKeyMore); window.removeEventListener("resize", keyFade);
       window.removeEventListener("beforeunload", onBeforeUnload); $("detail").removeEventListener("click", onDetailClick); $("detail").removeEventListener("change", onDetailChange); clearPending();
@@ -5487,7 +5742,7 @@ Redemptor Dreadnought (210 points)</pre>
         b.disabled = true;
         try {
           if(b.hasAttribute("data-vlike")){ const on = !st.liked.has(army.id); await store.setLike(army.id, on); if(on){ st.liked.add(army.id); st.likes[army.id] = (st.likes[army.id] || 0) + 1; } else { st.liked.delete(army.id); st.likes[army.id] = Math.max(0, (st.likes[army.id] || 1) - 1); } }
-          else { const on = !st.following.has(army.owner); await store.setFollow(army.owner, on); if(on) st.following.add(army.owner); else st.following.delete(army.owner); }
+          else { const on = !st.following.has(army.owner); await store.setFollow(army.owner, on); friendsCache = null; if(on) st.following.add(army.owner); else st.following.delete(army.owner); }
           draw();
         } catch(err){ b.disabled = false; msg("Couldn't save that: " + errText(err), true); }
       });
@@ -5502,6 +5757,7 @@ Redemptor Dreadnought (210 points)</pre>
     newUnit(false);
     loadLibrary();
     if($("vo-social")) viewerSocial();
+    drawComments(army);
     // Came from the roster: show that unit, and tidy the address back to the ledger's.
     if(openUnit){
       history.replaceState(null, "", "#/army/" + army.id); lastHash = location.hash;
@@ -5626,13 +5882,16 @@ Redemptor Dreadnought (210 points)</pre>
   })();
   store = S.create();
   window.addEventListener("hashchange", route);
+  drawTimer();
+  // A timer started or stopped in another tab.
+  window.addEventListener("storage", e => { if(e.key === TIMER_KEY){ drawTimer(); window.dispatchEvent(new Event("timer-change")); } });
   if(store.kind === "supabase"){
     let first = true;
     store.client.auth.onAuthStateChange((event, session) => {
       const was = store.session;
       const changed = first || (!!session) !== (!!was) || (session && was && session.user.id !== was.user.id);
       const wasFirst = first;
-      if(changed) shameCache = null;   // another person's pile
+      if(changed){ shameCache = null; friendsCache = null; }   // another person's pile and friends
       store.setSession(session); first = false;
       loadSettings(); setTop();
       if(changed) setTimeout(route, 0);
@@ -5642,7 +5901,7 @@ Redemptor Dreadnought (210 points)</pre>
         /expired|invalid/i.test(linkErr.code + linkErr.text) ? "That link has expired or was already used. Enter your email and we'll send a new one." : linkErr.text), 60);
     });
   } else {
-    loadSettings();
-    route();
+    // Photos saved in this browser load from their own store first.
+    Promise.resolve(store.ready).then(() => { loadSettings(); route(); });
   }
 })();

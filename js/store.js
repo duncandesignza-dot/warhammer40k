@@ -17,11 +17,19 @@
     return "unbuilt";
   }
   const MAX_PHOTOS = 12;
+  // A photo kept in this browser's photo store (IndexedDB) rather than inside the saved data.
+  const IDB_REF = /^idb:[\w-]{1,60}$/;
   const today = () => { const t = new Date(); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`; };
   function cleanLog(list){
     const m = new Map();
     (Array.isArray(list) ? list : []).forEach(e => { if(e && /^\d{4}-\d\d-\d\d$/.test(e.d)){ const n = Math.max(0, Math.min(999, parseInt(e.n, 10) || 0)); if(n) m.set(e.d, Math.min(999, (m.get(e.d) || 0) + n)); } });
     return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0])).slice(-240).map(([d, n]) => ({d, n}));
+  }
+  // Painting time: minutes per day, e.g. [{d: "2026-09-24", m: 95}].
+  function cleanTlog(list){
+    const m = new Map();
+    (Array.isArray(list) ? list : []).forEach(e => { if(e && /^\d{4}-\d\d-\d\d$/.test(e.d)){ const n = Math.max(0, Math.min(1440, parseInt(e.m, 10) || 0)); if(n) m.set(e.d, Math.min(1440, (m.get(e.d) || 0) + n)); } });
+    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0])).slice(-400).map(([d, n]) => ({d, m: n}));
   }
   // An existing unit that gains painted models logs them today; taking some back (a mistake or an undo) removes them from today.
   function nextLog(prev, u){
@@ -86,8 +94,9 @@
     o.fav = r.fav === true || r.fav === "true";
     // Painting history: models painted per day, e.g. [{d: "2026-09-24", n: 3}].
     o.log = cleanLog(r.log);
+    o.tlog = cleanTlog(r.tlog);
     // Extra photos (the gallery): storage paths online, small data URLs when saving in this browser.
-    o.photos = (Array.isArray(r.photos) ? r.photos : []).filter(x => typeof x === "string" && (/^data:image\/(jpeg|png|webp);base64,/.test(x) || /^[\w-]+\/[\w-]+\/[\w-]+\.jpg$/.test(x))).slice(0, MAX_PHOTOS);
+    o.photos = (Array.isArray(r.photos) ? r.photos : []).filter(x => typeof x === "string" && (/^data:image\/(jpeg|png|webp);base64,/.test(x) || /^[\w-]+\/[\w-]+\/[\w-]+\.jpg$/.test(x) || IDB_REF.test(x))).slice(0, MAX_PHOTOS);
     // War Ledger: models built (null = follow the Built stage), a battle-ready override (null = follow
     // the Battle Ready setting), and where and when the unit was bought.
     const cnt = (v, max) => v === null || v === undefined || v === "" ? null : Math.min(max, Math.max(0, parseInt(v, 10) || 0));
@@ -207,7 +216,12 @@
       result: ["w", "l", "d"].includes(g.result) ? g.result : "w", us: score(g.us), them: score(g.them),
       mvp: String(g.mvp || "").slice(0, 60), notes: String(g.notes || "").slice(0, 1000),
       // Crusade: the units (list entry keys) that took part, and the one Marked for Greatness.
-      took: [...new Set((Array.isArray(g.took) ? g.took : []).map(key).filter(Boolean))].slice(0, 200), mfg: key(g.mfg)};
+      took: [...new Set((Array.isArray(g.took) ? g.took : []).map(key).filter(Boolean))].slice(0, 200), mfg: key(g.mfg),
+      // A friend tagged as the opponent (online only): their account id and name. by* says who logged it,
+      // so the friend can see it; mirror is the friend's battle this one was added from.
+      oppUser: /^[\w-]{1,60}$/.test(g.oppUser || "") ? g.oppUser : "", oppUserName: String(g.oppUserName || "").slice(0, 40),
+      byName: String(g.byName || "").slice(0, 40), byArmy: String(g.byArmy || "").slice(0, 80), byFaction: String(g.byFaction || "").slice(0, 60),
+      mirror: /^[\w-]{1,60}$/.test(g.mirror || "") ? g.mirror : ""};
   }
   function cleanArmy(a){
     return {faction: String(a.faction || "").slice(0, 60), name: String(a.name || "My army").slice(0, 80), scheme: cleanScheme(a.scheme), public: a.public === true};
@@ -239,6 +253,41 @@
   /* ============================================================
      Browser storage
      ============================================================ */
+  /* Photos saved in this browser live in IndexedDB, which has far more room than localStorage (about 5 MB,
+     shared with everything else). The saved data only keeps "idb:<id>". If IndexedDB can't be used,
+     photos stay inside the saved data as before. */
+  function PhotoDB(){
+    let db = null;
+    const urls = new Map(), refs = new Map();   // id -> object URL, object URL -> "idb:<id>"
+    const tx = (mode, fn) => new Promise((res, rej) => { const t = db.transaction("p", mode), r = fn(t.objectStore("p")); t.oncomplete = () => res(r && r.result); t.onerror = t.onabort = () => rej(t.error || new Error("Photo store failed")); });
+    const show = (id, blob) => { const u = URL.createObjectURL(blob); urls.set(id, u); refs.set(u, "idb:" + id); return u; };
+    return {
+      get ok(){ return !!db; },
+      async open(){
+        if(!window.indexedDB) return false;
+        try {
+          db = await new Promise((res, rej) => { const r = indexedDB.open("livery-photos", 1); r.onupgradeneeded = () => r.result.createObjectStore("p"); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+          await new Promise((res, rej) => { const t = db.transaction("p", "readonly"), c = t.objectStore("p").openCursor(); c.onsuccess = () => { const k = c.result; if(!k) return; show(String(k.key), k.value); k.continue(); }; t.oncomplete = res; t.onerror = () => rej(t.error); });
+          return true;
+        } catch(e){ console.warn("Photo store unavailable; keeping photos in saved data", e); db = null; return false; }
+      },
+      async put(blob){
+        const id = newId();
+        try { await tx("readwrite", st => st.put(blob, id)); }
+        catch(e){ throw Object.assign(new Error("This browser is out of space for photos. Remove some photos or connect Supabase."), {code: "quota"}); }
+        show(id, blob); return "idb:" + id;
+      },
+      remove(ref){
+        if(!IDB_REF.test(ref || "") || !db) return;
+        const id = ref.slice(4), u = urls.get(id);
+        if(u){ URL.revokeObjectURL(u); urls.delete(id); refs.delete(u); }
+        tx("readwrite", st => st.delete(id)).catch(() => {});
+      },
+      clear(){ if(db) tx("readwrite", st => st.clear()).catch(() => {}); urls.forEach(u => URL.revokeObjectURL(u)); urls.clear(); refs.clear(); },
+      url: ref => IDB_REF.test(ref || "") ? urls.get(ref.slice(4)) || "" : ref || "",
+      ref: v => refs.get(v) || v
+    };
+  }
   function LocalStore(){
     const KEY = "livery-ledger-v3";
     let ok = true;
@@ -275,6 +324,24 @@
     // saved on screen that would be gone after a reload. When storage couldn't be read at all,
     // changes are kept for this visit only (the banner says so) and never written over it.
     let last = "";
+    // Photos: blobs in IndexedDB (see PhotoDB). Units handed to the app carry a showable address for the main
+    // photo; extra photos stay as "idb:<id>" and are shown through photoUrl().
+    const pics = PhotoDB();
+    const out = u => ({...u, ...cleanUnit(u), image: pics.url(u.image)});
+    const unitPics = u => [u.image, ...(u.photos || [])].map(pics.ref).filter(p => IDB_REF.test(p || ""));
+    const keepPhoto = async blob => pics.ok ? pics.put(blob) : blobToDataURL(blob);
+    // Photos saved inside the data by older versions move to the photo store, freeing localStorage.
+    async function movePhotos(){
+      let moved = 0;
+      for(const u of db.units){
+        const inline = v => typeof v === "string" && /^data:image\//.test(v);
+        try {
+          if(inline(u.image)){ u.image = await pics.put(await dataURLToBlob(u.image)); moved++; }
+          if((u.photos || []).some(inline)){ u.photos = await Promise.all(u.photos.map(async p => inline(p) ? (moved++, pics.put(await dataURLToBlob(p))) : p)); }
+        } catch(e){ console.warn("Couldn't move a photo to the photo store", e); return; }
+      }
+      if(moved) try { save(); } catch(e){ console.warn("Couldn't save after moving photos", e); }
+    }
     function save(){
       if(!ok) return;
       const next = JSON.stringify(db);
@@ -282,8 +349,10 @@
       catch(e){ if(last) db = JSON.parse(last); throw Object.assign(new Error("This browser is out of storage space. Remove some photos or connect Supabase."), {code:"quota"}); }
     }
     load(); last = JSON.stringify(db);
+    const ready = pics.open().then(on => on && movePhotos()).catch(e => console.warn(e));
 
     return {
+      ready,
       kind: "local", canWrite: true, session: null, canShare: false,
       note(){ return ok ? {cls:"warn", text:"Saved in this browser only. Add your Supabase details in js/config.js to save online."}
                         : {cls:"warn", text:"This browser is blocking storage, so changes will be lost when you close the page."}; },
@@ -308,7 +377,11 @@
         const row = {...(prev || {createdAt: now}), ...cleanArmy(a), id: prev ? prev.id : newId(), updatedAt: now};
         db.armies = db.armies.filter(x => x.id !== row.id).concat(row); save(); return {...row};
       },
-      async removeArmy(a){ db.armies = db.armies.filter(x => x.id !== a.id); db.units = db.units.filter(u => u.armyId !== a.id); db.lists = db.lists.filter(l => l.armyId !== a.id); db.games = db.games.filter(g => g.armyId !== a.id); save(); },
+      async removeArmy(a){
+        const gone = db.units.filter(u => u.armyId === a.id);
+        db.armies = db.armies.filter(x => x.id !== a.id); db.units = db.units.filter(u => u.armyId !== a.id); db.lists = db.lists.filter(l => l.armyId !== a.id); db.games = db.games.filter(g => g.armyId !== a.id); save();
+        gone.forEach(u => unitPics(u).forEach(pics.remove));
+      },
       // War Ledger: army lists and battles.
       async listLists(){ return db.lists.map(l => ({...l, ...cleanList(l)})); },
       async saveList(l, id){
@@ -325,32 +398,51 @@
       },
       async removeGame(id){ db.games = db.games.filter(x => x.id !== id); save(); },
       async setArmyRecord(army, rec){ const a = db.armies.find(x => x.id === army.id); if(a){ a.scheme = cleanScheme({...a.scheme, rec}); save(); } },
-      async listUnits(armyId){ return db.units.filter(u => u.armyId === armyId).map(u => ({...u, ...cleanUnit(u)})); },
-      async listAllUnits(){ return db.units.map(u => ({...u, ...cleanUnit(u)})); },
+      async listUnits(armyId){ return db.units.filter(u => u.armyId === armyId).map(out); },
+      async listAllUnits(){ return db.units.map(out); },
       async listShared(){ return {armies: [], sum: {}}; },
       async communityState(){ return null; },
       async saveUnit(armyId, u, id, photo, remove){
-        const prev = id ? db.units.find(x => x.id === id) : null;
-        let image = prev ? prev.image || "" : "";
-        if(photo) image = await blobToDataURL(await resizeImage(photo.file, 1000, .8));
+        const prev = id ? db.units.find(x => x.id === id) : null, was = prev ? prev.image || "" : "";
+        let image = was;
+        if(photo) image = await keepPhoto(await resizeImage(photo.file, 1000, .8));
         else if(remove) image = "";
         const row = {...cleanUnit({...u, log: nextLog(prev, u)}), id: prev ? prev.id : newId(), armyId, image, updatedAt: new Date().toISOString()};
-        db.units = db.units.filter(x => x.id !== row.id).concat(row); save();
-        return {...row};
+        db.units = db.units.filter(x => x.id !== row.id).concat(row);
+        try { save(); } catch(e){ if(image !== was) pics.remove(image); throw e; }
+        if(image !== was) pics.remove(was);
+        return out(row);
       },
-      async removeUnit(u){ db.units = db.units.filter(x => x.id !== u.id); save(); },
-      photoUrl: p => p,
+      // keepImage: the photos stay until purgeImage, so Undo can bring the unit back whole.
+      async removeUnit(u, keepImage){
+        const prev = db.units.find(x => x.id === u.id);
+        db.units = db.units.filter(x => x.id !== u.id); save();
+        if(prev && !keepImage) unitPics(prev).forEach(pics.remove);
+      },
+      photoUrl: p => pics.url(p),
+      // For backups: a photo as a data URL, so the file still has it after this visit.
+      async inlinePhoto(src){ const v = pics.url(src); return /^blob:/.test(v) ? blobToDataURL(await (await fetch(v)).blob()) : v; },
       // "Delete account" when saving in this browser: clear everything this site saved here.
       async deleteAccount(){
         ["livery-ledger-v3", "livery-paints-v1", "livery-recipes-v1", "ll-goal", "ll-settings", "ll-shame", "ll-list-prefs", "ll-detail-open", "ll-roster-group", "ll-coll-group", "ll-mode"].forEach(k => { try { localStorage.removeItem(k); } catch(e){} });
         db = {armies: [], units: [], lists: [], games: []};
+        pics.clear();
       },
-      async addUnitPhoto(armyId, u, file){ const url = await blobToDataURL(await resizeImage(file, 900, .78)); return this.saveUnit(armyId, {...u, photos: [...(u.photos || []), url]}, u.id, null, false, u); },
-      async removeUnitPhoto(armyId, u, p){ return this.saveUnit(armyId, {...u, photos: (u.photos || []).filter(x => x !== p)}, u.id, null, false, u); },
-      async restoreUnit(armyId, u){ db.units = db.units.filter(x => x.id !== u.id).concat({...u, armyId}); save(); return {...u, armyId}; },
-      purgeImage(){},
+      async addUnitPhoto(armyId, u, file){
+        const ref = await keepPhoto(await resizeImage(file, 900, .78));
+        try { return await this.saveUnit(armyId, {...u, photos: [...(u.photos || []), ref]}, u.id, null, false, u); }
+        catch(e){ pics.remove(ref); throw e; }
+      },
+      async removeUnitPhoto(armyId, u, p){ const row = await this.saveUnit(armyId, {...u, photos: (u.photos || []).filter(x => x !== p)}, u.id, null, false, u); pics.remove(p); return row; },
+      async restoreUnit(armyId, u){ const row = {...u, armyId, image: pics.ref(u.image || "")}; db.units = db.units.filter(x => x.id !== u.id).concat(row); save(); return out(row); },
+      purgeImage(u){ if(!db.units.some(x => x.id === u.id)) unitPics(u).forEach(pics.remove); },
       async importUnits(armyId, rows){
-        rows.forEach(r => db.units.push({...cleanUnit(r), id: newId(), armyId, image: typeof r.image === "string" && /^data:image\//.test(r.image) ? r.image : "", updatedAt: new Date().toISOString()}));
+        const now = new Date().toISOString();
+        for(const r of rows){
+          let image = "";
+          if(typeof r.image === "string" && /^data:image\//.test(r.image)) image = pics.ok ? await pics.put(await dataURLToBlob(r.image)) : r.image;
+          db.units.push({...cleanUnit(r), id: newId(), armyId, image, updatedAt: now});
+        }
         save(); return rows.length;
       }
     };
@@ -389,6 +481,9 @@
     const warOk = ({data, error}) => { if(error) throw warErr(error); return data; };
     const toList = r => ({...cleanList({...(r.data || {}), armyId: r.army_id}), id: r.id, createdAt: r.created_at, updatedAt: r.updated_at});
     const toGame = r => ({...cleanGame({...(r.data || {}), armyId: r.army_id}), id: r.id, createdAt: r.created_at, updatedAt: r.updated_at});
+    // by_pic is only shown when it's a picture from this site's own storage.
+    const toComment = r => ({id: r.id, armyId: r.army_id, owner: r.owner, body: String(r.body || ""), createdAt: r.created_at,
+      byName: String(r.by_name || "").slice(0, 40), byPic: typeof r.by_pic === "string" && PIC_BASE && r.by_pic.startsWith(PIC_BASE) && !/["'<>\s]/.test(r.by_pic) ? r.by_pic : ""});
     const tableMissing = e => /PGRST205|42P01/.test(e.code || "") || /could not find the table|does not exist/i.test(e.message || "");
     let paintsTable = null;   // null: not checked yet; false: owned_paints isn't set up, so paints stay on the account
     const myName = () => String(((session && session.user.user_metadata) || {}).display_name || "").trim();
@@ -510,7 +605,38 @@
       async listGames(){ if(!session) return []; return (warOk(await sb.from(G).select("*").eq("owner", session.user.id).order("created_at", {ascending: false})) || []).map(toGame); },
       async saveGame(g, id){
         need(); const c = cleanGame(g), row = {army_id: c.armyId, data: c, updated_at: new Date().toISOString()};
-        return toGame(warOk(id ? await sb.from(G).update(row).eq("id", id).select().single() : await sb.from(G).insert(row).select().single()));
+        // The friend tagged as opponent can read the battle; the column comes with supabase/features.sql.
+        if(c.oppUser) row.opp_user = c.oppUser; else if(id) row.opp_user = null;
+        const res = id ? await sb.from(G).update(row).eq("id", id).select().single() : await sb.from(G).insert(row).select().single();
+        if(res.error && /opp_user/.test(res.error.message || "")) throw Object.assign(new Error("Tagging a friend needs a quick database update. Run supabase/features.sql in Supabase."), {code: "setup"});
+        return toGame(warOk(res));
+      },
+      // Battles friends logged against you. null when that part of the database isn't set up.
+      async listTagged(){
+        if(!session) return [];
+        const {data, error} = await sb.from(G).select("*").eq("opp_user", session.user.id);
+        if(error){ if(tableMissing(error) || /opp_user/.test(error.message || "")) return null; throw error; }
+        return (data || []).filter(r => r.owner !== session.user.id).map(r => ({...toGame(r), owner: r.owner}));
+      },
+      /* Comments on shared armies. null means the comments table isn't set up yet (supabase/features.sql). */
+      async listComments(armyId){
+        const {data, error} = await sb.from("comments").select("*").eq("army_id", armyId).order("created_at", {ascending: true});
+        if(error){ if(tableMissing(error)) return null; throw error; }
+        return (data || []).map(toComment);
+      },
+      async addComment(armyId, body){
+        need();
+        const text = String(body || "").trim().slice(0, 1000);
+        if(!text) throw new Error("Write something first.");
+        return toComment(mustOk(await sb.from("comments").insert({army_id: armyId, body: text, by_name: myName().slice(0, 40), by_pic: myPic().slice(0, 600)}).select().single()));
+      },
+      async removeComment(id){ need(); mustOk(await sb.from("comments").delete().eq("id", id)); },
+      // One painter's shared armies, for their profile page.
+      async listSharedBy(ownerId){
+        const armies = (mustOk(await sb.from(A).select("*").eq("owner", ownerId).eq("public", true).order("updated_at", {ascending: false})) || []).map(toArmy);
+        const ids = armies.map(a => a.id);
+        const sum = ids.length ? totals(mustOk(await sb.from(U).select(SUM_COLS).in("army_id", ids)) || []) : {};
+        return {armies, sum};
       },
       async removeGame(id){ need(); warOk(await sb.from(G).delete().eq("id", id)); },
       // The army's win/loss record lives on the army, so Shared armies can show it (without moving it up that list).
