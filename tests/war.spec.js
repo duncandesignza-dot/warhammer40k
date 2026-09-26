@@ -261,3 +261,34 @@ test("an army's current force can be grouped and sorted, and the choice is remem
   await expect(page.locator("#wa-g")).toHaveValue("none");
   await expect(page.locator("#wa-s")).toHaveValue("points");
 });
+
+test("select units on an army page: battle ready, bought, star, add to a list, move and delete", async ({page}) => {
+  await seed(page, `db.units.push({id: "u9", armyId: "a1", name: "Gladiator Lancer", datasheet: "Gladiator Lancer", role: "Vehicle", count: 1, points: 160, painted: 0, stages: [], own: "planned"});
+    db.lists.push({id: "l2", armyId: "a1", name: "Second list", limit: 1000, units: [], createdAt: "2026-09-02", updatedAt: "2026-09-02"});`);
+  await open(page, "#/war/army/a1");
+  await page.click("[data-select]");
+  const pick = name => page.getByRole("checkbox", {name: `Select ${name}`}).check();
+  const unit = async id => (await saved(page)).units.find(u => u.id === id);
+  await pick("Terminator Squad"); await pick("Gladiator Lancer");
+  await expect(page.locator("#wa-count")).toHaveText("2 selected");
+  await page.click('[data-bb="ready"]');
+  await expect(page.locator(".toast")).toContainText("1 unit marked battle ready.");
+  expect((await unit("u3")).ready).toBe(5);
+  await page.click('[data-bb="bought"]');
+  await expect.poll(async () => (await unit("u9")).own).toBe("owned");
+  await page.click('[data-bb="star"]');
+  await expect.poll(async () => (await unit("u3")).fav && (await unit("u9")).fav).toBe(true);
+  await page.selectOption("#wa-list", "l2");
+  await expect(page.locator(".toast")).toContainText("Added 2 units to Second list.");
+  expect((await saved(page)).lists.find(l => l.id === "l2").units.map(e => e.u)).toEqual(["u3", "u9"]);
+  await page.selectOption("#wa-move", "__pool");
+  await expect(page.locator(".toast")).toContainText("Moved 2 units");
+  const pool = (await saved(page)).armies.find(a => a.scheme.pool);
+  expect((await unit("u3")).armyId).toBe(pool.id);
+  await pick("Captain");
+  await page.click('[data-bb="del"]'); await page.click('[data-bb="del"]');
+  await expect(page.locator(".toast")).toContainText("Deleted 1 unit.");
+  expect(await unit("u1")).toBeUndefined();
+  await page.click('[data-bb="done"]');
+  await expect(page.locator("#wa-bar")).toHaveCount(0);
+});

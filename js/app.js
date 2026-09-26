@@ -1089,17 +1089,82 @@
       return;
     }
     view.name = "war-army"; document.title = `${army.name} · War Ledger`;
-    let D = await warData(false), filter = "all", by = "role", sortBy = "name";
+    let D = await warData(false), filter = "all", by = "role", sortBy = "name", selecting = false;
+    const picked = new Set();
     try { by = localStorage.getItem("ll-army-group") || by; sortBy = localStorage.getItem("ll-army-sort") || sortBy; } catch(e){}
     if(!ARMY_GROUPS.some(g => g[0] === by)) by = "role";
     if(!ARMY_SORTS.some(g => g[0] === sortBy)) sortBy = "name";
     async function reload(){ army = await store.getArmy(id) || army; D = await warData(false); draw(); }
+    /* Select units: tick rows, then act on them all at once. */
+    const pickedUnits = () => D.byArmy(id).filter(u => picked.has(u.id));
+    function batchBar(){
+      const others = D.armies.filter(a => a.id !== id && a.faction === army.faction);
+      const lists = D.lists.filter(l => { const a = D.armies.find(x => x.id === l.armyId); return a && a.faction === army.faction; });
+      return `<div class="batch-bar" id="wa-bar" role="toolbar" aria-label="Update the selected units">
+        <span class="bb-count" id="wa-count" aria-live="polite">0 selected</span>
+        <button type="button" class="btn-sm" data-bb="all">Select all</button>
+        <span class="bb-sep" aria-hidden="true"></span>
+        <button type="button" class="btn-sm" data-bb="ready">Battle ready</button>
+        <button type="button" class="btn-sm" data-bb="bought">I bought these</button>
+        <button type="button" class="btn-sm" data-bb="star">${STAR(true).replace('width="18" height="18"', 'width="14" height="14"')}Star</button>
+        <button type="button" class="btn-sm" data-bb="unstar">Unstar</button>
+        <label class="bb-stage"><span>Move to</span><select id="wa-move"><option value="">Choose…</option>${others.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join("")}<option value="__pool">Not in an army</option></select></label>
+        ${lists.length && !D.warMissing ? `<label class="bb-stage"><span>Add to list</span><select id="wa-list"><option value="">Choose…</option>${lists.map(l => `<option value="${esc(l.id)}">${esc(l.name)}${isCrusade(l) ? " (Crusade)" : ""}</option>`).join("")}</select></label>` : ""}
+        <button type="button" class="btn-sm danger" data-bb="del">Delete</button>
+        <button type="button" class="btn-sm primary" data-bb="done">Done</button>
+      </div>`;
+    }
+    function updateBar(){
+      const c = $("wa-count"); if(!c) return;
+      const us = pickedUnits(), n = us.length;
+      c.textContent = `${n} selected`;
+      app.querySelectorAll("#wa-bar [data-bb]").forEach(b => { if(!["all", "done"].includes(b.dataset.bb)) b.disabled = !n; });
+      const bought = app.querySelector('[data-bb="bought"]'); if(bought) bought.disabled = !us.some(u => u.own === "planned");
+      ["wa-move", "wa-list"].forEach(k => { if($(k)) $(k).disabled = !n; });
+      const del = app.querySelector('[data-bb="del"]'); if(del && del.dataset.armed !== "1") del.textContent = "Delete";
+    }
+    function setSelecting(on){ selecting = on; picked.clear(); draw(); if(!on) document.body.classList.remove("selecting"); }
+    // Run one change over every selected unit, then reload and say how it went.
+    async function batch(change, done){
+      const us = pickedUnits(); if(!us.length) return;
+      let ok = 0;
+      for(const u of us){ try { if(await change(u) !== false) ok++; } catch(err){ console.error(err); } }
+      await reload(); updateBar();
+      flash(ok === us.length ? done(ok) : `${done(ok)} ${us.length - ok} couldn't be changed.`);
+    }
+    const saveU = (u, changes) => store.saveUnit(u.armyId, mergeUnit(u, changes), u.id, null, false, u);
+    async function barAction(k){
+      if(k === "all"){ D.byArmy(id).forEach(u => picked.add(u.id)); draw(); return; }
+      if(k === "done"){ setSelecting(false); return; }
+      if(k === "ready") return batch(u => u.own === "planned" ? false : saveU(u, {ready: u.count}), n => `${plural(n, "unit")} marked battle ready.`);
+      if(k === "bought") return batch(u => u.own !== "planned" ? false : saveU(u, {own: "owned"}), n => `${plural(n, "unit")} now in your collection.`);
+      if(k === "star" || k === "unstar") return batch(u => saveU(u, {fav: k === "star"}), n => `${plural(n, "unit")} ${k === "star" ? "starred" : "unstarred"}.`);
+      if(k === "del"){
+        const b = app.querySelector('[data-bb="del"]');
+        if(b.dataset.armed !== "1"){ b.dataset.armed = "1"; b.textContent = `Press again to delete ${picked.size}`; setTimeout(() => { if(b.isConnected){ b.dataset.armed = ""; updateBar(); } }, 4000); return; }
+        const n = picked.size;
+        await batch(async u => { await store.removeUnit(u); picked.delete(u.id); }, m => `Deleted ${plural(m, "unit")}.`);
+        if(!n) return;
+      }
+    }
+    async function moveTo(v){
+      let target = v, name = (D.armies.find(a => a.id === v) || {}).name || "";
+      if(v === "__pool"){ try { target = (await poolFor(army.faction, D.pools)).id; name = "your collection (not in an army)"; } catch(err){ flash("Couldn't move: " + errText(err)); return; } }
+      await batch(async u => { await store.saveUnit(target, u, u.id, null, false, u); picked.delete(u.id); }, n => `Moved ${plural(n, "unit")} to ${name}.`);
+    }
+    async function addToList(lid){
+      const l = D.lists.find(x => x.id === lid); if(!l) return;
+      const have = new Set(l.units.filter(e => e.u).map(e => e.u)), add = pickedUnits().filter(u => !have.has(u.id));
+      if(!add.length){ flash(`They're all in ${l.name} already.`); return; }
+      try { await store.saveList({...l, units: l.units.concat(add.map(u => ({u: u.id, k: entryKey()})))}, l.id); await reload(); flash(`Added ${plural(add.length, "unit")} to ${l.name}.`); }
+      catch(err){ flash("Couldn't add them: " + errText(err)); }
+    }
     // The current force as one table, or a table per group, each sorted the way chosen.
     function forceGroups(list, t){
       const r = u => readiness(u), sorted = list.slice().sort(ARMY_SORT_FN[sortBy]);
       const table = (us, total) => `<div class="wt-scroll"><table class="wtable wt-cards" role="table">
             <thead><tr><th scope="col">Unit</th><th scope="col">Role</th><th scope="col" class="n">Owned</th><th scope="col" class="n">Built</th><th scope="col" class="n">Painted</th><th scope="col" class="n">Ready</th><th scope="col" class="n">Points</th></tr></thead>
-            <tbody>${us.map(u => `<tr><th scope="row"><span class="wt-unit">${warStar(u)}<span><button type="button" class="linkish" data-unit="${esc(u.id)}">${esc(u.name)}</button>${u.own === "planned" ? PLANNED_TAG : ""}${u.datasheet && u.datasheet !== u.name ? `<small>${esc(u.datasheet)}</small>` : ""}</span></span></th>
+            <tbody>${us.map(u => `<tr${selecting && picked.has(u.id) ? ` class="picked"` : ""}><th scope="row"><span class="wt-unit">${selecting ? `<input type="checkbox" class="wa-pick" data-pick="${esc(u.id)}"${picked.has(u.id) ? " checked" : ""} aria-label="Select ${esc(u.name)}">` : warStar(u)}<span><button type="button" class="linkish" data-unit="${esc(u.id)}">${esc(u.name)}</button>${u.own === "planned" ? PLANNED_TAG : ""}${u.datasheet && u.datasheet !== u.name ? `<small>${esc(u.datasheet)}</small>` : ""}</span></span></th>
               <td class="wt-sub">${esc(u.role || "—")}</td>${statCells(r(u))}</tr>`).join("")}</tbody>
             ${total ? `<tfoot><tr><th scope="row">Total</th><td class="wt-sub"></td><td class="n" data-label="Models">${total.models}</td><td class="n" data-label="Built">${total.built}</td><td class="n" data-label="Painted">${total.painted}</td><td class="n" data-label="Ready">${total.ready}</td><td class="n" data-label="Points">${num(total.points)}</td></tr></tfoot>` : ""}
           </table></div>`;
@@ -1138,6 +1203,7 @@
         <section class="war-sec" aria-labelledby="cf-h">
           <h2 id="cf-h" class="sr-only">Current force</h2>
           <div class="list-tools tools-fill wa-tools">
+            <button type="button" class="btn-sm b-select" data-select aria-pressed="${selecting}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="m8 12 3 3 5-6"/></svg>Select units</button>
             <div class="seg" role="group" aria-label="Show"><button type="button" data-filter="all" aria-pressed="${filter === "all"}">All units</button><button type="button" data-filter="notready" aria-pressed="${filter === "notready"}">Not battle ready</button><button type="button" data-filter="fav" aria-pressed="${filter === "fav"}">${STAR(true)} Starred</button></div>
             <label class="inline">Group by<select id="wa-g">${ARMY_GROUPS.map(([k, l]) => `<option value="${k}"${k === by ? " selected" : ""}>${l}</option>`).join("")}</select></label>
             <label class="inline">Sort by<select id="wa-s">${ARMY_SORTS.map(([k, l]) => `<option value="${k}"${k === sortBy ? " selected" : ""}>${l}</option>`).join("")}</select></label>
@@ -1151,6 +1217,9 @@
         <section class="war-sec danger-zone" aria-labelledby="dz-h"><h2 id="dz-h" class="sr-only">Manage army</h2>
           <p class="hint dz-note">Deleting removes this army from War Ledger and Livery Ledger: its ${plural(units.length, "unit")} and their photos, colours and recipes${ls.length ? `, ${plural(ls.length, "army list")}` : ""}${gs.length ? `, ${plural(gs.length, "battle report")}` : ""}. It can't be undone.</p>
           <div class="row-actions"><button type="button" class="btn-sm" data-rename>Rename army</button><button type="button" class="btn-sm danger" id="w-delarmy">Delete army</button><span class="msg" id="w-amsg" role="status"></span></div></section>`;
+      if(selecting) app.insertAdjacentHTML("beforeend", batchBar());
+      document.body.classList.toggle("selecting", selecting);
+      updateBar();
       tableRoles(app);
       $("w-delarmy").addEventListener("click", () => confirmDeleteArmy(army, units, () => { location.hash = "#/war/armies"; }));
       const keep = (k, v) => { try { localStorage.setItem(k, v); } catch(err){} };
@@ -1158,8 +1227,22 @@
       if($("wa-s")) $("wa-s").addEventListener("change", e => { sortBy = e.target.value; keep("ll-army-sort", sortBy); draw(); $("wa-s").focus(); });
     }
     draw();
+    // The move and add-to-list boxes act as soon as something is chosen.
+    const onPickChange = e => {
+      if(e.target.id === "wa-move" && e.target.value) moveTo(e.target.value);
+      else if(e.target.id === "wa-list" && e.target.value) addToList(e.target.value);
+    };
+    app.addEventListener("change", onPickChange);
+    const onKey = e => { if(e.key === "Escape" && selecting && !document.querySelector("dialog[open]")) setSelecting(false); };
+    document.addEventListener("keydown", onKey);
+    const before = view.cleanup;
+    view.cleanup = () => { app.removeEventListener("change", onPickChange); document.removeEventListener("keydown", onKey); document.body.classList.remove("selecting"); if(before) before(); };
     onApp(async e => {
+      const pk = e.target.closest("[data-pick]");
+      if(pk){ if(pk.checked) picked.add(pk.dataset.pick); else picked.delete(pk.dataset.pick); pk.closest("tr").classList.toggle("picked", pk.checked); updateBar(); return; }
       const b = e.target.closest("button"); if(!b) return;
+      if(b.matches("[data-select]")){ setSelecting(!selecting); return; }
+      if(b.dataset.bb){ barAction(b.dataset.bb); return; }
       if(b.matches("[data-add-unit]")) openUnit(army, null, reload, {armies: D.armies, pools: D.pools});
       else if(b.matches("[data-from-list]")) openAddFromList(army, reload);
       else if(b.matches("[data-unit]")) { const u = D.units.find(x => x.id === b.dataset.unit); if(u) openUnit(army, u, reload, {armies: D.armies, pools: D.pools}); }

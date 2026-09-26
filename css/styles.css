@@ -1776,3 +1776,8 @@ body.has-timer .site-foot{padding-bottom:80px}
 .tools-fill label.inline select{flex:1;width:100%;min-width:0}
 .arrange.tools-fill{justify-content:flex-start;margin:0 0 14px}
 .wa-tools{margin:0 0 16px}
+/* War army page: Select units */
+.wa-pick{width:18px;height:18px;flex:none;accent-color:var(--brand);margin:0 4px 0 2px;cursor:pointer}
+.wtable tr.picked{background:rgba(var(--brand-rgb),.08)}
+.wtable tr.picked:hover{background:rgba(var(--brand-rgb),.12)}
+.b-select[aria-pressed="true"]{border-color:var(--brand-line);color:var(--brand);background:var(--brand-soft)}
