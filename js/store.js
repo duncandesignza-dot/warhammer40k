@@ -48,10 +48,9 @@
   const COLOR_FIELDS = ["helmet","skin","lens","armour","lpauldron","lpsecondary","lpemblem","rpauldron","rpsecondary","rpemblem","secondary","trim","emblem","cloth","metal"];
 
   // Paint chosen for each colour area, e.g. {armour: "Citadel Abaddon Black"}. The colour itself stays in the hex fields.
-  const SLOT_KEYS = ["helmet","skin","lens","armour","lpauldron","lpsecondary","lpemblem","rpauldron","rpsecondary","rpemblem","secondary","trim","emblem","cloth","metal"];
   function cleanSlotPaints(m){
     const o = {};
-    if(m && typeof m === "object") SLOT_KEYS.forEach(k => { const v = String(m[k] || "").trim().slice(0, 90); if(v) o[k] = v; });
+    if(m && typeof m === "object") COLOR_FIELDS.forEach(k => { const v = String(m[k] || "").trim().slice(0, 90); if(v) o[k] = v; });
     return o;
   }
 
@@ -65,6 +64,8 @@
     return o;
   }
 
+  // A saved record keeps its place; a new one goes on the end.
+  const putRow = (arr, row) => { const i = arr.findIndex(x => x.id === row.id); if(i < 0) return arr.concat(row); const c = arr.slice(); c[i] = row; return c; };
   const newId = () => (crypto.randomUUID ? crypto.randomUUID() : "id" + Date.now().toString(36) + Math.random().toString(36).slice(2, 10));
 
   function cleanUnit(r){
@@ -377,7 +378,7 @@
         const now = new Date().toISOString();
         const prev = id ? db.armies.find(x => x.id === id) : null;
         const row = {...(prev || {createdAt: now}), ...cleanArmy(a), id: prev ? prev.id : newId(), updatedAt: now};
-        db.armies = db.armies.filter(x => x.id !== row.id).concat(row); save(); return {...row};
+        db.armies = putRow(db.armies, row); save(); return {...row};
       },
       async removeArmy(a){
         const gone = db.units.filter(u => u.armyId === a.id);
@@ -389,14 +390,14 @@
       async saveList(l, id){
         const prev = id ? db.lists.find(x => x.id === id) : null, now = new Date().toISOString();
         const row = {...cleanList(l), id: prev ? prev.id : newId(), createdAt: prev ? prev.createdAt : now, updatedAt: now};
-        db.lists = db.lists.filter(x => x.id !== row.id).concat(row); save(); return {...row};
+        db.lists = putRow(db.lists, row); save(); return {...row};
       },
       async removeList(id){ db.lists = db.lists.filter(x => x.id !== id); save(); },
       async listGames(){ return db.games.map(g => ({...g, ...cleanGame(g)})); },
       async saveGame(g, id){
         const prev = id ? db.games.find(x => x.id === id) : null, now = new Date().toISOString();
         const row = {...cleanGame(g), id: prev ? prev.id : newId(), createdAt: prev ? prev.createdAt : now, updatedAt: now};
-        db.games = db.games.filter(x => x.id !== row.id).concat(row); save(); return {...row};
+        db.games = putRow(db.games, row); save(); return {...row};
       },
       async removeGame(id){ db.games = db.games.filter(x => x.id !== id); save(); },
       async setArmyRecord(army, rec){ const a = db.armies.find(x => x.id === army.id); if(a){ a.scheme = cleanScheme({...a.scheme, rec}); save(); } },
@@ -410,7 +411,7 @@
         if(photo) image = await keepPhoto(await resizeImage(photo.file, 1000, .8));
         else if(remove) image = "";
         const row = {...cleanUnit({...u, log: nextLog(prev, u)}), id: prev ? prev.id : newId(), armyId, image, updatedAt: new Date().toISOString()};
-        db.units = db.units.filter(x => x.id !== row.id).concat(row);
+        db.units = putRow(db.units, row);
         try { save(); } catch(e){ if(image !== was) pics.remove(image); throw e; }
         if(image !== was) pics.remove(was);
         return out(row);
@@ -426,7 +427,7 @@
       async inlinePhoto(src){ const v = pics.url(src); return /^blob:/.test(v) ? blobToDataURL(await (await fetch(v)).blob()) : v; },
       // "Delete account" when saving in this browser: clear everything this site saved here.
       async deleteAccount(){
-        ["livery-ledger-v3", "livery-paints-v1", "livery-recipes-v1", "ll-goal", "ll-settings", "ll-shame", "ll-list-prefs", "ll-detail-open", "ll-roster-group", "ll-coll-group", "ll-mode"].forEach(k => { try { localStorage.removeItem(k); } catch(e){} });
+        try { Object.keys(localStorage).filter(k => /^(livery-|ll-)/.test(k)).forEach(k => localStorage.removeItem(k)); } catch(e){}
         db = {armies: [], units: [], lists: [], games: []};
         pics.clear();
       },
@@ -457,8 +458,10 @@
     const sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY);
     const A = CFG.ARMIES_TABLE || "armies", U = CFG.UNITS_TABLE || "units", B = CFG.BUCKET || "unit-images", R = CFG.RECIPES_TABLE || "recipes";
     const L = "lists", G = "games";
+    // A table that hasn't been created yet (the optional ones in features.sql and recipes.sql).
+    const tableMissing = e => /PGRST205|42P01/.test(e.code || "") || /could not find the table|does not exist/i.test(e.message || "");
     // The recipes table is optional (added later): say so plainly when it hasn't been created yet.
-    const libErr = error => /PGRST205|42P01/.test(error.code || "") || /could not find the table|does not exist/i.test(error.message || "")
+    const libErr = error => tableMissing(error)
       ? Object.assign(new Error("The recipes table hasn't been set up in Supabase yet."), {code: "nolib"}) : error;
     let session = null;
     const pub = path => path ? sb.storage.from(B).getPublicUrl(path).data.publicUrl : "";
@@ -486,7 +489,6 @@
     // by_pic is only shown when it's a picture from this site's own storage.
     const toComment = r => ({id: r.id, armyId: r.army_id, owner: r.owner, body: String(r.body || ""), createdAt: r.created_at,
       byName: String(r.by_name || "").slice(0, 40), byPic: typeof r.by_pic === "string" && PIC_BASE && r.by_pic.startsWith(PIC_BASE) && !/["'<>\s]/.test(r.by_pic) ? r.by_pic : ""});
-    const tableMissing = e => /PGRST205|42P01/.test(e.code || "") || /could not find the table|does not exist/i.test(e.message || "");
     let paintsTable = null;   // null: not checked yet; false: owned_paints isn't set up, so paints stay on the account
     const myName = () => String(((session && session.user.user_metadata) || {}).display_name || "").trim();
     const myPic = () => String(((session && session.user.user_metadata) || {}).avatar_url || "");
@@ -553,7 +555,7 @@
       async listKits(){
         if(!session) return [];
         const {data, error} = await sb.from("kits").select("id,data").eq("owner", session.user.id);
-        if(error){ if(/PGRST205|42P01/.test(error.code || "") || /could not find the table|does not exist/i.test(error.message || "")) return null; throw error; }
+        if(error){ if(tableMissing(error)) return null; throw error; }
         return (data || []).map(r => ({...(r.data || {}), id: r.id}));
       },
       async putKits(list){
@@ -566,11 +568,10 @@
       /* Likes and follows. null means the tables haven't been set up yet (supabase/features.sql). */
       async communityState(armyIds){
         if(!session) return null;
-        const missing = e => /PGRST205|42P01/.test(e.code || "") || /could not find the table|does not exist/i.test(e.message || "");
         const lk = armyIds.length ? await sb.from("likes").select("army_id,user_id").in("army_id", armyIds) : {data: [], error: null};
-        if(lk.error){ if(missing(lk.error)) return null; throw lk.error; }
+        if(lk.error){ if(tableMissing(lk.error)) return null; throw lk.error; }
         const fl = await sb.from("follows").select("followee").eq("follower", session.user.id);
-        if(fl.error){ if(missing(fl.error)) return null; throw fl.error; }
+        if(fl.error){ if(tableMissing(fl.error)) return null; throw fl.error; }
         const likes = {}, liked = new Set();
         (lk.data || []).forEach(r => { likes[r.army_id] = (likes[r.army_id] || 0) + 1; if(r.user_id === session.user.id) liked.add(r.army_id); });
         return {likes, liked, following: new Set((fl.data || []).map(r => r.followee))};
@@ -709,6 +710,7 @@
           try { if(typeof r.image === "string" && /^data:image\//.test(r.image)) image_path = await upload(armyId, await dataURLToBlob(r.image)); } catch(e){}
           const {error} = await sb.from(U).insert({army_id: armyId, data: cleanUnit(r), image_path, updated_at: new Date().toISOString()});
           if(!error) n++;
+          else if(image_path) sb.storage.from(B).remove([image_path]).catch(() => {});   // no unit to show it
         }
         return n;
       },

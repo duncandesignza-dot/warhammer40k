@@ -52,6 +52,10 @@ end $$;
 drop policy if exists "units: army is yours" on public.units;
 create policy "units: army is yours" on public.units as restrictive for insert to authenticated
   with check (army_id is null or exists (select 1 from public.armies a where a.id = army_id and a.owner = auth.uid()));
+-- The same when a unit is changed, so it can't be moved into somebody else's army.
+drop policy if exists "units: army is yours (update)" on public.units;
+create policy "units: army is yours (update)" on public.units as restrictive for update to authenticated
+  with check (army_id is null or exists (select 1 from public.armies a where a.id = army_id and a.owner = auth.uid()));
 
 -- 4. Photo storage ------------------------------------------------------------
 -- Public bucket so photos load from their URL. Files live under

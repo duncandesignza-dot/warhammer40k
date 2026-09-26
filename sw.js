@@ -13,8 +13,8 @@ self.addEventListener("activate", e => {
   const keep = [SHELL, DATA, MEDIA];
   e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => !keep.includes(k)).map(k => caches.delete(k)))).then(() => self.clients.claim()));
 });
-// Logging out clears saved data so the next person on this device can't see it offline.
-self.addEventListener("message", e => { if(e.data && e.data.type === "clear-data") caches.delete(DATA); });
+// Logging out clears saved data and photos so the next person on this device can't see them offline.
+self.addEventListener("message", e => { if(e.data && e.data.type === "clear-data"){ caches.delete(DATA); caches.delete(MEDIA); } });
 
 async function networkFirst(req, cacheName, fallbackUrl){
   const cache = await caches.open(cacheName);

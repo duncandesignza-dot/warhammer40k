@@ -147,7 +147,11 @@
       Object.assign(box.style, {left: r.left + "px", width: Math.max(r.width, 280) + "px", maxHeight: maxH + "px",
         top: up ? "" : (r.bottom + gap) + "px", bottom: up ? (vh - r.top + gap) + "px" : ""});
     }
-    const onMove = () => { if(!box.hidden) place(); };
+    // Once the input has left the page (the recipe editor redraws its steps), stop listening.
+    const onMove = () => {
+      if(!input.isConnected){ window.removeEventListener("resize", onMove); document.removeEventListener("scroll", onMove, true); return; }
+      if(!box.hidden) place();
+    };
     window.addEventListener("resize", onMove);
     document.addEventListener("scroll", onMove, true);
     function hide(){ box.hidden = true; active = -1; input.setAttribute("aria-expanded", "false"); }
