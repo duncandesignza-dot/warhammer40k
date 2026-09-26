@@ -2,6 +2,7 @@
 -- Keeps each person's paint recipes on their account so every ledger can use them.
 -- Run once in Supabase: Dashboard -> SQL Editor -> New query -> paste this -> Run.
 -- Safe to run again.
+-- On a brand-new Supabase project, run supabase/setup.sql first.
 
 create table if not exists public.recipes (
   owner      uuid not null default auth.uid() references auth.users (id) on delete cascade,

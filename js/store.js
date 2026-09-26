@@ -253,11 +253,17 @@
       });
       save();
     }
+    // If the browser won't take the change, go back to what was last saved, so nothing shows as
+    // saved on screen that would be gone after a reload. When storage couldn't be read at all,
+    // changes are kept for this visit only (the banner says so) and never written over it.
+    let last = "";
     function save(){
-      try { localStorage.setItem(KEY, JSON.stringify(db)); }
-      catch(e){ ok = false; throw Object.assign(new Error("This browser is out of storage space. Remove some photos or connect Supabase."), {code:"quota"}); }
+      if(!ok) return;
+      const next = JSON.stringify(db);
+      try { localStorage.setItem(KEY, next); last = next; }
+      catch(e){ if(last) db = JSON.parse(last); throw Object.assign(new Error("This browser is out of storage space. Remove some photos or connect Supabase."), {code:"quota"}); }
     }
-    load();
+    load(); last = JSON.stringify(db);
 
     return {
       kind: "local", canWrite: true, session: null, canShare: false,
@@ -311,9 +317,7 @@
         if(photo) image = await blobToDataURL(await resizeImage(photo.file, 1000, .8));
         else if(remove) image = "";
         const row = {...cleanUnit({...u, log: nextLog(prev, u)}), id: prev ? prev.id : newId(), armyId, image, updatedAt: new Date().toISOString()};
-        const before = db.units;
-        db.units = db.units.filter(x => x.id !== row.id).concat(row);
-        try { save(); } catch(e){ db.units = before; throw e; }
+        db.units = db.units.filter(x => x.id !== row.id).concat(row); save();
         return {...row};
       },
       async removeUnit(u){ db.units = db.units.filter(x => x.id !== u.id); save(); },

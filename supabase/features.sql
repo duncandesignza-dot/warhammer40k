@@ -1,6 +1,7 @@
 -- Livery Ledger: database setup for newer features.
 -- Run this once in Supabase: SQL Editor -> New query -> paste all of this -> Run.
 -- It's safe to run again; it only adds what's missing.
+-- On a brand-new Supabase project, run supabase/setup.sql first.
 
 -- 1. Delete account (Settings -> Delete my account)
 --    Lets a logged-in painter delete their own account and everything saved with it.

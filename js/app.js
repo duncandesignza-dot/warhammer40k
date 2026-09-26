@@ -1950,7 +1950,7 @@
       armies = res[0].armies; units = res[1]; ownedList = res[2] || [];
     } catch(err){ console.error(err); $("pp-body").innerHTML = `<p class="hint">Couldn't load your paints: ${esc(errText(err))}</p>`; return; }
     try { library = store.getLibrary ? await store.getLibrary() : []; }
-    catch(err){ library = null; libMsg = err.code === "nolib" ? "To keep a recipe library, add the recipes table to Supabase: run supabase/features.sql or supabase-setup.sql in the SQL editor." : "Couldn't load your recipe library."; }
+    catch(err){ library = null; libMsg = err.code === "nolib" ? "To keep a recipe library, add the recipes table to Supabase: run supabase/recipes.sql in the SQL editor." : "Couldn't load your recipe library."; }
     const owned = () => new Set(ownedList.map(PU.norm));
     const isOwned = p => owned().has(PU.norm(p));
     const live = () => (library || []).filter(r => !r.deleted);
@@ -3745,7 +3745,7 @@ Redemptor Dreadnought (210 points)</pre>
     try { prefs = {...prefs, ...JSON.parse(localStorage.getItem(PREF_KEY) || "{}")}; } catch(e){}
 
     app.innerHTML = `
-      <div class="crumbs">${canWrite ? `<a href="#/livery">Livery Ledger</a> / <a href="#/livery/ledgers">Ledgers</a>` : store.session ? `<a href="#/shared">Shared armies</a>` : `<a href="#/">Livery Ledger</a>`} / ${esc(f.name)}</div>
+      <div class="crumbs">${canWrite ? `<a href="#/livery">Livery Ledger</a> / <a href="#/livery/ledgers">Ledgers</a>` : store.session ? `<a href="#/shared">Shared armies</a>` : `<a href="#/">Livery Ledger</a>`} / ${esc(army.name)}</div>
       <header class="top">
         <div class="wh-id">${armyBadge(army, 64)}<div>
           ${!canWrite ? ownerLine(army, "big") : ""}
@@ -4693,7 +4693,7 @@ Redemptor Dreadnought (210 points)</pre>
             $("sh-msg").textContent = army.public ? "Sharing is on. Copy the link and send it to anyone." : "Sharing is off. The link no longer works.";
           } catch(err){
             e.target.checked = !on;
-            $("sh-msg").textContent = "Couldn't change sharing: " + errText(err) + (/column|public/i.test(errText(err)) ? " Run the latest supabase-setup.sql to add sharing." : "");
+            $("sh-msg").textContent = "Couldn't change sharing: " + errText(err) + (/column|public/i.test(errText(err)) ? " Run supabase/setup.sql in Supabase to add sharing." : "");
           } finally { e.target.disabled = false; }
         });
         $("sh-copy").addEventListener("click", async () => {

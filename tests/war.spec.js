@@ -134,3 +134,20 @@ test("log a battle from a list and the army's record updates", async ({page}) =>
   await expect(page.locator(".war-head .sub")).toContainText("2–0 record");
   await expect.poll(async () => (await saved(page)).armies.find(a => a.id === "a1").scheme.rec).toEqual({w: 2, l: 1, d: 0});
 });
+
+test("when the browser is full, a battle isn't logged and nothing shows as saved", async ({page, errors}) => {
+  await seed(page);
+  await page.evaluate(() => { let i = 0; for(const n of [262144, 1024, 16]){ const s = "x".repeat(n); try { for(;;) localStorage.setItem("fill" + i++, s); } catch(e){} } });
+  await open(page, "#/war/army/a1");
+  await page.click("button[data-log]");
+  await page.fill("#w-gp", "Robin"); await page.fill("#w-gn", "A long game. ".repeat(60));
+  await page.click("dialog[open] [type=submit]");
+  await expect(page.locator("dialog[open] #w-msg")).toContainText("out of storage space");
+  await page.keyboard.press("Escape");
+  // Moving around inside the app (no reload) still shows only the battles that were really saved.
+  await page.goto("/#/war/battles");
+  await expect(page.locator(".games .game")).toHaveCount(3);
+  await expect(page.getByText("vs Robin")).toHaveCount(0);
+  expect((await saved(page)).games).toHaveLength(3);
+  errors.splice(0); // the failed save is logged to the console on purpose
+});
