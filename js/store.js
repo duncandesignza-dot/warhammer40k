@@ -368,7 +368,7 @@
       async getArmy(id){ const a = db.armies.find(x => x.id === id); return a ? {...a} : null; },
       async summary(){
         const m = {};
-        db.units.forEach(u => { const s = m[u.armyId] || (m[u.armyId] = {units:0, models:0, done:0, points:0}); if(u.own === "planned"){ s.units++; s.planned = (s.planned || 0) + 1; return; } s.units++; s.models += +u.count || 0; s.done += Math.min(+u.count || 0, +u.painted || (u.status === "done" ? +u.count || 0 : 0)); s.points += +u.points || 0; });
+        db.units.forEach(u => { const s = m[u.armyId] || (m[u.armyId] = {units:0, models:0, done:0, points:0}); if(u.own === "planned"){ s.planned = (s.planned || 0) + 1; return; } s.units++; s.models += +u.count || 0; s.done += Math.min(+u.count || 0, +u.painted || (u.status === "done" ? +u.count || 0 : 0)); s.points += +u.points || 0; });
         return m;
       },
       async saveArmy(a, id){
@@ -473,7 +473,7 @@
     const SUM_COLS = "army_id,data->>status,data->>count,data->>painted,data->>points,data->>own";
     function totals(rows){
       const m = {};
-      rows.forEach(r => { const s = m[r.army_id] || (m[r.army_id] = {units:0, models:0, done:0, points:0}); if(r.own === "planned"){ s.units++; s.planned = (s.planned || 0) + 1; return; } const c = parseInt(r.count, 10) || 1; const p = parseInt(r.painted, 10); s.units++; s.models += c; s.done += Math.min(c, Number.isFinite(p) ? p : (r.status === "done" ? c : 0)); s.points += parseInt(r.points, 10) || 0; });
+      rows.forEach(r => { const s = m[r.army_id] || (m[r.army_id] = {units:0, models:0, done:0, points:0}); if(r.own === "planned"){ s.planned = (s.planned || 0) + 1; return; } const c = parseInt(r.count, 10) || 1; const p = parseInt(r.painted, 10); s.units++; s.models += c; s.done += Math.min(c, Number.isFinite(p) ? p : (r.status === "done" ? c : 0)); s.points += parseInt(r.points, 10) || 0; });
       return m;
     }
     // War Ledger's tables are added by supabase/features.sql; say so plainly if they're not there yet.

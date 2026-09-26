@@ -18,16 +18,31 @@ test("make a ledger and add a unit to it", async ({page}) => {
   expect(d.units.map(u => [u.name, u.count])).toEqual([["Intercessor Squad", 5]]);
 });
 
-test("a planned unit shows as planned and doesn't count until bought", async ({page}) => {
-  await seed(page, `db.units.push({id: "u9", armyId: "a1", name: "Gladiator Lancer", datasheet: "Gladiator Lancer", role: "Vehicle", count: 1, points: 160, painted: 0, stages: [], own: "planned"});`);
+test("Livery Ledger only shows units you own; ones planned in War Ledger join it once you own them", async ({page}) => {
+  await seed(page, `db.units.push({id: "u9", armyId: "a1", name: "Gladiator Lancer", datasheet: "Gladiator Lancer", role: "Vehicle", count: 1, points: 160, painted: 0, stages: [], own: "planned"});
+    db.armies.push({id: "a3", faction: "necrons", name: "Test build", scheme: {...window.LEDGER_PRESETS.presetFor("necrons"), wonly: true}, createdAt: "2026-01-03", updatedAt: "2026-01-03"});
+    db.units.push({id: "u10", armyId: "a3", name: "Necron Warriors", datasheet: "Necron Warriors", role: "Battleline", count: 10, points: 90, painted: 0, stages: [], own: "planned"});`);
+  // Not on the ledger, not in the collection, and a War-only army with nothing owned isn't a ledger at all.
   await open(page, "#/army/a1");
-  const card = page.locator('.card:has(.card-open:text-is("Gladiator Lancer"))');
-  await expect(card.locator(".tag.plan")).toHaveText("Planned");
+  await expect(page.locator('.card-open:text-is("Captain")')).toBeVisible();
+  await expect(page.locator('.card-open:text-is("Gladiator Lancer")')).toHaveCount(0);
   await expect(page.locator("#st-done")).toHaveText("7 / 17");
-  await card.locator(".card-open").click();
-  await page.click("[data-bought]");
+  await open(page, "#/livery/collection");
+  await expect(page.locator("#ro-body")).toContainText("Captain");
+  await expect(page.locator("#ro-body")).not.toContainText(/Gladiator Lancer|Necron Warriors/);
+  await open(page, "#/livery/ledgers");
+  await expect(page.locator(".lcard h3")).toHaveText(["Ultramarines 2nd Company", "Hive Fleet Leviathan"]);
+  // War Ledger shows it as planned; saying you own it puts it in Livery Ledger.
+  await open(page, "#/war/army/a1");
+  await expect(page.locator('.wtable tr:has([data-unit="u9"]) .tag.plan')).toHaveText("Planned");
+  await page.click('.wtable [data-unit="u9"]');
+  await expect(page.locator("#w-owned")).not.toBeChecked();
+  await page.check("#w-owned");
+  await page.click("dialog[open] [type=submit]");
+  await expect.poll(async () => (await saved(page)).units.find(u => u.id === "u9").own).toBe("owned");
+  await open(page, "#/army/a1");
+  await expect(page.locator('.card-open:text-is("Gladiator Lancer")')).toBeVisible();
   await expect(page.locator("#st-done")).toHaveText("7 / 18");
-  expect((await saved(page)).units.find(u => u.id === "u9").own).toBe("owned");
 });
 
 test("an army made in War Ledger asks you to choose colours", async ({page}) => {

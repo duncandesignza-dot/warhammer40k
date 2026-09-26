@@ -866,12 +866,12 @@
     const render = async () => { D = await warData(); app.innerHTML = `
       <section class="page-head war-head">
         <div><p class="eyebrow">War Ledger</p><h1>Your armies</h1><p class="sub">Every force you've put together, its lists and how it has fared.</p></div>
-        <div class="war-actions"><a class="btn primary" href="#/war/new">+ New army</a></div>
+        <div class="war-actions"><a class="btn primary" href="#/war/new">+ New army</a><button type="button" data-import-army>Import an army</button></div>
       </section>
       ${warTabs("armies")}
       ${D.armies.length ? `<h2 class="sr-only">Your armies</h2><div class="ledgers">${D.armies.map(a => armyCard(a, D)).join("")}</div>` : warEmpty()}`; };
     await render();
-    onApp(e => warClicks(e, D, render));
+    onApp(e => { if(e.target.closest("[data-import-army]")) openImportArmy(); else warClicks(e, D, render); });
   }
   function factionSelect(id, value, blank){
     const groups = {};
@@ -957,6 +957,7 @@
         <label>Points<input id="w-pts" type="number" min="0" max="9999" inputmode="numeric" value="${u ? u.points : 0}"></label>
         <p class="hint span3 pts-hint" id="w-ptshint" aria-live="polite"></p>
         ${choices ? `<label class="span3">Army<select id="w-army"><option value="">Not in an army (just in your collection)</option>${choices.map(a => `<option value="${esc(a.id)}"${a.id === curArmy ? " selected" : ""}>${esc(a.name)}${a.faction !== army.faction ? ` (${esc(factionName(a.faction))})` : ""}</option>`).join("")}</select></label>` : ""}
+        <label class="chk span3"><input type="checkbox" id="w-owned"${u && u.own !== "planned" ? " checked" : ""}><span>I own this unit <small>(it shows in Livery Ledger, ready to paint; leave it off to just plan with it)</small></span></label>
         <label class="chk span3"><input type="checkbox" id="w-fav"${u && u.fav ? " checked" : ""}><span>Starred <small>(shows with a star here and in Livery Ledger)</small></span></label>
       </div>
       </div><div class="wu-col">
@@ -995,7 +996,7 @@
       if(!name){ $("w-msg").textContent = "Choose a datasheet or give the unit a name."; $("w-uname").focus(); return; }
       const count = Math.max(1, n("w-count", 99));
       const row = mergeUnit(u || unitRow(army, sh, {}), {datasheet: sh ? sh.n : (u ? u.datasheet : ""), role: v("w-role"), name, count, points: n("w-pts", 9999),
-        ranged: v("w-ranged").trim(), melee: v("w-melee").trim(), notes: v("w-notes").trim(), fav: $("w-fav").checked});
+        ranged: v("w-ranged").trim(), melee: v("w-melee").trim(), notes: v("w-notes").trim(), fav: $("w-fav").checked, own: $("w-owned").checked ? "owned" : "planned"});
       const b = e.submitter || d.querySelector("[type=submit]"); b.disabled = true; $("w-msg").textContent = "Saving…";
       try {
         // Where it goes: the chosen army, or the faction's holder when it isn't in an army.
@@ -1034,7 +1035,8 @@
       e.preventDefault(); if(!parsed || !parsed.units.length) return;
       $("w-add").disabled = true; $("w-msg").textContent = "Adding…";
       try {
-        const rows = parsed.units.map(x => unitRow(army, x.sheet, {name: x.name, count: x.count, points: x.points, melee: x.melee.join(", "), ranged: x.ranged.join(", "), notes: x.notes.join(". ")}));
+        // Units added in War Ledger are for planning until you say you own them.
+        const rows = parsed.units.map(x => unitRow(army, x.sheet, {name: x.name, count: x.count, points: x.points, melee: x.melee.join(", "), ranged: x.ranged.join(", "), notes: x.notes.join(". "), own: "planned"}));
         const n = await store.importUnits(army.id, rows);
         if(parsed.limit && !army.scheme.limit) await store.saveArmy({faction: army.faction, name: army.name, scheme: {...army.scheme, limit: parsed.limit}, public: army.public}, army.id);
         d.close(); flash(`Added ${plural(n, "unit")}`); done();
@@ -1067,6 +1069,7 @@
         <span class="bb-count" id="wa-count" aria-live="polite">0 selected</span>
         <button type="button" class="btn-sm" data-bb="all">Select all</button>
         <span class="bb-sep" aria-hidden="true"></span>
+        <button type="button" class="btn-sm" data-bb="own">I own these</button>
         <button type="button" class="btn-sm" data-bb="star">${STAR(true).replace('width="18" height="18"', 'width="14" height="14"')}Star</button>
         <button type="button" class="btn-sm" data-bb="unstar">Unstar</button>
         <label class="bb-stage"><span>Move to</span><select id="wa-move"><option value="">Choose…</option>${others.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join("")}<option value="__pool">Not in an army</option></select></label>
@@ -1081,6 +1084,7 @@
       c.textContent = `${n} selected`;
       app.querySelectorAll("#wa-bar [data-bb]").forEach(b => { if(!["all", "done"].includes(b.dataset.bb)) b.disabled = !n; });
       ["wa-move", "wa-list"].forEach(k => { if($(k)) $(k).disabled = !n; });
+      const own = app.querySelector('[data-bb="own"]'); if(own) own.disabled = !us.some(u => u.own === "planned");
       const del = app.querySelector('[data-bb="del"]'); if(del && del.dataset.armed !== "1") del.textContent = "Delete";
     }
     function setSelecting(on){ selecting = on; picked.clear(); draw(); if(!on) document.body.classList.remove("selecting"); }
@@ -1096,6 +1100,7 @@
     async function barAction(k){
       if(k === "all"){ D.byArmy(id).forEach(u => picked.add(u.id)); draw(); return; }
       if(k === "done"){ setSelecting(false); return; }
+      if(k === "own") return batch(u => u.own !== "planned" ? false : saveU(u, {own: "owned"}), n => `${plural(n, "unit")} now in Livery Ledger, ready to paint.`);
       if(k === "star" || k === "unstar") return batch(u => saveU(u, {fav: k === "star"}), n => `${plural(n, "unit")} ${k === "star" ? "starred" : "unstarred"}.`);
       if(k === "del"){
         const b = app.querySelector('[data-bb="del"]');
@@ -1122,7 +1127,7 @@
       const sorted = list.slice().sort(ARMY_SORT_FN[sortBy]);
       const table = (us, total) => `<div class="wt-scroll"><table class="wtable wt-cards" role="table">
             <thead><tr><th scope="col">Unit</th><th scope="col">Role</th><th scope="col" class="n">Models</th><th scope="col" class="n">Points</th></tr></thead>
-            <tbody>${us.map(u => `<tr${selecting && picked.has(u.id) ? ` class="picked"` : ""}><th scope="row"><span class="wt-unit">${selecting ? `<input type="checkbox" class="wa-pick" data-pick="${esc(u.id)}"${picked.has(u.id) ? " checked" : ""} aria-label="Select ${esc(u.name)}">` : warStar(u)}<span><button type="button" class="linkish" data-unit="${esc(u.id)}">${esc(u.name)}</button>${u.datasheet && u.datasheet !== u.name ? `<small>${esc(u.datasheet)}</small>` : ""}</span></span></th>
+            <tbody>${us.map(u => `<tr${selecting && picked.has(u.id) ? ` class="picked"` : ""}><th scope="row"><span class="wt-unit">${selecting ? `<input type="checkbox" class="wa-pick" data-pick="${esc(u.id)}"${picked.has(u.id) ? " checked" : ""} aria-label="Select ${esc(u.name)}">` : warStar(u)}<span><button type="button" class="linkish" data-unit="${esc(u.id)}">${esc(u.name)}</button>${u.own === "planned" ? PLANNED_TAG : ""}${u.datasheet && u.datasheet !== u.name ? `<small>${esc(u.datasheet)}</small>` : ""}</span></span></th>
               <td class="wt-sub">${esc(u.role || "—")}</td>${statCells(u)}</tr>`).join("")}</tbody>
             ${total ? `<tfoot><tr><th scope="row">Total</th><td class="wt-sub"></td><td class="n" data-label="Models">${total.models}</td><td class="n" data-label="Points">${num(total.points)}</td></tr></tfoot>` : ""}
           </table></div>`;
@@ -1340,7 +1345,7 @@
           <div class="ro-gh">${a && !isPool(a) ? armyBadge(a, 34) : ""}<div><h3>${esc(g.title)}</h3><small>${esc(meta)}</small></div>${a && !isPool(a) ? `<a class="btn btn-sm" href="#/war/army/${esc(a.id)}" aria-label="Open ${esc(a.name)}">View army</a>` : ""}</div>
           <div class="wt-scroll"><table class="wtable wt-cards" role="table">
             <thead><tr><th scope="col">Unit</th><th scope="col">${second}</th><th scope="col" class="n">Models</th><th scope="col" class="n">Points</th></tr></thead>
-            <tbody>${g.units.map(u => { const ua = armyOf(u.armyId); return `<tr><th scope="row"><span class="wt-unit">${warStar(u)}<span><button type="button" class="linkish" data-unit="${esc(u.id)}">${esc(u.name)}</button>${u.datasheet && u.datasheet !== u.name ? `<small>${esc(u.datasheet)}</small>` : ""}</span></span></th>
+            <tbody>${g.units.map(u => { const ua = armyOf(u.armyId); return `<tr><th scope="row"><span class="wt-unit">${warStar(u)}<span><button type="button" class="linkish" data-unit="${esc(u.id)}">${esc(u.name)}</button>${u.own === "planned" ? PLANNED_TAG : ""}${u.datasheet && u.datasheet !== u.name ? `<small>${esc(u.datasheet)}</small>` : ""}</span></span></th>
               <td class="wt-sub">${by === "army" ? esc(u.role || "—") : armyCell(ua)}</td>${statCells(u)}</tr>`; }).join("")}</tbody>
           </table></div>
         </section>`;
@@ -2396,6 +2401,9 @@
       ${actions ? `<div class="war-actions">${actions}</div>` : ""}
     </section>`;
 
+  // Livery Ledger only shows units you own; ones planned in War Ledger stay there until you own them.
+  const unitOwned = u => u.own !== "planned";
+  const ownedUnits = async armyId => (await store.listUnits(armyId)).filter(unitOwned);
   async function liveryData(){
     let armies = [], sum = {};
     if(store.canWrite || store.kind === "supabase"){
@@ -2403,7 +2411,8 @@
       catch(err){ console.error(err); armies = []; }
     }
     const mine = store.session ? store.session.user.id : null;
-    armies = armies.filter(a => (!mine || !a.owner || a.owner === mine) && !isPool(a));
+    // Livery Ledger is what you own: an army set up in War Ledger shows here once it has a unit you own.
+    armies = armies.filter(a => (!mine || !a.owner || a.owner === mine) && !isPool(a) && (!a.scheme.wonly || (sum[a.id] || {}).units));
     const tot = armies.reduce((t, x) => { const s = sum[x.id] || {}; t.units += s.units || 0; t.models += s.models || 0; t.done += s.done || 0; return t; }, {units: 0, models: 0, done: 0});
     return {armies, sum, tot};
   }
@@ -2422,7 +2431,7 @@
       <h2>Start your first ledger</h2>
       <p class="sub">Pick your faction, choose your colours, then add your units one at a time or paste your army list.</p>
       ${newLedgerBtn()}
-      <p class="hint">Already using War Ledger? Those armies show up here too, ready to paint.</p>
+      <p class="hint">Already using War Ledger? The units you own there show up here too, ready to paint.</p>
     </section>`;
 
   /* ---------- Livery overview ---------- */
@@ -2485,7 +2494,7 @@
   }
   async function viewLiveryRoster(){
     view.name = "liv-roster"; document.title = "Collection · Livery Ledger";
-    app.innerHTML = `${tabHead("Livery Ledger", "Your collection", `<span id="ro-sum">Every unit you have, in a ledger or not.</span>`, `<button type="button" class="primary" id="ro-add">+ Add unit</button>`)}
+    app.innerHTML = `${tabHead("Livery Ledger", "Your collection", `<span id="ro-sum">Every unit you own, in a ledger or not.</span>`, `<button type="button" class="primary" id="ro-add">+ Add unit</button>`)}
       ${livTabs("collection")}
       <div class="ro-tools war-filters">
         <input type="search" id="ro-q" placeholder="Search your units" aria-label="Search your collection">
@@ -2508,11 +2517,11 @@
       drawRoster();
     });
     try {
-      // Units not in a ledger (War Ledger's collection holders) are listed too.
+      // Units not in a ledger (War Ledger's collection holders) are listed too, but only ones you own.
       const [{armies}, units, all] = await Promise.all([liveryData(), store.listAllUnits(), store.listArmies()]);
       const me = store.session ? store.session.user.id : null, pools = all.filter(a => isPool(a) && (!me || !a.owner || a.owner === me));
       const byId = Object.fromEntries(armies.concat(pools).map(a => [a.id, a]));
-      roster = {armies, pools, byId, units: units.filter(u => byId[u.armyId])};
+      roster = {armies, pools, byId, units: units.filter(u => byId[u.armyId] && unitOwned(u))};
       if($("ro-body")) drawRoster();
     } catch(err){ console.error(err); if($("ro-body")) $("ro-body").innerHTML = `<p class="hint">Couldn't load your collection: ${esc(errText(err))}</p>`; }
   }
@@ -2696,7 +2705,7 @@
   }
 
   /* ---------- starting something new: pick a faction ---------- */
-  function factionPage({war, crumbs, title, sub, href, extra}){
+  function factionPage({war, crumbs, title, sub, href, extra, actions}){
     const groups = [
       ["Imperium", FACTIONS.filter(f => f.group === "Imperium" && !f.parent)],
       ["Space Marine chapters", FACTIONS.filter(f => f.parent === "space-marines")],
@@ -2705,7 +2714,7 @@
     ];
     app.innerHTML = `
       <div class="crumbs">${crumbs}</div>
-      ${tabHead(war ? "War Ledger" : "Livery Ledger", title, sub, "")}
+      ${tabHead(war ? "War Ledger" : "Livery Ledger", title, sub, actions || "")}
       <div class="row-actions fpick-tools">
         <input type="search" class="fsearch" id="fq" placeholder="Search factions" aria-label="Search factions">
         ${extra || ""}
@@ -2748,7 +2757,9 @@
   async function viewWarNew(){
     view.name = "war-new"; document.title = "New army · War Ledger";
     factionPage({war: true, crumbs: `<a href="#/war">War Ledger</a> / New army`, title: "Muster a new army",
-      sub: "Choose your faction. You'll name your army next, then add your units.", href: id => `#/war/new/${id}`});
+      sub: "Choose your faction. You'll name your army next, then add your units. Or import a list you've built elsewhere.", href: id => `#/war/new/${id}`,
+      actions: `<button type="button" class="primary" data-import-army>Import an army</button>`});
+    onApp(e => { if(e.target.closest("[data-import-army]")) openImportArmy(); });
   }
   // Second step of a new army: its name and the points you're building to.
   async function viewWarNewFaction(fid){
@@ -2774,6 +2785,83 @@
       } catch(err){ console.error(err); $("w-msg").textContent = "Couldn't create the army: " + errText(err); b.disabled = false; }
     });
   }
+  // Which faction a pasted list is for: a list-builder code or New Recruit's "FACTION KEYWORD" line say so,
+  // the Warhammer app puts the faction's name near the top, and failing that it's the faction whose datasheets fit best.
+  function detectFaction(text){
+    const t = String(text || "").replace(/[\u00a0\u2007\u202f]/g, " ");
+    if(!t.trim()) return "";
+    const code = makeListReader("space-marines").parseCode(t);
+    if(code && FBY[code.codeFactionId]) return code.codeFactionId;
+    const norm = x => x.toLowerCase().replace(/[’`]/g, "'").replace(/[^a-z0-9']+/g, " ").trim();
+    const kw = t.match(/faction keyword\s*:\s*(.+)/i);
+    if(kw){
+      const parts = kw[1].split(/\s+-\s+/).map(norm).reverse();
+      for(const p of parts){ const f = FACTIONS.find(x => norm(x.name) === p); if(f) return f.id; }
+      if(parts.includes("adeptus astartes")) return "space-marines";
+    }
+    const top = t.split("\n").slice(0, 20).map(norm);
+    const named = FACTIONS.slice().sort((a, b) => b.name.length - a.name.length).find(f => top.includes(norm(f.name)));
+    if(named) return named.id;
+    let best = "", score = 0;
+    FACTIONS.forEach(f => { const n = makeListReader(f.id).parseList(t).units.filter(u => !u.notes.some(x => /^Allied/.test(x))).length; if(n > score){ best = f.id; score = n; } });
+    return best;
+  }
+  // Import an army: paste a list and War Ledger makes the army (its units planned, so they stay out of Livery
+  // Ledger until you own them) and an army list of the same units, with its detachment, warlord, enhancements and leaders.
+  function openImportArmy(){
+    const d = modal("Import an army", `
+      <p class="sub">Paste a list from the Warhammer 40,000 app, New Recruit, BattleScribe or a list-builder share code. War Ledger makes the army and an army list to test it with. The units are planned, not owned, so they only show in Livery Ledger once you say you own them.</p>
+      <label>Army list<textarea id="ia-text" rows="9" placeholder="Paste the whole list, including the points"></textarea></label>
+      <div class="wgrid">
+        <label class="span2">Faction${factionSelect("ia-f", "", "Choose a faction…")}</label>
+        <label>Points limit<input id="ia-lim" type="number" min="0" max="20000" step="250" inputmode="numeric" placeholder="No limit"></label>
+        <label class="span3">Army name<input id="ia-name" maxlength="80" autocomplete="off"></label>
+      </div>
+      <div id="ia-found" class="w-found ia-found" aria-live="polite"></div>
+      <div class="row-actions"><button type="submit" class="primary" id="ia-go" disabled>Import army</button><span class="msg" id="w-msg" role="status"></span></div>`, "wide");
+    let parsed = null, fidPicked = false, limTyped = false, nameTyped = false;
+    const read = (detect) => {
+      const t = $("ia-text").value;
+      if(detect && !fidPicked){ const fid = detectFaction(t); if(fid) $("ia-f").value = fid; }
+      const fid = $("ia-f").value, f = FBY[fid];
+      parsed = t.trim() && f ? (makeListReader(fid).parseCode(t) || makeListReader(fid).parseList(t)) : null;
+      const us = parsed ? parsed.units : [], total = us.reduce((a, x) => a + x.points, 0);
+      if(parsed && !limTyped){ const z = BATTLE_SIZES.find(b => b.pts >= total); $("ia-lim").value = parsed.limit || (z ? z.pts : "") || ""; }
+      if(f && !nameTyped) $("ia-name").value = [f.name, parsed && parsed.detachment].filter(Boolean).join(" · ");
+      $("ia-found").innerHTML = !t.trim() ? "" : !f ? `<p class="hint">Choose the faction this list is for.</p>` : us.length
+        ? `<p><strong>${plural(us.length, "unit")}</strong> · ${ptsText(total)}${parsed.detachment ? ` · ${esc(parsed.detachment)}` : ""}</p><ul>${us.map(x => `<li>${esc(x.name)} <small>${x.count} · ${x.points} pts${x.notes.includes("Warlord") ? " · Warlord" : ""}</small></li>`).join("")}</ul>${parsed.unmatched.length ? `<p class="hint">Not recognised: ${esc(parsed.unmatched.join(", "))}</p>` : ""}`
+        : `<p class="hint">No ${esc(f.name)} units found. Check the faction, and paste the whole list, including the points.</p>`;
+      $("ia-go").disabled = !us.length; $("ia-go").textContent = us.length ? `Import ${plural(us.length, "unit")}` : "Import army";
+    };
+    $("ia-text").addEventListener("input", () => read(true));
+    $("ia-f").addEventListener("change", () => { fidPicked = true; read(false); });
+    $("ia-lim").addEventListener("input", () => { limTyped = true; });
+    $("ia-name").addEventListener("input", () => { nameTyped = true; });
+    d.querySelector("form").addEventListener("submit", async e => {
+      e.preventDefault(); if(!parsed || !parsed.units.length) return;
+      const fid = $("ia-f").value, f = FBY[fid], name = $("ia-name").value.trim() || `${f.name} army`, limit = Math.max(0, parseInt($("ia-lim").value, 10) || 0);
+      $("ia-go").disabled = true; $("w-msg").textContent = "Importing…";
+      try {
+        const army = await store.saveArmy({faction: fid, name, scheme: {...P.presetFor(fid), wonly: true, limit}, public: false});
+        const entries = [];
+        for(const x of parsed.units){
+          const ex = entryExtras(x.notes), notes = x.notes.filter(n => !/^warlord$/i.test(n) && !/^enhancements?:/i.test(n)).join(". ");
+          const row = await store.saveUnit(army.id, unitRow(army, x.sheet, {name: x.name, count: x.count, points: Math.max(0, x.points - (ex.enh ? ex.enh.p : 0)),
+            melee: x.melee.join(", "), ranged: x.ranged.join(", "), notes, own: "planned"}), null, null, false, null);
+          entries.push({u: row.id, k: entryKey(), ...ex});
+        }
+        parsed.units.forEach((x, i) => { if(x.leadIdx != null && entries[x.leadIdx]) entries[i].lead = entries[x.leadIdx].k; });
+        let go = `#/war/army/${army.id}`;
+        try {
+          const z = BATTLE_SIZES.find(b => b.pts === limit);
+          const l = await store.saveList({armyId: army.id, name, limit, size: z ? z.id : limit ? "custom" : "", detachments: parsed.detachment ? [parsed.detachment] : [], status: "draft", units: entries});
+          go = `#/war/list/${l.id}`;
+        } catch(err){ console.warn("Couldn't make the army list", err); }
+        d.close(); flash(`Imported ${name}: ${plural(entries.length, "unit")}${go.includes("/list/") ? ", with an army list to test" : ""}.`); location.hash = go;
+      } catch(err){ console.error(err); $("w-msg").textContent = "Couldn't import: " + errText(err); $("ia-go").disabled = false; }
+    });
+    $("ia-text").focus();
+  }
   /* ============================================================
      Homepage: what Livery Ledger does, with log in / sign up in the hero
      ============================================================ */
@@ -2789,7 +2877,7 @@
       t.querySelectorAll("td").forEach(x => x.setAttribute("role", "cell"));
     });
   }
-  const PLANNED_TAG = `<span class="tag plan" title="Planned: not bought yet">Planned</span>`;
+  const PLANNED_TAG = `<span class="tag plan" title="Planned: you don't own it yet, so it isn't in Livery Ledger">Planned</span>`;
   const singleRole = r => ["Epic Hero","Character","Vehicle","Monster","Dedicated Transport","Fortification"].includes(r);
   /* ---------- army list import: reads pasted lists and list-builder share codes for one faction ---------- */
   function makeListReader(factionId){
@@ -3417,7 +3505,7 @@ Redemptor Dreadnought (210 points)</pre>
     const scheme = army.scheme; fillSkin(scheme, army.faction);
     document.title = `${army.name} painting guide · Livery Ledger`;
     app.innerHTML = `<p class="loading">Building your painting guide…</p>`;
-    const [units] = await Promise.all([store.listUnits(army.id), PU.load()]);
+    const [units] = await Promise.all([ownedUnits(army.id), PU.load()]);
     const mine = store.canWrite && (!army.owner || !store.session || army.owner === store.session.user.id);
     let owned = new Set();
     if(mine){ try { owned = new Set((await store.getPaints()).map(PU.norm)); } catch(e){} }
@@ -5043,12 +5131,12 @@ Redemptor Dreadnought (210 points)</pre>
             <div class="grp-cards">${us.map(cardHtml).join("")}</div></section>`).join("")
           : list.map(cardHtml).join("");
       }
-      const ownedUnits = units.filter(u => u.own !== "planned");   // planned units aren't counted until they're bought
-      const models = ownedUnits.reduce((a, u) => a + (+u.count || 0), 0);
-      const done = ownedUnits.reduce((a, u) => a + (+u.painted || 0), 0);
+      const ownedHere = units.filter(u => u.own !== "planned");   // planned units aren't counted until they're bought
+      const models = ownedHere.reduce((a, u) => a + (+u.count || 0), 0);
+      const done = ownedHere.reduce((a, u) => a + (+u.painted || 0), 0);
       const pts = units.reduce((a, u) => a + (+u.points || 0), 0);
       const pct = models ? Math.round(done / models * 100) : 0;
-      const fin = ownedUnits.filter(u => u.count && u.painted >= u.count).length, mins = units.reduce((a, u) => a + unitMins(u), 0);
+      const fin = ownedHere.filter(u => u.count && u.painted >= u.count).length, mins = units.reduce((a, u) => a + unitMins(u), 0);
       $("st-units").textContent = units.length; $("st-done").innerHTML = `${num(done)}<small> / ${num(models)}</small>`; $("st-pct").textContent = pct + "%";
       $("st-models").textContent = plural(models, "model") + (units.length > ownedUnits.length ? ` · ${units.length - ownedUnits.length} planned` : "");
       $("st-fin").textContent = ownedUnits.length ? `${fin} of ${plural(ownedUnits.length, "unit")} finished` : "Nothing to paint yet";
@@ -5483,7 +5571,7 @@ Redemptor Dreadnought (210 points)</pre>
         try {
           const n = await store.importUnits(army.id, rows);
           if(parsed.limit && !$("ld-lim-wrap").hidden && $("ld-lim").checked) await setLimit(parsed.limit);
-          units = await store.listUnits(army.id); render();
+          units = await ownedUnits(army.id); render();
           $("listdlg").close(); $("ld-text").value = ""; parsed = null; renderParsed();
           toast(`Added ${plural(n, "unit")} from your list`);
         } catch(err){ console.error(err); $("ld-msg").textContent = "Couldn't add units: " + errText(err); }
@@ -5512,7 +5600,7 @@ Redemptor Dreadnought (210 points)</pre>
           if(!b || !b.single || !b.ledgers[0].units.length) throw new Error("empty");
           msg("Importing…");
           const r = await restoreBackup(b, {into: army.id, progress: (i, n) => msg(`Importing ${i} of ${n} units…`)});
-          units = await store.listUnits(army.id); newUnit(false);
+          units = await ownedUnits(army.id); newUnit(false);
           msg(`Imported ${plural(r.units, "unit")}${r.lists || r.games ? `, ${[r.lists ? plural(r.lists, "army list") : "", r.games ? plural(r.games, "battle report") : ""].filter(Boolean).join(" and ")}` : ""}.${r.photosMissed ? ` ${plural(r.photosMissed, "photo")} couldn't be brought back.` : ""}`);
         } catch(err){ console.error(err); msg(err instanceof SyntaxError ? "That file isn't a Livery Ledger backup." : err && err.message === "empty" ? "That file isn't a backup of a single ledger. To restore everything, use Restore from a file in Settings." : "Couldn't import that file: " + errText(err), true); }
       });
@@ -5904,7 +5992,7 @@ Redemptor Dreadnought (210 points)</pre>
     if(canWrite){ try { ownedList = await store.getPaints(); owned = new Set(ownedList.map(PU.norm)); } catch(e){} }
     PU.load().then(() => { render(); updateBuyBadge(); });
     writeForm(defaults()); setPhotoUI();
-    try { units = await store.listUnits(army.id); }
+    try { units = await ownedUnits(army.id); }
     catch(err){ console.error(err); $("cards").innerHTML = `<div class="empty">Couldn't load units: ${esc(errText(err))}</div>`; return; }
     newUnit(false);
     loadLibrary();

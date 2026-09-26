@@ -352,6 +352,7 @@ button.pill:hover:not(:disabled){background:var(--brand-soft);border-color:var(-
 .switch input:focus-visible+.track{outline:2px solid var(--focus);outline-offset:2px}
 .switch input:disabled+.track{opacity:.5}
 .copyrow{display:flex;gap:8px}
+.ia-found ul{max-height:180px;overflow:auto}
 .exp-text{font-family:var(--mono);font-size:.78rem;line-height:1.5;white-space:pre;overflow:auto}
 .copyrow input{font-family:var(--mono);font-size:.78rem}
 .copyrow button{flex:none}
