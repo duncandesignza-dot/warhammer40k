@@ -494,7 +494,8 @@
       get session(){ return session; },
       get canWrite(){ return !!session; },
       setSession(s){ if(!s || !session || s.user.id !== session.user.id) paintsTable = null; session = s; },
-      note(){ return session ? {cls:"on", text:"Saved online to your database."} : {cls:"", text:"Viewing only. Sign in to create and edit ledgers."}; },
+      // Nothing to say when signed in: saving online is the normal case.
+      note(){ return session ? null : {cls:"", text:"Viewing only. Sign in to create and edit ledgers."}; },
       /* Paints you own live in the owned_paints table (one row each). Lists saved on the account
          before the table existed are moved over the first time; without the table they stay there. */
       async getPaints(){

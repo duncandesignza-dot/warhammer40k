@@ -248,7 +248,7 @@
       </div>
     </div>`;
   }
-  function noteHtml(){ const n = store.note(); return `<span class="note"><span class="dot ${n.cls}"></span>${esc(n.text)}</span>`; }
+  function noteHtml(){ const n = store.note(); return n ? `<span class="note"><span class="dot ${n.cls}"></span>${esc(n.text)}</span>` : "<span></span>"; }
   async function logOut(){
     if(view.guard && !(await view.guard())) return;
     view.guard = null;
