@@ -21,8 +21,12 @@ test("list dialogs", async ({page}) => {
   await page.click("[data-details]");
   expect(await axe(page, "dialog[open]"), "list details").toEqual([]);
   await page.keyboard.press("Escape");
-  await page.click('[aria-label="Options for Captain in this list"]');
+  await page.click('[aria-label="Warlord, enhancement and leading for Captain"]');
   expect(await axe(page, "dialog[open]"), "unit options").toEqual([]);
+  await page.keyboard.press("Escape");
+  await page.click('[aria-label="Datasheet, models and points for Intercessor Squad"]');
+  await page.locator("#ds-body table").first().waitFor();
+  expect(await axe(page, "dialog[open]"), "datasheet").toEqual([]);
 });
 
 // A Crusade force (l2) with a battle, so the Order of Battle, the compare page and the chart all have something to show.

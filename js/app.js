@@ -956,11 +956,48 @@
     return row;
   }
 
+  /* ---------- datasheet profiles ----------
+     Models, weapons, and the names of abilities, rules and keywords, from js/data/sheets/<faction>.js
+     (built by tools/build_sheets.py). A faction's file loads the first time one of its datasheets is opened;
+     a chapter loads Space Marines' too, and allies' files come along for allied units. */
+  const sheetLoads = {};
+  function loadSheets(fid){
+    const one = id => sheetLoads[id] || (sheetLoads[id] = new Promise(res => {
+      if((window.LEDGER_SHEETS || {})[id]) return res();
+      const sc = document.createElement("script");
+      sc.src = `js/data/sheets/${id}.js`; sc.async = true;
+      sc.onload = () => res(); sc.onerror = () => { delete sheetLoads[id]; res(); };
+      document.head.appendChild(sc);
+    }));
+    const ids = [fid, (FBY[fid] || {}).parent, ...allyFactions(fid).map(f => f.id)].filter(Boolean);
+    return Promise.all(ids.map(one)).then(() => name => { for(const id of ids){ const d = (window.LEDGER_SHEETS || {})[id]; if(d && name && d[name]) return d[name]; } return null; });
+  }
+  // The datasheet as tables. Weapons the unit has come first; the datasheet's other weapons fold away beneath.
+  function datasheetHtml(d, gear){
+    if(!d) return `<p class="hint">There's no datasheet profile for this unit, so there's nothing more to show.</p>`;
+    const taken = splitGear(gear).map(g => g.toLowerCase()), base = n => n.split(/\s+[-–]\s+/)[0].toLowerCase();
+    const has = n => taken.includes(n.toLowerCase()) || taken.includes(base(n));
+    const table = (label, head, rows) => `<div class="wt-scroll"><table class="wtable compact ds-t"><thead><tr><th scope="col">${label}</th>${head.map(h => `<th scope="col"${h === "Keywords" ? "" : ` class="n"`}>${h}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></div>`;
+    const wrow = w => `<tr><th scope="row">${esc(w[0])}</th>${w.slice(1, 7).map(v => `<td class="n">${esc(v || "–")}</td>`).join("")}<td class="ds-kw">${esc(w[7] || "")}</td></tr>`;
+    const weapons = (list, label, skill) => {
+      if(!list || !list.length) return "";
+      const head = ["Range", "A", skill, "S", "AP", "D", "Keywords"], mine = taken.length ? list.filter(w => has(w[0])) : list, rest = taken.length ? list.filter(w => !has(w[0])) : [];
+      return `${mine.length ? table(label, head, mine.map(wrow).join("")) : `<p class="hint ds-none">${label}: none chosen.</p>`}
+        ${rest.length ? `<details class="ds-more"><summary>Other ${label.toLowerCase()} on the datasheet (${rest.length})</summary>${table(label, head, rest.map(wrow).join(""))}</details>` : ""}`;
+    };
+    return `${d.m ? table("Unit", ["M", "T", "Sv", "W", "Ld", "OC", "InSv"], d.m.map(m => `<tr><th scope="row">${esc(m[0])}</th>${m.slice(1).map(v => `<td class="n">${esc(v || "–")}</td>`).join("")}</tr>`).join("")) : ""}
+      ${weapons(d.r, "Ranged weapons", "BS")}
+      ${weapons(d.w, "Melee weapons", "WS")}
+      ${d.a ? `<p class="ds-line"><b>Abilities</b> ${esc(d.a.join(", "))}</p>` : ""}
+      ${d.ru ? `<p class="ds-line"><b>Rules</b> ${esc(d.ru.join(", "))}</p>` : ""}
+      ${d.k ? `<p class="ds-line ds-kws"><b>Keywords</b> ${d.k.map(k => `<span class="tag">${esc(k)}</span>`).join("")}</p>` : ""}`;
+  }
+
   /* ---------- wargear: picked from the datasheet ----------
      A chip for each weapon taken and a dropdown to add another, or to type one the datasheet doesn't list.
      The value is the usual comma-separated text, so lists, exports and Livery Ledger read it as before. */
   const splitGear = t => { const out = []; String(t || "").split(/,(?![^()]*\))/).map(x => x.trim()).filter(Boolean).forEach(x => { if(!out.some(o => o.toLowerCase() === x.toLowerCase())) out.push(x); }); return out; };
-  function gearPicker(box, {kind, options, value}){
+  function gearPicker(box, {kind, options, value, onChange}){
     let opts = options || [], picked = splitGear(value), typing = false;
     const draw = focus => {
       const left = opts.filter(o => !picked.some(p => p.toLowerCase() === o.toLowerCase()));
@@ -968,6 +1005,7 @@
         ${typing ? `<div class="gp-row"><input class="gp-other" maxlength="80" placeholder="Name of the ${esc(kind)}" aria-label="Name of the ${esc(kind)}"><button type="button" class="btn-sm primary gp-ok">Add</button><button type="button" class="btn-sm gp-cancel">Cancel</button></div>`
           : `<div class="gp-row"><select class="gp-add" aria-label="Add a ${esc(kind)}"><option value="">+ Add a ${esc(kind)}…</option>${left.map(o => `<option>${esc(o)}</option>`).join("")}<option value="__other">Something else…</option></select></div>`}`;
       const f = focus && box.querySelector(focus); if(f) f.focus();
+      if(focus && onChange) onChange(picked.join(", "));
     };
     const add = name => { name = String(name || "").trim(); if(name && !picked.some(p => p.toLowerCase() === name.toLowerCase())) picked.push(name); };
     box.addEventListener("change", e => {
@@ -1477,6 +1515,7 @@
     return out.join("\n");
   }
   const COPY_ICON = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>`;
+  const EYE = `<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>`;
   const DOTS = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="5" cy="12" r="2" fill="currentColor"/><circle cx="12" cy="12" r="2" fill="currentColor"/><circle cx="19" cy="12" r="2" fill="currentColor"/></svg>`;
   // Enhancement and leader pairings for a row in the list, as a short line.
   function entryNotes(x, rows){
@@ -1801,7 +1840,7 @@
       if(!sheets.length) return `<p class="hint">No datasheets match.</p>`;
       return ROLE_ORDER.map(r => [r, sheets.filter(sh => roleOf(sh) === r).sort((a, b) => a.n.localeCompare(b.n))]).filter(g => g[1].length).map(([r, shs]) => `<h3 class="lb-role">${esc(r)}</h3>
         <ul class="lb-rows">${shs.map(sh => { const lo = minModels(sh), sz = sizesOf(sh), n = inList[sh.n];
-          return `<li><span class="lb-name">${esc(sh.n)}${sh.t ? ` <span class="tag">${esc(sh.t)}</span>` : ""}<small>${sz.length ? `${sz[0]}–${sz[sz.length - 1]} models` : plural(lo, "model")}${n ? ` · ${n} in list` : ""}</small></span><span class="lb-pts">${sh.p != null ? num(sheetPts(sh, lo)) : "–"}</span><button type="button" class="btn-sm" data-sheet="${esc(sh.n)}" aria-label="Add ${esc(sh.n)} to the list">Add</button></li>`; }).join("")}</ul>`).join("");
+          return `<li><span class="lb-name">${esc(sh.n)}${sh.t ? ` <span class="tag">${esc(sh.t)}</span>` : ""}<small>${sz.length ? `${sz[0]}–${sz[sz.length - 1]} models` : plural(lo, "model")}${n ? ` · ${n} in list` : ""}</small></span><span class="lb-pts">${sh.p != null ? num(sheetPts(sh, lo)) : "–"}</span><button type="button" class="btn-sm icon-x" data-peek="${esc(sh.n)}" aria-label="View the ${esc(sh.n)} datasheet" title="View the datasheet">${EYE}</button><button type="button" class="btn-sm" data-sheet="${esc(sh.n)}" aria-label="Add ${esc(sh.n)} to the list">Add</button></li>`; }).join("")}</ul>`).join("");
     }
     function checksPanel(s){
       if(!listChecksOn()) return "";
@@ -1842,9 +1881,10 @@
             ${configRow()}
             ${s.rows.length ? byRole(s.rows.filter(x => !x.gone)).map(([role, rows]) => `<h3 class="lb-role">${esc(role)} <small>${ptsText(rows.reduce((a, x) => a + x.points, 0))}</small></h3>
               <ul class="lb-rows">${rows.map(x => { const extra = entryNotes(x, s.rows); return `<li>
-                <span class="lb-name"><span class="lb-title">${x.u ? `<button type="button" class="linkish" data-unit="${esc(x.u.id)}">${x.u.fav ? `<span class="star on" aria-label="Starred">${STAR(true)}</span> ` : ""}${esc(x.name)}</button>` : `<button type="button" class="linkish" data-opts="${x.i}">${esc(x.name)}</button>`}${x.warlord ? `<span class="tag wl">Warlord</span>` : ""}</span>${sizePick(x)}${extra ? `<small class="lb-extra">${extra}</small>` : ""}</span>
+                <span class="lb-name"><span class="lb-title">${x.u ? `<button type="button" class="linkish" data-unit="${esc(x.u.id)}">${x.u.fav ? `<span class="star on" aria-label="Starred">${STAR(true)}</span> ` : ""}${esc(x.name)}</button>` : `<button type="button" class="linkish" data-view="${x.i}">${esc(x.name)}</button>`}${x.warlord ? `<span class="tag wl">Warlord</span>` : ""}</span>${sizePick(x)}${extra ? `<small class="lb-extra">${extra}</small>` : ""}</span>
                 <span class="lb-pts">${num(x.points)}</span>
-                <button type="button" class="btn-sm icon-x" data-opts="${x.i}" aria-label="Options for ${esc(x.name)} in this list" title="Models, wargear, warlord, enhancement, leader and points">${DOTS}</button>
+                <button type="button" class="btn-sm icon-x" data-view="${x.i}" aria-label="Datasheet, models and points for ${esc(x.name)}" title="Datasheet, models and points">${EYE}</button>
+                ${isCharRole(x.role) ? `<button type="button" class="btn-sm icon-x" data-opts="${x.i}" aria-label="Warlord, enhancement and leading for ${esc(x.name)}" title="Warlord, enhancement and leading">${DOTS}</button>` : ""}
                 <button type="button" class="btn-sm icon-x" data-dupe="${x.i}" aria-label="Add another ${esc(x.name)}" title="Add another">${COPY_ICON}</button>
                 <button type="button" class="btn-sm icon-x" data-rm="${x.i}" aria-label="Remove ${esc(x.name)} from the list">×</button></li>`; }).join("")}</ul>`).join("")
               : `<p class="hint">Add units from the datasheets or your collection, or paste a list you've built elsewhere.</p>`}
@@ -1960,53 +2000,87 @@
         <div class="row-actions"><button type="submit" class="primary">Save</button></div>`);
       d.querySelector("form").addEventListener("submit", ev => { ev.preventDefault(); save({rp: Math.max(0, parseInt($("cr-rp").value, 10) || 0) - cs.gs.length}); d.close(); });
     }
-    // Models and wargear (for a unit that's only in the list), warlord, enhancement, leader and points. Nothing here is checked against the rules.
-    function openEntryOptions(i){
+    // The eye: the datasheet (models, weapons, abilities, rules and keywords), with this unit's models,
+    // wargear and points in this list above it.
+    function openEntryView(i){
       const s = listState(list, D), x = s.rows.find(r => r.i === i); if(!x || x.gone) return;
-      const e = list.units[i], ch = isCharRole(x.role);
+      const e = list.units[i], sh = entrySheet(x), sizes = x.u ? [] : sizesOf(sh), gearOpts = sh ? [...new Set([...(sh.wr || []), ...(sh.wm || [])])] : [];
+      const gearNow = () => x.u ? [x.u.ranged, x.u.melee].filter(Boolean).join(", ") : (gearPick ? gearPick.value : e.gear || "");
+      const d = modal(esc(x.name), `
+        <p class="sub ds-sub">${esc([x.role, sh && sh.t, ptsText(x.points)].filter(Boolean).join(" · "))}</p>
+        <div class="wgrid">
+          ${x.u ? "" : `<label>Models${sizes.length ? `<select id="w-emc">${(sizes.includes(x.count) ? sizes : [...sizes, x.count].sort((a, b) => a - b)).map(n => `<option value="${n}"${n === x.count ? " selected" : ""}>${n}${sheetPts(sh, n) != null ? ` · ${sheetPts(sh, n)} pts` : ""}</option>`).join("")}</select>` : `<input id="w-emc" type="number" min="1" max="99" inputmode="numeric" value="${x.count}">`}</label>`}
+          <label${x.u ? ` class="span3"` : " class=\"span2\""}>Points in this list<input id="w-ep" type="number" min="0" max="9999" inputmode="numeric" value="${x.u ? (e.pts ?? "") : e.points}" placeholder="${x.u ? num(+x.u.points || 0) : ""}"></label>
+        </div>
+        ${x.u ? `<p class="hint">Leave the points blank to use the unit's own (${num(+x.u.points || 0)}). A change here only affects this list. <button type="button" class="linkish" data-edit-unit>Edit the unit</button> to change its models or wargear.</p>`
+          : `<div class="gp-field"><span class="gp-label" id="w-egear-l">Wargear</span><div class="gear-pick" id="w-egear" role="group" aria-labelledby="w-egear-l"></div></div>`}
+        <div class="row-actions"><button type="submit" class="primary">Save</button></div>
+        <div id="ds-body" class="ds" aria-live="polite"><p class="hint">Loading the datasheet…</p></div>`, "wide");
+      let find = null;
+      const drawSheet = () => { const b = $("ds-body"); if(b && find) b.innerHTML = datasheetHtml(find(sh ? sh.n : (x.u ? x.u.datasheet : x.sheet)), gearNow()); };
+      const gearPick = x.u ? null : gearPicker($("w-egear"), {kind: "weapon", options: gearOpts, value: e.gear || "", onChange: drawSheet});
+      loadSheets(army.faction).then(f => { find = f; drawSheet(); });
+      // Changing the unit size fills in the datasheet's points for that size.
+      if($("w-emc") && sh) $("w-emc").addEventListener("input", () => { const p = sheetPts(sh, +$("w-emc").value || 1); if(p != null) $("w-ep").value = p; });
+      d.addEventListener("click", ev => { if(ev.target.closest("[data-edit-unit]")){ d.close(); openUnit(armyById(D, x.u.armyId) || army, x.u, reload, {armies: D.armies, pools: D.pools}); } });
+      d.querySelector("form").addEventListener("submit", ev => {
+        ev.preventDefault();
+        const pv = $("w-ep").value.trim(), n = {...e};
+        if(x.u){ if(pv === "") delete n.pts; else n.pts = Math.max(0, parseInt(pv, 10) || 0); }
+        else { n.points = Math.max(0, parseInt(pv, 10) || 0); n.count = Math.min(99, Math.max(1, parseInt($("w-emc").value, 10) || 1)); const g = gearPick.value; if(g) n.gear = g; else delete n.gear; }
+        save({units: list.units.map((u, j) => j === i ? n : u)});
+        d.close();
+      });
+    }
+    // A datasheet from the Add units panel, before it's in the list.
+    function openSheetPeek(name){
+      const sh = sheetByName(army.faction, name); if(!sh) return;
+      const sz = sizesOf(sh), lo = minModels(sh);
+      const d = modal(esc(sh.n), `
+        <p class="sub ds-sub">${esc([roleOf(sh), sh.t, sz.length ? `${sz[0]}–${sz[sz.length - 1]} models` : plural(lo, "model"), sh.p != null ? `from ${ptsText(sheetPts(sh, lo))}` : ""].filter(Boolean).join(" · "))}</p>
+        <div class="row-actions"><button type="submit" class="primary">Add to the list</button></div>
+        <div id="ds-body" class="ds" aria-live="polite"><p class="hint">Loading the datasheet…</p></div>`, "wide");
+      loadSheets(army.faction).then(find => { const b = $("ds-body"); if(b) b.innerHTML = datasheetHtml(find(sh.n), ""); });
+      d.querySelector("form").addEventListener("submit", ev => { ev.preventDefault(); d.close(); addSheet(sh.n); });
+    }
+    async function addSheet(name){
+      const sh = sheetByName(army.faction, name); if(!sh) return;
+      const count = minModels(sh);
+      await save({units: list.units.concat({n: sh.n, sheet: sh.n, role: roleOf(sh), count, points: sheetPts(sh, count) ?? 0, k: entryKey()})});
+      flash(`Added ${sh.n}. The list is now ${ptsText(listState(list, D).points)}.`);
+      const again = app.querySelector(`[data-sheet="${CSS.escape(sh.n)}"]`); if(again) again.focus();
+    }
+    // The ⋯ on a character: warlord, enhancement and the unit it leads. Nothing here is checked against the rules.
+    function openEntryOptions(i){
+      const s = listState(list, D), x = s.rows.find(r => r.i === i); if(!x || x.gone || !isCharRole(x.role)) return;
+      const e = list.units[i];
       // Suggestions: the enhancements of this list's detachments (or the whole faction's), then any you've typed in other lists.
       const known = {}, labels = {};
       D.lists.forEach(l => { const a = D.armies.find(y => y.id === l.armyId); if(a && a.faction === army.faction) l.units.forEach(u => { if(u.enh && u.enh.n) known[u.enh.n] = u.enh.p; }); });
       const opts = enhOptions(army.faction, list.detachments);
       opts.forEach(([n, p, only, det]) => { known[n] = p; labels[n] = [`${p} pts`, det, only ? only.join(" or ") + " only" : ""].filter(Boolean).join(" · "); });
       const bodies = s.rows.filter(r => !r.gone && r.i !== i && !isCharRole(r.role));
-      const sh = !x.u && entrySheet(x), sizes = sizesOf(sh), gearOpts = sh ? [...new Set([...(sh.wr || []), ...(sh.wm || [])])] : [];
-      const d = modal(`${esc(x.name)} in this list`, `
-        ${x.u ? "" : `<div class="wgrid">
-          <label class="span3">Models${sizes.length ? `<select id="w-emc">${(sizes.includes(x.count) ? sizes : [...sizes, x.count].sort((a, b) => a - b)).map(n => `<option value="${n}"${n === x.count ? " selected" : ""}>${n}${sheetPts(sh, n) != null ? ` · ${sheetPts(sh, n)} pts` : ""}</option>`).join("")}</select>` : `<input id="w-emc" type="number" min="1" max="99" inputmode="numeric" value="${x.count}">`}</label>
-        </div>
-        <div class="gp-field"><span class="gp-label" id="w-egear-l">Wargear</span><div class="gear-pick" id="w-egear" role="group" aria-labelledby="w-egear-l"></div></div>`}
-        <label>Points in this list<input id="w-ep" type="number" min="0" max="9999" inputmode="numeric" value="${x.u ? (e.pts ?? "") : e.points}" placeholder="${x.u ? num(+x.u.points || 0) : ""}"></label>
-        <p class="hint">${x.u ? `Leave blank to use the unit's own points (${num(+x.u.points || 0)}). A change here only affects this list.` : "The points this unit costs in this list."}</p>
-        ${ch ? `<label class="chk"><input type="checkbox" id="w-ewl"${x.warlord ? " checked" : ""}><span>Warlord of this list</span></label>
+      const d = modal(`${esc(x.name)}: warlord and enhancement`, `
+        <label class="chk"><input type="checkbox" id="w-ewl"${x.warlord ? " checked" : ""}><span>Warlord of this list</span></label>
         <fieldset class="wfs"><legend>Enhancement</legend>
           <div class="wgrid"><label class="span2">Name<input id="w-een" maxlength="80" list="w-een-dl" value="${esc(x.enh ? x.enh.n : "")}" placeholder="None"></label>
           <label>Points<input id="w-eep" type="number" min="0" max="999" inputmode="numeric" value="${x.enh && x.enh.p ? x.enh.p : ""}"></label></div>
           <datalist id="w-een-dl">${[...opts.map(o => o[0]), ...Object.keys(known).filter(n => !labels[n]).sort()].filter((n, j, a) => a.indexOf(n) === j).map(n => `<option value="${esc(n)}"${labels[n] ? ` label="${esc(labels[n])}"` : ""}>`).join("")}</datalist>
         </fieldset>
-        <label>Leading<select id="w-eld"><option value="">Not leading a unit</option>${bodies.map(r => { const other = s.rows.find(o => o.lead === r.k && o.i !== i && !o.gone); return `<option value="${esc(r.k)}"${x.lead === r.k ? " selected" : ""}>${esc(r.name)}${other ? ` (led by ${esc(other.name)})` : ""}</option>`; }).join("")}</select></label>`
-        : `<p class="hint">Warlord, enhancements and leading a unit are for characters. This unit's role is ${esc(x.role || "not set")}.</p>`}
+        <label>Leading<select id="w-eld"><option value="">Not leading a unit</option>${bodies.map(r => { const other = s.rows.find(o => o.lead === r.k && o.i !== i && !o.gone); return `<option value="${esc(r.k)}"${x.lead === r.k ? " selected" : ""}>${esc(r.name)}${other ? ` (led by ${esc(other.name)})` : ""}</option>`; }).join("")}</select></label>
         <div class="row-actions"><button type="submit" class="primary">Save</button></div>`);
       // Fill in the points for a known enhancement, unless you've typed your own.
       let autoP = x.enh && known[x.enh.n] === x.enh.p ? String(x.enh.p || "") : null;
-      if(ch) $("w-een").addEventListener("input", ev => {
+      $("w-een").addEventListener("input", ev => {
         const p = known[ev.target.value.trim()], cur = $("w-eep").value;
         if(p != null && (!cur || cur === autoP)){ $("w-eep").value = p || ""; autoP = String(p || ""); }
       });
-      const gearPick = x.u ? null : gearPicker($("w-egear"), {kind: "weapon", options: gearOpts, value: e.gear || ""});
-      // Changing the unit size fills in the datasheet's points for that size.
-      if($("w-emc") && sh) $("w-emc").addEventListener("input", () => { const p = sheetPts(sh, +$("w-emc").value || 1); if(p != null) $("w-ep").value = p; });
       d.querySelector("form").addEventListener("submit", ev => {
         ev.preventDefault();
-        const pv = $("w-ep").value.trim(), n = {...e};
-        if(!x.u){ n.count = Math.min(99, Math.max(1, parseInt($("w-emc").value, 10) || 1)); const g = gearPick.value; if(g) n.gear = g; else delete n.gear; }
-        if(x.u){ if(pv === "") delete n.pts; else n.pts = Math.max(0, parseInt(pv, 10) || 0); } else n.points = Math.max(0, parseInt(pv, 10) || 0);
-        let wl = false;
-        if(ch){
-          wl = $("w-ewl").checked; if(wl) n.warlord = true; else delete n.warlord;
-          const en = $("w-een").value.trim(); if(en) n.enh = {n: en, p: Math.max(0, parseInt($("w-eep").value, 10) || 0)}; else delete n.enh;
-          const ld = $("w-eld").value; if(ld) n.lead = ld; else delete n.lead;
-        }
+        const n = {...e}, wl = $("w-ewl").checked;
+        if(wl) n.warlord = true; else delete n.warlord;
+        const en = $("w-een").value.trim(); if(en) n.enh = {n: en, p: Math.max(0, parseInt($("w-eep").value, 10) || 0)}; else delete n.enh;
+        const ld = $("w-eld").value; if(ld) n.lead = ld; else delete n.lead;
         // One warlord per list: choosing this one steps the last one down.
         save({units: list.units.map((u, j) => j === i ? n : wl && u.warlord ? (({warlord, ...r}) => r)(u) : u)});
         d.close();
@@ -2016,13 +2090,9 @@
     onApp(async e => {
       const b = e.target.closest("button"); if(!b) return;
       if(b.dataset.add) save({units: list.units.concat({u: b.dataset.add, k: entryKey()})});
-      else if(b.dataset.sheet) {
-        const sh = sheetByName(army.faction, b.dataset.sheet); if(!sh) return;
-        const count = minModels(sh);
-        await save({units: list.units.concat({n: sh.n, sheet: sh.n, role: roleOf(sh), count, points: sheetPts(sh, count) ?? 0, k: entryKey()})});
-        flash(`Added ${sh.n}. The list is now ${ptsText(listState(list, D).points)}.`);
-        const again = app.querySelector(`[data-sheet="${CSS.escape(sh.n)}"]`); if(again) again.focus();
-      }
+      else if(b.dataset.sheet) addSheet(b.dataset.sheet);
+      else if(b.dataset.peek) openSheetPeek(b.dataset.peek);
+      else if(b.dataset.view != null) openEntryView(+b.dataset.view);
       else if(b.dataset.dupe != null) {
         // Another of the same unit, without the things only one unit can have.
         const i = +b.dataset.dupe, {warlord, enh, lead, xp, hon, scar, cpx, cnote, ...copy} = list.units[i];

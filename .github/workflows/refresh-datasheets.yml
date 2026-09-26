@@ -1,4 +1,4 @@
-# Rebuilds js/data/factions.js from the latest BSData (Warhammer 40,000 11th edition) once a week,
+# Rebuilds js/data/factions.js and js/data/sheets/ from the latest BSData (Warhammer 40,000 11th edition) once a week,
 # and opens a pull request only when units, points, detachments or enhancements have changed and the
 # tests still pass.
 # Merge the pull request to put the new data live. Run it by hand from the Actions tab any time.
@@ -34,6 +34,7 @@ jobs:
         run: |
           cp js/data/factions.js "$RUNNER_TEMP/factions.before.js"
           python3 tools/build_factions.py "$RUNNER_TEMP/bsdata"
+          python3 tools/build_sheets.py "$RUNNER_TEMP/bsdata"
 
       - name: Work out what changed
         id: changes
@@ -47,10 +48,14 @@ jobs:
             echo "::error::The new build looks broken, so no pull request was opened. See the summary."
             exit 1
           fi
-          if [ "$code" = "10" ]; then
+          if [ "$code" = "10" ] && [ -z "$(git status --porcelain js/data/sheets)" ]; then
             echo "Nothing to update."
             git checkout -- js/data/factions.js
             echo "changed=false" >> "$GITHUB_OUTPUT"
+          elif [ "$code" = "10" ]; then
+            echo "Only the datasheet profiles changed." >> "$RUNNER_TEMP/changes.md"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "commit=$(git -C "$RUNNER_TEMP/bsdata" log -1 --format=%h)" >> "$GITHUB_OUTPUT"
           elif [ "$code" = "0" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
             echo "commit=$(git -C "$RUNNER_TEMP/bsdata" log -1 --format=%h)" >> "$GITHUB_OUTPUT"
@@ -81,7 +86,9 @@ jobs:
         with:
           branch: data/bsdata-refresh
           delete-branch: true
-          add-paths: js/data/factions.js
+          add-paths: |
+            js/data/factions.js
+            js/data/sheets
           commit-message: "Datasheet data: BSData ${{ steps.changes.outputs.commit }}"
           title: "Datasheet data: BSData ${{ steps.changes.outputs.commit }}"
           body-path: ${{ runner.temp }}/changes.md

@@ -119,7 +119,7 @@ test("unit options: warlord and an enhancement whose points fill in", async ({pa
   await seed(page);
   await open(page, "#/war/list/l1");
   expect(await checks(page)).toContain("No warlord chosen.");
-  await page.click('[aria-label="Options for Captain in this list"]');
+  await page.click('[aria-label="Warlord, enhancement and leading for Captain"]');
   await page.check("#w-ewl");
   await page.fill("#w-een", "Artificer Armour");
   await expect(page.locator("#w-eep")).toHaveValue("20");
@@ -217,7 +217,7 @@ test("duplicate a list as a new version and compare the two", async ({page}) => 
   await page.click("[data-dup]");
   await expect(page.locator("h1")).toHaveText("Club night v2");
   await page.click('[data-rm="0"]');                  // take the Captain out of the new version
-  await page.click('[data-opts="2"]'); await page.fill("#w-ep", "200"); await page.click("dialog[open] [type=submit]");
+  await page.click('[data-view="2"]'); await page.fill("#w-ep", "200"); await page.click("dialog[open] [type=submit]");
   await page.click("[data-compare]");
   await expect(page.locator("h1")).toHaveText("Compare lists");
   await expect(page.locator(".cmp-t thead")).toContainText("Club nightClub night v2");
@@ -398,7 +398,7 @@ test("build a list New Recruit style: battle size, detachment, datasheets, unit 
   await expect(page.locator('#lb-dlist li:has([data-sheet="Intercessor Squad"])')).toContainText("2 in list");
   // Wargear on a unit that's only in the list is kept, and exported.
   // Clicking a list-only unit's name opens its options; wargear comes from the datasheet's weapons.
-  await page.click('.lb-in .lb-title [data-opts="1"]');
+  await page.click('.lb-in .lb-title [data-view="1"]');
   await page.selectOption("#w-emc", "5");
   await expect(page.locator("#w-ep")).toHaveValue("80");
   await page.selectOption("#w-egear .gp-add", "Bolt Rifle");
@@ -470,4 +470,36 @@ test("datasheets whose sizes disagree with their points use the points brackets 
   await expect(page.locator('[data-size="0"] option:checked')).toHaveText("10 models · 65 pts");
   await page.selectOption('[data-size="0"]', "20");
   await expect(page.locator(".lb-sum b")).toHaveText("130");
+});
+
+test("the eye shows a unit's datasheet: models, weapons, abilities, rules and keywords; the ⋯ is for characters", async ({page}) => {
+  await seed(page, `db.units.find(u => u.id === "u2").ranged = "Bolt Rifle"; db.units.find(u => u.id === "u2").melee = "Close combat weapon";`);
+  await open(page, "#/war/list/l1");
+  // Only characters have the ⋯ (warlord, enhancement, leading); every unit has the eye.
+  await expect(page.locator(".lb-in .icon-x[data-view]")).toHaveCount(4);
+  await expect(page.locator(".lb-in [data-opts]")).toHaveCount(1);
+  await page.click('[aria-label="Datasheet, models and points for Intercessor Squad"]');
+  const ds = page.locator("#ds-body");
+  await expect(ds.locator("table").first()).toContainText("Intercessor");
+  await expect(ds.locator("table").first().locator("thead")).toContainText("InSv");
+  // The weapons the unit has come first, with their profiles; the rest fold away.
+  const ranged = ds.locator("table").nth(1);
+  await expect(ranged.locator("tbody th")).toHaveText(["Bolt Rifle"]);
+  await expect(ranged.locator("tbody tr").first()).toContainText('24"');
+  await expect(ds.locator(".ds-more summary").first()).toContainText("Other ranged weapons on the datasheet");
+  await expect(ds).toContainText("Abilities");
+  await expect(ds).toContainText("Oath of Moment");
+  await expect(ds.locator(".ds-kws")).toContainText("Battleline");
+  // Points in this list can still be changed here.
+  await page.fill("#w-ep", "140");
+  await page.click("dialog[open] [type=submit]");
+  await expect.poll(async () => (await saved(page)).lists[0].units[1].pts).toBe(140);
+  // A datasheet can be looked at before it's added.
+  // (Deathstorm Drop Pod is a Legends datasheet, so Legends are shown first.)
+  await page.fill("#lb-dq", "deathstorm");
+  await page.check("#lb-dl");
+  await page.click('[data-peek="Deathstorm Drop Pod"]');
+  await expect(page.locator("#ds-body")).toContainText("Deathstorm cannon array");
+  await page.click("dialog[open] [type=submit]");
+  await expect(page.locator(".lb-in")).toContainText("Deathstorm Drop Pod");
 });
