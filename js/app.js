@@ -1421,6 +1421,7 @@
     out.push("", "Created with War Ledger");
     return out.join("\n");
   }
+  const COPY_ICON = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>`;
   const DOTS = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="5" cy="12" r="2" fill="currentColor"/><circle cx="12" cy="12" r="2" fill="currentColor"/><circle cx="19" cy="12" r="2" fill="currentColor"/></svg>`;
   // Enhancement and leader pairings for a row in the list, as a short line.
   function entryNotes(x, rows){
@@ -1700,7 +1701,7 @@
       app.innerHTML = `${warTabs("lists")}<div class="banner"><span class="dot warn"></span><span>${D.warMissing ? "Army lists need a quick database update first. Run supabase/features.sql in Supabase." : list ? "The army for this list was deleted." : "That list couldn't be found. It may have been deleted."}</span></div><p><a class="btn" href="#/war/lists">Your army lists</a></p>`;
       return;
     }
-    let army = army0, q = "", chain = Promise.resolve(), rmArmed = "", rmTimer = 0;
+    let army = army0, q = "", chain = Promise.resolve(), rmArmed = "", rmTimer = 0, addTab = "sheets", dq = "", dRole = "", dLegends = false;
     view.name = "war-list"; document.title = `${list.name} · War Ledger`;
     // Saves run one after another, so the last change always wins.
     function save(patch){
@@ -1711,6 +1712,37 @@
     }
     async function reload(){ D = await warData(); list = D.lists.find(l => l.id === id) || list; army = D.armies.find(a => a.id === list.armyId) || army; draw(); }
     const byRole = rows => ROLE_ORDER.map(role => [role, rows.filter(x => (ROLE_ORDER.includes(x.role) ? x.role : "Other") === role)]).filter(x => x[1].length);
+    /* The builder, New Recruit style: pick the battle size and detachment, add units straight from the
+       datasheets, and set each unit's size with its points worked out from the datasheet. */
+    const roleOf = sh => ROLE_ORDER.includes(sh.r) ? sh.r : "Other";
+    const sizesOf = sh => sh && sh.ms && sh.ms[1] > sh.ms[0] ? Array.from({length: sh.ms[1] - sh.ms[0] + 1}, (_, j) => sh.ms[0] + j) : [];
+    const entrySheet = x => sheetByName(army.faction, x.u ? x.u.datasheet : x.sheet || x.name);
+    function sizePick(x){
+      const sh = !x.u && entrySheet(x), sizes = sizesOf(sh);
+      if(!sizes.length) return `<small>${plural(x.count, "model")}</small>`;
+      if(!sizes.includes(x.count)) sizes.push(x.count);
+      return `<label class="lb-size"><span class="sr-only">Models in ${esc(x.name)}</span><select data-size="${x.i}">${sizes.sort((a, b) => a - b).map(n => `<option value="${n}"${n === x.count ? " selected" : ""}>${plural(n, "model")}${sheetPts(sh, n) != null ? ` · ${sheetPts(sh, n)} pts` : ""}</option>`).join("")}</select></label>`;
+    }
+    // Battle size and detachment, right in the roster.
+    function configRow(){
+      const size = sizeOf(list), dets = list.detachments || [], all = factionDets(army.faction);
+      return `<div class="lb-config">
+        <label>Battle size<select id="lb-bs">${BATTLE_SIZES.map(z => `<option value="${z.id}"${size === z.id ? " selected" : ""}>${esc(z.name)} · ${num(z.pts)} pts</option>`).join("")}<option value="custom"${size === "custom" ? " selected" : ""}>Custom points</option><option value=""${!size ? " selected" : ""}>No points limit</option></select></label>
+        ${size === "custom" ? `<label>Points limit<input id="lb-lim" type="number" min="0" max="20000" step="250" inputmode="numeric" value="${list.limit || ""}"></label>` : ""}
+        ${dets.length > 1 ? `<div class="lb-dets"><span class="lb-dl">Detachments</span><span>${esc(detText(list))} <button type="button" class="linkish" data-details>Change</button></span></div>`
+          : `<label>Detachment<select id="lb-det"><option value="">None chosen</option>${all.map(d => `<option value="${esc(d.n)}"${dets[0] === d.n ? " selected" : ""}>${esc(d.n)}${d.dp ? ` · ${d.dp} DP` : ""}</option>`).join("")}${dets[0] && !all.some(d => d.n === dets[0]) ? `<option selected>${esc(dets[0])}</option>` : ""}</select></label>`}
+      </div>`;
+    }
+    // The datasheets to add from, grouped by role, with how many of each are already in the list.
+    function sheetRows(s){
+      const inList = {};
+      s.rows.filter(x => !x.gone).forEach(x => { const n = x.u ? x.u.datasheet || x.name : x.sheet || x.name; inList[n] = (inList[n] || 0) + 1; });
+      const sheets = sheetsOf(army.faction).filter(sh => (dLegends || !sh.t) && (!dRole || roleOf(sh) === dRole) && (!dq || sh.n.toLowerCase().includes(dq)));
+      if(!sheets.length) return `<p class="hint">No datasheets match.</p>`;
+      return ROLE_ORDER.map(r => [r, sheets.filter(sh => roleOf(sh) === r).sort((a, b) => a.n.localeCompare(b.n))]).filter(g => g[1].length).map(([r, shs]) => `<h3 class="lb-role">${esc(r)}</h3>
+        <ul class="lb-rows">${shs.map(sh => { const lo = minModels(sh), sz = sizesOf(sh), n = inList[sh.n];
+          return `<li><span class="lb-name">${esc(sh.n)}${sh.t ? ` <span class="tag">${esc(sh.t)}</span>` : ""}<small>${sz.length ? `${sz[0]}–${sz[sz.length - 1]} models` : plural(lo, "model")}${n ? ` · ${n} in list` : ""}</small></span><span class="lb-pts">${sh.p != null ? num(sheetPts(sh, lo)) : "–"}</span><button type="button" class="btn-sm" data-sheet="${esc(sh.n)}" aria-label="Add ${esc(sh.n)} to the list">Add</button></li>`; }).join("")}</ul>`).join("");
+    }
     function checksPanel(s){
       if(!listChecksOn()) return "";
       const hidden = new Set(list.ignored || []), all = listChecks(list, s, army.faction), shown = all.filter(c => !hidden.has(c.id)), nHid = all.length - shown.length;
@@ -1744,27 +1776,55 @@
         </section>
         ${isCrusade(list) ? crusadePanel(s, checksPanel(s)) : checksPanel(s)}
         <div class="lb">
-          <section class="panel lb-in" aria-labelledby="lb-in-h"><h2 class="ph" id="lb-in-h">In this list</h2>
+          <section class="panel lb-in" aria-labelledby="lb-in-h">
+            <div class="lb-total${over ? " over" : ""}"><h2 class="ph" id="lb-in-h">In this list</h2><span class="lb-sum"><b>${num(s.points)}</b>${list.limit ? ` / ${num(list.limit)}` : ""} pts${list.limit ? ` · ${over ? `${num(s.points - list.limit)} over` : `${num(list.limit - s.points)} left`}` : ""}</span>
+              ${list.limit ? `<div class="wbar" aria-hidden="true"><i style="width:${Math.min(100, pctOf(s.points, list.limit))}%"></i></div>` : ""}<button type="button" class="btn-sm lb-jump" data-jump-add>+ Add units</button></div>
+            ${configRow()}
             ${s.rows.length ? byRole(s.rows.filter(x => !x.gone)).map(([role, rows]) => `<h3 class="lb-role">${esc(role)} <small>${ptsText(rows.reduce((a, x) => a + x.points, 0))}</small></h3>
               <ul class="lb-rows">${rows.map(x => { const extra = entryNotes(x, s.rows); return `<li>
-                <span class="lb-name"><span class="lb-title">${x.u ? `<button type="button" class="linkish" data-unit="${esc(x.u.id)}">${x.u.fav ? `<span class="star on" aria-label="Starred">${STAR(true)}</span> ` : ""}${esc(x.name)}</button>` : esc(x.name)}${x.warlord ? `<span class="tag wl">Warlord</span>` : ""}</span><small>${plural(x.count, "model")}</small>${extra ? `<small class="lb-extra">${extra}</small>` : ""}</span>
+                <span class="lb-name"><span class="lb-title">${x.u ? `<button type="button" class="linkish" data-unit="${esc(x.u.id)}">${x.u.fav ? `<span class="star on" aria-label="Starred">${STAR(true)}</span> ` : ""}${esc(x.name)}</button>` : esc(x.name)}${x.warlord ? `<span class="tag wl">Warlord</span>` : ""}</span>${sizePick(x)}${extra ? `<small class="lb-extra">${extra}</small>` : ""}</span>
                 <span class="lb-pts">${num(x.points)}</span>
-                <button type="button" class="btn-sm icon-x" data-opts="${x.i}" aria-label="Options for ${esc(x.name)} in this list" title="Warlord, enhancement, leader and points">${DOTS}</button>
+                <button type="button" class="btn-sm icon-x" data-opts="${x.i}" aria-label="Options for ${esc(x.name)} in this list" title="Models, wargear, warlord, enhancement, leader and points">${DOTS}</button>
+                <button type="button" class="btn-sm icon-x" data-dupe="${x.i}" aria-label="Add another ${esc(x.name)}" title="Add another">${COPY_ICON}</button>
                 <button type="button" class="btn-sm icon-x" data-rm="${x.i}" aria-label="Remove ${esc(x.name)} from the list">×</button></li>`; }).join("")}</ul>`).join("")
-              : `<p class="hint">Add units from your collection, or paste a list you've built elsewhere.</p>`}
+              : `<p class="hint">Add units from the datasheets or your collection, or paste a list you've built elsewhere.</p>`}
             ${s.gone.length ? `<p class="hint">${plural(s.gone.length, "unit")} in this list ${s.gone.length === 1 ? "was" : "were"} deleted from the army. <button type="button" class="btn-sm" data-prune>Remove from list</button></p>` : ""}
           </section>
-          <section class="panel lb-coll" aria-labelledby="lb-c-h"><h2 class="ph" id="lb-c-h">Your collection</h2>
+          <section class="panel lb-coll" id="lb-add" aria-labelledby="lb-c-h"><h2 class="ph" id="lb-c-h">Add units</h2>
+            <div class="seg lb-tabs" role="group" aria-label="Add from"><button type="button" data-add-tab="sheets" aria-pressed="${addTab === "sheets"}">Datasheets</button><button type="button" data-add-tab="coll" aria-pressed="${addTab === "coll"}">Your collection${pool.length ? ` <span class="count">${pool.length}</span>` : ""}</button></div>
+            ${addTab === "sheets" ? `
+            <div class="lb-dfilters"><input type="search" id="lb-dq" placeholder="Search ${esc(factionName(army.faction))} datasheets" aria-label="Search datasheets" value="${esc(dq)}">
+              <select id="lb-dr" aria-label="Role"><option value="">All roles</option>${ROLE_ORDER.filter(r => sheetsOf(army.faction).some(sh => roleOf(sh) === r)).map(r => `<option${dRole === r ? " selected" : ""}>${esc(r)}</option>`).join("")}</select>
+              <label class="chk"><input type="checkbox" id="lb-dl"${dLegends ? " checked" : ""}><span>Legends</span></label></div>
+            <div id="lb-dlist">${sheetRows(s)}</div>` : `
             <p class="hint lb-note">Every ${esc(factionName(army.faction))} unit you have: this army's first, then your other ${esc(factionName(army.faction))} armies and units not in an army.</p>
             <input type="search" id="lb-q" placeholder="Search your ${esc(factionName(army.faction))} units" aria-label="Search your collection" value="${esc(q)}">
             ${coll.length ? `<ul class="lb-rows">${coll.map(u => { const home = homeOf(D, u, army.id); return `<li><span class="lb-name">${esc(u.name)}<small>${esc([u.role || "", plural(modelsOf(u), "model"), home].filter(Boolean).join(" · "))}</small></span><span class="lb-pts">${num(u.points)}</span><button type="button" class="btn-sm" data-add="${esc(u.id)}" aria-label="Add ${esc(u.name)} to the list">Add</button></li>`; }).join("")}</ul>`
               : `<p class="hint">${pool.length ? (q ? "No units match." : "Every unit you have is already in the list.") : "No units of this faction yet."}</p>`}
-            <button type="button" class="btn-sm" data-add-unit>+ Add a new unit to the army</button>
+            <button type="button" class="btn-sm" data-add-unit>+ Add a new unit to the army</button>`}
           </section>
         </div>
         <section class="war-sec danger-zone"><div class="row-actions"><button type="button" class="btn-sm" data-dup>Duplicate list</button><button type="button" class="btn-sm" data-compare>Compare with another list</button><button type="button" class="btn-sm danger" id="w-dellist">Delete list</button></div></section>`;
       const inp = $("lb-q");
-      inp.addEventListener("input", () => { q = inp.value.trim().toLowerCase(); const pos = inp.selectionStart; draw(); const n = $("lb-q"); n.focus(); n.setSelectionRange(pos, pos); });
+      if(inp) inp.addEventListener("input", () => { q = inp.value.trim().toLowerCase(); const pos = inp.selectionStart; draw(); const n = $("lb-q"); n.focus(); n.setSelectionRange(pos, pos); });
+      // Filtering the datasheets only redraws their list, so typing isn't interrupted.
+      const dlist = () => { $("lb-dlist").innerHTML = sheetRows(listState(list, D)); };
+      if($("lb-dq")){
+        $("lb-dq").addEventListener("input", e => { dq = e.target.value.trim().toLowerCase(); dlist(); });
+        $("lb-dr").addEventListener("change", e => { dRole = e.target.value; dlist(); });
+        $("lb-dl").addEventListener("change", e => { dLegends = e.target.checked; dlist(); });
+      }
+      $("lb-bs").addEventListener("change", e => {
+        const v = e.target.value, z = BATTLE_SIZES.find(b => b.id === v);
+        save({size: v, limit: z ? z.pts : v === "custom" ? list.limit : 0});
+      });
+      if($("lb-lim")) $("lb-lim").addEventListener("change", e => save({limit: Math.max(0, parseInt(e.target.value, 10) || 0)}));
+      if($("lb-det")) $("lb-det").addEventListener("change", e => save({detachments: e.target.value ? [e.target.value] : []}));
+      app.querySelectorAll("[data-size]").forEach(sel => sel.addEventListener("change", () => {
+        const i = +sel.dataset.size, e = list.units[i], sh = sheetByName(army.faction, e.sheet || e.n), n = +sel.value, p = sheetPts(sh, n);
+        save({units: list.units.map((x, j) => j === i ? {...x, count: n, ...(p != null ? {points: p} : {})} : x)});
+        const again = app.querySelector(`[data-size="${i}"]`); if(again) again.focus();
+      }));
       armButton($("w-dellist"), "Press again to delete", async () => {
         try { await chain; await store.removeList(list.id); flash(`Deleted ${list.name}`); location.hash = "#/war/lists"; }
         catch(err){ flash("Couldn't delete: " + errText(err)); }
@@ -1840,7 +1900,7 @@
         <div class="row-actions"><button type="submit" class="primary">Save</button></div>`);
       d.querySelector("form").addEventListener("submit", ev => { ev.preventDefault(); save({rp: Math.max(0, parseInt($("cr-rp").value, 10) || 0) - cs.gs.length}); d.close(); });
     }
-    // Warlord, enhancement, leader and points for one unit in this list. Nothing here is checked against the rules.
+    // Models and wargear (for a unit that's only in the list), warlord, enhancement, leader and points. Nothing here is checked against the rules.
     function openEntryOptions(i){
       const s = listState(list, D), x = s.rows.find(r => r.i === i); if(!x || x.gone) return;
       const e = list.units[i], ch = isCharRole(x.role);
@@ -1850,7 +1910,13 @@
       const opts = enhOptions(army.faction, list.detachments);
       opts.forEach(([n, p, only, det]) => { known[n] = p; labels[n] = [`${p} pts`, det, only ? only.join(" or ") + " only" : ""].filter(Boolean).join(" · "); });
       const bodies = s.rows.filter(r => !r.gone && r.i !== i && !isCharRole(r.role));
+      const sh = !x.u && entrySheet(x), sizes = sizesOf(sh), gearOpts = sh ? [...(sh.wr || []), ...(sh.wm || [])] : [];
       const d = modal(`${esc(x.name)} in this list`, `
+        ${x.u ? "" : `<div class="wgrid">
+          <label>Models${sizes.length ? `<select id="w-emc">${(sizes.includes(x.count) ? sizes : [...sizes, x.count].sort((a, b) => a - b)).map(n => `<option value="${n}"${n === x.count ? " selected" : ""}>${n}${sheetPts(sh, n) != null ? ` · ${sheetPts(sh, n)} pts` : ""}</option>`).join("")}</select>` : `<input id="w-emc" type="number" min="1" max="99" inputmode="numeric" value="${x.count}">`}</label>
+          <label class="span2">Wargear<input id="w-egear" maxlength="600" list="w-egear-dl" value="${esc(e.gear || "")}" placeholder="${esc(gearOpts.slice(0, 3).join(", ") || "e.g. Bolt rifle, Close combat weapon")}"></label>
+          <datalist id="w-egear-dl">${gearOpts.map(g => `<option value="${esc(g)}">`).join("")}</datalist>
+        </div>`}
         <label>Points in this list<input id="w-ep" type="number" min="0" max="9999" inputmode="numeric" value="${x.u ? (e.pts ?? "") : e.points}" placeholder="${x.u ? num(+x.u.points || 0) : ""}"></label>
         <p class="hint">${x.u ? `Leave blank to use the unit's own points (${num(+x.u.points || 0)}). A change here only affects this list.` : "The points this unit costs in this list."}</p>
         ${ch ? `<label class="chk"><input type="checkbox" id="w-ewl"${x.warlord ? " checked" : ""}><span>Warlord of this list</span></label>
@@ -1868,9 +1934,12 @@
         const p = known[ev.target.value.trim()], cur = $("w-eep").value;
         if(p != null && (!cur || cur === autoP)){ $("w-eep").value = p || ""; autoP = String(p || ""); }
       });
+      // Changing the unit size fills in the datasheet's points for that size.
+      if($("w-emc") && sh) $("w-emc").addEventListener("input", () => { const p = sheetPts(sh, +$("w-emc").value || 1); if(p != null) $("w-ep").value = p; });
       d.querySelector("form").addEventListener("submit", ev => {
         ev.preventDefault();
         const pv = $("w-ep").value.trim(), n = {...e};
+        if(!x.u){ n.count = Math.min(99, Math.max(1, parseInt($("w-emc").value, 10) || 1)); const g = $("w-egear").value.trim(); if(g) n.gear = g; else delete n.gear; }
         if(x.u){ if(pv === "") delete n.pts; else n.pts = Math.max(0, parseInt(pv, 10) || 0); } else n.points = Math.max(0, parseInt(pv, 10) || 0);
         let wl = false;
         if(ch){
@@ -1887,6 +1956,20 @@
     onApp(async e => {
       const b = e.target.closest("button"); if(!b) return;
       if(b.dataset.add) save({units: list.units.concat({u: b.dataset.add, k: entryKey()})});
+      else if(b.dataset.sheet) {
+        const sh = sheetByName(army.faction, b.dataset.sheet); if(!sh) return;
+        const count = minModels(sh);
+        await save({units: list.units.concat({n: sh.n, sheet: sh.n, role: roleOf(sh), count, points: sheetPts(sh, count) ?? 0, k: entryKey()})});
+        flash(`Added ${sh.n}. The list is now ${ptsText(listState(list, D).points)}.`);
+        const again = app.querySelector(`[data-sheet="${CSS.escape(sh.n)}"]`); if(again) again.focus();
+      }
+      else if(b.dataset.dupe != null) {
+        // Another of the same unit, without the things only one unit can have.
+        const i = +b.dataset.dupe, {warlord, enh, lead, xp, hon, scar, cpx, cnote, ...copy} = list.units[i];
+        save({units: [...list.units.slice(0, i + 1), {...copy, k: entryKey()}, ...list.units.slice(i + 1)]});
+      }
+      else if(b.dataset.addTab) { addTab = b.dataset.addTab; draw(); const t = app.querySelector(`[data-add-tab="${addTab}"]`); if(t) t.focus(); }
+      else if(b.matches("[data-jump-add]")) { const p = $("lb-add"); if(p){ p.scrollIntoView({behavior: "smooth", block: "start"}); const f = $("lb-dq") || $("lb-q"); if(f) f.focus({preventScroll: true}); } }
       else if(b.dataset.rm != null) {
         // Anyone leading the removed unit stops leading it.
         const gone = list.units[+b.dataset.rm];

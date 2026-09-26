@@ -29,6 +29,7 @@ test("a unit can live in the collection without an army, and lists can use it", 
   await page.click("dialog[open] [type=submit]");
   await expect(page.locator('.wc-group:has(h3:text-is("Not in an army"))')).toContainText("Lieutenant");
   await open(page, "#/war/list/l1");
+  await page.click('[data-add-tab="coll"]');
   await expect(page.locator('.lb-coll li:has-text("Lieutenant")')).toContainText("Not in an army");
 });
 
@@ -235,6 +236,7 @@ test("a Crusade force: battles give experience and requisition points, and each 
   await page.click("dialog[open] [type=submit]");
   await expect(page.locator("h1")).toHaveText("Indomitus Crusade");
   await expect(page.locator(".lst-meta .tag.cr")).toHaveText("Crusade");
+  await page.click('[data-add-tab="coll"]');
   await page.click('[data-add="u1"]'); await page.click('[data-add="u2"]');
   await expect(page.locator(".cr-t tbody tr")).toHaveCount(2);
   // A battle: both took part, the Captain was Marked for Greatness.
@@ -367,4 +369,46 @@ test("import an army: the faction is found, and the army, its planned units and 
   // Planned units, so none of it shows in Livery Ledger.
   await open(page, "#/livery/ledgers");
   await expect(page.locator(".lcard h3")).not.toContainText(["Butchers"]);
+});
+
+test("build a list New Recruit style: battle size, detachment, datasheets, unit sizes and copies", async ({page}) => {
+  await seed(page, `db.lists.push({id: "nb", armyId: "a1", name: "Fresh", limit: 0, detachments: [], units: [], createdAt: "2026-09-01", updatedAt: "2026-09-01"});`);
+  await open(page, "#/war/list/nb");
+  const list = async () => (await saved(page)).lists.find(l => l.id === "nb");
+  // Configuration sits in the roster.
+  await page.selectOption("#lb-bs", "incursion");
+  await expect(page.locator(".lb-sum")).toContainText("/ 1,000 pts");
+  await page.selectOption("#lb-det", "Gladius Task Force");
+  await expect.poll(async () => (await list()).detachments).toEqual(["Gladius Task Force"]);
+  expect((await list())).toMatchObject({size: "incursion", limit: 1000});
+  // Units come straight from the datasheets at their smallest size.
+  await page.fill("#lb-dq", "intercessor squ");
+  await expect(page.locator("#lb-dlist [data-sheet]").first()).toBeVisible();
+  expect(await page.locator("#lb-dlist [data-sheet]").evaluateAll(bs => bs.map(b => b.dataset.sheet).every(n => /intercessor squ/i.test(n)))).toBe(true);
+  await page.click('[data-sheet="Intercessor Squad"]');
+  await expect(page.locator(".lb-in")).toContainText("Intercessor Squad");
+  await expect(page.locator(".lb-sum b")).toHaveText("80");
+  // Changing the size uses the datasheet's points for that size.
+  await page.selectOption('[data-size="0"]', "10");
+  await expect(page.locator(".lb-sum b")).toHaveText("150");
+  // Another copy, and the datasheet list says how many are in the list.
+  await page.click('[data-dupe="0"]');
+  await expect(page.locator(".lb-sum b")).toHaveText("300");
+  await page.fill("#lb-dq", "intercessor squ");
+  await expect(page.locator('#lb-dlist li:has([data-sheet="Intercessor Squad"])')).toContainText("2 in list");
+  // Wargear on a unit that's only in the list is kept, and exported.
+  await page.click('[data-opts="1"]');
+  await page.selectOption("#w-emc", "5");
+  await expect(page.locator("#w-ep")).toHaveValue("80");
+  await page.fill("#w-egear", "Bolt rifle, Astartes grenade launcher");
+  await page.click("dialog[open] [type=submit]");
+  await expect(page.locator(".lb-sum b")).toHaveText("230");
+  await expect.poll(async () => (await list()).units.map(e => [e.count, e.points, e.gear])).toEqual([[10, 150, undefined], [5, 80, "Bolt rifle, Astartes grenade launcher"]]);
+  await open(page, "#/war/list/nb");
+  await page.click("[data-export]");
+  expect((await page.inputValue("#w-exp")).split("\n")).toContain("5x Intercessor Squad (80 pts): Bolt rifle, Astartes grenade launcher");
+  await page.keyboard.press("Escape");
+  // Your collection is the other tab.
+  await page.click('[data-add-tab="coll"]');
+  await expect(page.locator("#lb-q")).toBeVisible();
 });

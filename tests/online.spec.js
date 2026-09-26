@@ -14,6 +14,7 @@ test("build a list online and save its details", async ({page}) => {
   await page.click(".sec-h [data-new-list]");
   await page.fill("#w-ln", "Test list");
   await page.click("dialog[open] [type=submit]");
+  await page.click('[data-add-tab="coll"]');
   await page.click('[data-add="n1"]'); await page.click('[data-add="n2"]');
   await expect.poll(async () => (await db(page)).lists[0].data.units.length).toBe(2);
   await page.click("[data-details]");

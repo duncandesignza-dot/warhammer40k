@@ -172,6 +172,8 @@
         const n = String(e.n || e.sheet || "").trim().slice(0, 80);
         if(!n) return null;
         row = {n, sheet: String(e.sheet || "").slice(0, 80), role: String(e.role || "").slice(0, 40), count: int(e.count, 1, 99) || 1, points: int(e.points, 0, 9999)};
+        // Wargear for a unit that's only in the list (a unit from the collection has its own).
+        const gear = String(e.gear || "").trim().slice(0, 600); if(gear) row.gear = gear;
       }
       let k = /^[\w-]{1,24}$/.test(e.k || "") ? e.k : "e" + i;
       while(seen.has(k)) k += "x";
