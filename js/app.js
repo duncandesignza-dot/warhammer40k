@@ -490,6 +490,7 @@
     }
     lastHash = location.hash;
     if(view.cleanup){ try { view.cleanup(); } catch(e){} view.cleanup = null; }
+    view.seq = (view.seq || 0) + 1;   // pages still loading from before can tell they've been left
     const parts = (location.hash.replace(/^#\/?/, "") || "").split("/").filter(Boolean);
     // War Ledger pages are red, Livery Ledger's own pages green; shared pages keep the last one used.
     // Old links to the profile page now open Livery Ledger's overview.
@@ -2563,12 +2564,15 @@
         <button type="button" data-pt="recipes">Recipes</button><button type="button" data-pt="owned">My paints</button><button type="button" data-pt="buy">To buy <span class="buy-badge" id="pp-buy" hidden></span></button>
       </div>
       <div id="pp-body" class="pp-body"><p class="hint">Loading…</p></div>`;
+    const seq = view.seq, left = () => view.seq !== seq || !$("pp-body");
     try {
       const res = await Promise.all([liveryData(), store.listAllUnits(), store.getPaints().catch(() => []), PU.load()]);
       armies = res[0].armies; units = res[1]; ownedList = res[2] || [];
-    } catch(err){ console.error(err); $("pp-body").innerHTML = `<p class="hint">Couldn't load your paints: ${esc(errText(err))}</p>`; return; }
+    } catch(err){ console.error(err); if(!left()) $("pp-body").innerHTML = `<p class="hint">Couldn't load your paints: ${esc(errText(err))}</p>`; return; }
+    if(left()) return;
     try { library = store.getLibrary ? await store.getLibrary() : []; }
     catch(err){ library = null; libMsg = err.code === "nolib" ? "To keep a recipe library, add the recipes table to Supabase: run supabase/recipes.sql in the SQL editor." : "Couldn't load your recipe library."; }
+    if(left()) return;
     const owned = () => new Set(ownedList.map(PU.norm));
     const isOwned = p => owned().has(PU.norm(p));
     const live = () => (library || []).filter(r => !r.deleted);
