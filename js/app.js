@@ -3025,7 +3025,15 @@
     "chaos-knights": ["Chaos Knights: dark Knights and War Dogs stride against the Aeldari", "A traitor Titan towers over a burning Imperial city"],
     "chaos-daemons": "Chaos Daemons: a Great Unclean One, a Keeper of Secrets and their daemons",
     "world-eaters": "World Eaters: Angron leads Khorne Berzerkers across a field of skulls",
-    "thousand-sons": "Thousand Sons: an Exalted Sorcerer leads Rubric Marines"
+    "thousand-sons": "Thousand Sons: an Exalted Sorcerer leads Rubric Marines",
+    "aeldari": "Aeldari: the Avatar of Khaine leads Guardians, jetbikes and Aspect Warriors",
+    "drukhari": "Drukhari: an Archon and her raiders strike at the Astra Militarum",
+    "genestealer-cults": "Genestealer Cults: a Magus leads hybrids and Aberrants from their mining trucks",
+    "leagues-of-votann": "Leagues of Votann: Hearthkyn and armoured Hekaton land fortresses roll forward",
+    "necrons": "Necrons: an Overlord raises his legions of warriors and Lychguard",
+    "orks": "Orks: a Warboss leads Boyz, buggies and bikes in a roaring charge",
+    "tau-empire": "T'au Empire: Farsight's red battlesuits and a Devilfish fight Orks",
+    "tyranids": "Tyranids: a swarm of Hormagaunts and a towering monster overrun an Imperial line"
   };
   const factionHero = fid => {
     const alts = [].concat(FACTION_HEROES[fid] || []); if(!alts.length) return "";

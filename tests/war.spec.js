@@ -530,7 +530,7 @@ test("the eye on army and collection tables shows a unit's datasheet, and the un
 
 test("new army pages show the faction's picture under the army name, where there is one", async ({page}) => {
   await seed(page);
-  for(const f of ["adepta-sororitas", "adeptus-custodes", "adeptus-mechanicus", "agents-of-the-imperium", "astra-militarum", "black-templars", "chaos-daemons", "chaos-knights", "chaos-space-marines", "death-guard", "emperors-children", "blood-angels", "dark-angels", "deathwatch", "grey-knights", "imperial-fists", "imperial-knights", "iron-hands", "raven-guard", "salamanders", "space-wolves", "thousand-sons", "white-scars", "world-eaters"]){
+  for(const f of ["aeldari", "drukhari", "genestealer-cults", "leagues-of-votann", "necrons", "orks", "tau-empire", "tyranids", "adepta-sororitas", "adeptus-custodes", "adeptus-mechanicus", "agents-of-the-imperium", "astra-militarum", "black-templars", "chaos-daemons", "chaos-knights", "chaos-space-marines", "death-guard", "emperors-children", "blood-angels", "dark-angels", "deathwatch", "grey-knights", "imperial-fists", "imperial-knights", "iron-hands", "raven-guard", "salamanders", "space-wolves", "thousand-sons", "white-scars", "world-eaters"]){
     await open(page, "#/war/new/" + f);
     const img = page.locator("#wn-form .faction-hero img");
     await expect(img).toHaveAttribute("alt", /.+/);
@@ -542,6 +542,6 @@ test("new army pages show the faction's picture under the army name, where there
   await open(page, "#/livery/new/black-templars");
   await expect(page.locator(".setup .faction-hero img")).toBeVisible();
   // Factions without a picture just have the form.
-  await open(page, "#/war/new/orks");
+  await open(page, "#/war/new/ultramarines");
   await expect(page.locator(".faction-hero")).toHaveCount(0);
 });

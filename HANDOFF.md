@@ -23,9 +23,9 @@ Cloudflare needed `"previews": {}` in `wrangler.jsonc` for the Workers Builds ch
 
 ## Current state (at handoff)
 
-- `main` is at the merge of PR #41 (wargear pickers, faction checks, the datasheet eye in lists, this guide).
-- Branch `claude/friendly-rubin-fpxzch` adds **the datasheet eye on War's army and collection tables** and a folding **Datasheet** panel in the unit editor, which follows the datasheet and wargear chosen. Tests pass (70).
-- **Next step:** check it on the branch preview, then open a PR and merge it once the `test` check is green.
+- `main` has the datasheet eye on War's army and collection tables and in the unit editor (PR #42), and faction pictures on the new army pages.
+- Tests pass (71).
+- **Next step:** pick something from "Ideas that came up but aren't done".
 
 ## How we've been working
 
@@ -42,7 +42,7 @@ Cloudflare needed `"previews": {}` in `wrangler.jsonc` for the Workers Builds ch
 
 ```bash
 python3 -m http.server 8765          # from the repo root, then open http://localhost:8765
-cd tests && npm ci && npx playwright test     # the whole suite (~1.5 min, 70 tests)
+cd tests && npm ci && npx playwright test     # the whole suite (~1.5 min, 71 tests)
 npx playwright test war.spec.js -g "import an army"   # one test
 ```
 
@@ -74,6 +74,7 @@ js/data/factions.js   datasheets per faction: name n, role r, sizes ms, max copi
                       detachments dets [{n, dp, c, e:[[enhancement, pts, only?]]}]; battle sizes
 js/data/sheets/<faction>.js   datasheet profiles, loaded on demand (see "Datasheet profiles")
 js/data/presets.js, emblems.js, paints.js   colour presets, faction emblems, paint data
+img/heroes/<faction>.webp   faction pictures on the new army pages (800×250); <faction>-2.webp etc. for more than one
 tools/build_factions.py   builds factions.js from BSData
 tools/build_sheets.py     builds js/data/sheets/*.js from BSData (reads the faction list from build_factions.py)
 tools/data_changes.py     summarises what changed between two factions.js builds
@@ -121,6 +122,7 @@ python3 tools/build_factions.py bsdata && python3 tools/build_sheets.py bsdata
   - `gearPicker(box, {kind, options, value, onChange})`: wargear chips plus a dropdown. `splitGear` splits a comma list.
   - `loadSheets(fid)` then `datasheetHtml(profile, gear)`: the datasheet tables.
   - `forceStatus`: the War overview's "Force composition" panel.
+- **Faction pictures:** `FACTION_HEROES` (faction id → description, or a list of them for several pictures) and `factionHero(fid)`, shown in the form card under the army name on `#/war/new/<faction>` and `#/livery/new/<faction>`. A faction with several shows one at random. Space Marines and Ultramarines have none yet.
 - **Livery:**
   - `liveryData()` returns armies and a summary. Only owned units count; War-only armies with no owned units are hidden.
   - `ownedUnits(armyId)`, `unitOwned(u)`, `paintStatus`, `viewLedger` (the big ledger page), `viewSetup` (colours).
