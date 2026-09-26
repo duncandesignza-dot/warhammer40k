@@ -50,7 +50,7 @@ test("deleting a ledger warns that its lists and battles go too", async ({page})
 test("deleting from War Ledger asks the same way, offers a backup, and deletes everywhere", async ({page}) => {
   await seed(page);
   await open(page, "#/war/army/a1");
-  await page.click("#w-delarmy");
+  await page.click("#wa-more"); await page.click("#w-delarmy");
   const dlg = page.locator("dialog[open]");
   await expect(dlg).toContainText("from Livery Ledger and War Ledger");
   const [dl] = await Promise.all([page.waitForEvent("download"), page.click("#dl-export")]);
