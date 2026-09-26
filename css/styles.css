@@ -1364,6 +1364,24 @@ html[data-mode="war"] .bw-war{display:inline}
 .lb-role{display:flex;justify-content:space-between;margin:16px 0 8px!important}
 .lb-role:first-of-type{margin-top:0!important}
 .lb-role small{color:var(--muted);font-weight:400;letter-spacing:.04em}
+/* New Recruit-style builder: the total stays in view, configuration sits in the roster */
+.lb-total{position:sticky;top:76px;z-index:3;display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:-20px -20px 14px;padding:14px 20px 12px;background:var(--surface-solid);border-bottom:1px solid var(--line);border-radius:18px 18px 0 0}
+.lb-total h2.ph{margin:0!important}
+.lb-sum{font-family:var(--mono);font-size:.82rem;color:var(--muted);margin-left:auto}.lb-sum b{font-size:1.05rem;color:var(--ink)}
+.lb-total.over .lb-sum,.lb-total.over .lb-sum b{color:var(--bad)}
+.lb-total .wbar{flex:1 0 100%;margin:0}
+.lb-total.over .wbar i{background:var(--bad)}
+.lb-jump{display:none}
+.lb-config{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:0 0 14px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
+.lb-config label{margin:0}
+.lb-dets{display:flex;flex-direction:column;gap:4px;font-size:.9rem}.lb-dl{font-size:.8rem;color:var(--muted)}
+.lb-size{display:block;margin:2px 0 0}
+.lb-rows .lb-size select{padding:3px 28px 3px 8px;font-size:.8rem;min-height:0;width:auto;max-width:100%;margin:0}
+.lb-tabs{margin:0 0 12px}
+.lb-dfilters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+.lb-dfilters input[type=search]{flex:1 1 180px}.lb-dfilters select{width:auto;flex:0 1 auto}.lb-dfilters .chk{margin:0}
+#lb-dlist{max-height:70vh;overflow:auto;padding-right:4px}
+@media (max-width:900px){.lb-jump{display:inline-flex}#lb-dlist{max-height:none}}
 .lb-rows{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:6px}
 .lb-rows li{display:flex;align-items:center;gap:10px;padding:9px 10px 9px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
 .lb-name{flex:1;min-width:0;display:flex;flex-direction:column;font-weight:600;overflow-wrap:anywhere}
