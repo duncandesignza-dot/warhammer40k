@@ -114,3 +114,16 @@ test("no accessibility problems on a painter's profile, comments and battles aga
     expect(await axe(page), r).toEqual([]);
   }
 });
+
+test("share an army from War Ledger", async ({page}) => {
+  await mockSupabase(page, {db: DB});
+  await page.goto("/#/war/army/a1");
+  await page.click("[data-share]");
+  await page.click("label.switch:has(#wsh-on)");
+  await expect(page.locator("#wsh-msg")).toContainText("Sharing is on");
+  await expect(page.locator("#wsh-link")).toHaveValue(/#\/army\/a1$/);
+  expect((await db(page)).armies.find(a => a.id === "a1").public).toBe(true);
+  await page.keyboard.press("Escape");
+  await expect(page.locator("[data-share]")).toHaveText("Shared");
+  expect(await axe(page)).toEqual([]);
+});

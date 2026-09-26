@@ -1187,7 +1187,7 @@
         <section class="page-head war-head">
           <div class="wh-id">${armyBadge(army, 64)}<div><p class="eyebrow">${esc(factionName(army.faction))}</p><h1>${esc(army.name)}</h1>
             <p class="sub"><a href="#/army/${esc(id)}">Open in Livery Ledger</a> to plan its colours and painting.</p></div></div>
-          <div class="war-actions"><button type="button" class="primary" data-add-unit>+ Add unit</button><button type="button" data-from-list>Add from a list</button></div>
+          <div class="war-actions"><button type="button" class="primary" data-add-unit>+ Add unit</button><button type="button" data-from-list>Add from a list</button><button type="button" class="share-btn${army.public ? " on" : ""}" data-share><span class="dot${army.public ? " on" : ""}"></span>${army.public ? "Shared" : "Share"}</button></div>
         </section>
         ${warTabs("armies")}
         ${missingBanner(D)}
@@ -1251,6 +1251,7 @@
       else if(b.matches("[data-filter]")) { filter = b.dataset.filter; draw(); }
       else if(b.dataset.wstar) toggleWarStar(D, b.dataset.wstar, draw);
       else if(b.matches("[data-new-list]")) openNewList(D, id);
+      else if(b.matches("[data-share]")) openShareArmy(army, a => { army = a; draw(); });
       else if(b.matches("[data-rename]")) {
         const d = modal("Rename army", `<label>Army name<input id="w-rn" maxlength="80" value="${esc(army.name)}"></label><div class="row-actions"><button type="submit" class="primary">Save</button><span class="msg" id="w-msg" role="status"></span></div>`);
         d.querySelector("form").addEventListener("submit", async ev => {
@@ -1260,6 +1261,36 @@
         });
       }
       else warClicks(e, D, reload);
+    });
+  }
+
+  // Sharing an army from War Ledger: the same switch and link as a Livery ledger. The link opens the
+  // read-only view (units, colours, progress and battle record), and the army shows on Shared armies.
+  function openShareArmy(army, changed){
+    const link = location.origin + location.pathname + "#/army/" + army.id;
+    const d = modal("Share this army", store.canShare ? `
+      <label class="switch"><input type="checkbox" id="wsh-on" ${army.public ? "checked" : ""}><span class="track" aria-hidden="true"><i></i></span><span>Share this army</span></label>
+      <p class="hint">Anyone with the link can view it, and logged-in players can find it on the <a href="#/shared">Shared armies</a> page. They'll see your units, colours, points, painting progress and battle record, and your display name. Your army lists and battle reports stay private. Turn this off any time and the link stops working.</p>
+      <div class="copyrow" id="wsh-row" ${army.public ? "" : "hidden"}><input id="wsh-link" readonly value="${esc(link)}" aria-label="Share link"><button type="button" class="primary" id="wsh-copy">Copy link</button></div>
+      <div class="msg" id="wsh-msg" role="status"></div>`
+      : `<p class="hint">Sharing needs the online database. Add your Supabase details in <code>js/config.js</code> and sign in to share armies.</p>`);
+    if(!store.canShare) return;
+    $("wsh-on").addEventListener("change", async e => {
+      const on = e.target.checked; e.target.disabled = true; $("wsh-msg").textContent = on ? "Turning sharing on…" : "Turning sharing off…";
+      try {
+        army = await store.saveArmy({faction: army.faction, name: army.name, scheme: army.scheme, public: on}, army.id);
+        $("wsh-row").hidden = !army.public;
+        $("wsh-msg").textContent = army.public ? "Sharing is on. Copy the link and send it to anyone." : "Sharing is off. The link no longer works.";
+        changed(army);
+      } catch(err){
+        e.target.checked = !on;
+        $("wsh-msg").textContent = "Couldn't change sharing: " + errText(err) + (/column|public/i.test(errText(err)) ? " Run supabase/setup.sql in Supabase to add sharing." : "");
+      } finally { e.target.disabled = false; }
+    });
+    $("wsh-copy").addEventListener("click", async () => {
+      const inp = $("wsh-link");
+      try { await navigator.clipboard.writeText(inp.value); $("wsh-msg").textContent = "Link copied."; }
+      catch(err){ inp.select(); $("wsh-msg").textContent = "Press Ctrl+C (or Cmd+C) to copy the selected link."; }
     });
   }
 
