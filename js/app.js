@@ -799,10 +799,11 @@
   }
   // Where a unit lives, for list builder rows from another army.
   const homeOf = (D, u, listArmyId) => { if(u.armyId === listArmyId) return ""; const a = armyById(D, u.armyId); return !a ? "" : isPool(a) ? "Not in an army" : "From " + a.name; };
-  function armyBadge(a, size, solo){
+  // An army's badge on any page: its shoulder pad and emblem (no helmet preview).
+  function armyBadge(a, size){
     const keep = PROF; PROF = P.profileFor(a.faction);
     const html = a.scheme && a.scheme.tiers ? tierBadge(a.scheme, a.scheme.tiers[0], size) : factionBadge(a.faction, size);
-    PROF = keep; return solo ? soloBadge(html, size) : html;
+    PROF = keep; return soloBadge(html, size);
   }
   function armyCard(a, D){
     const t = sumUp(D.byArmy(a.id)), gs = D.games.filter(g => g.armyId === a.id), r = recordOf(gs), p = pctOf(t.ready, t.models);
@@ -2459,7 +2460,7 @@
     const s = sum[a.id] || {units: 0, models: 0, done: 0}, f = FBY[a.faction];
     const pct = s.models ? Math.round(s.done / s.models * 100) : 0;
     return `<a class="lcard" href="#/army/${esc(a.id)}">
-      <div class="card-top">${armyBadge(a, 56, true)}<div><h3>${esc(a.name)}</h3><div class="meta">${esc(f ? f.name : a.faction)}</div></div></div>
+      <div class="card-top">${armyBadge(a, 56)}<div><h3>${esc(a.name)}</h3><div class="meta">${esc(f ? f.name : a.faction)}</div></div></div>
       <div class="prog" aria-hidden="true"><i style="width:${pct}%"></i></div>
       <div class="foot"><span>${plural(s.units, "unit")} · ${plural(s.models, "model")}</span><span>${pct}% painted</span></div>
     </a>`;
@@ -2762,7 +2763,7 @@
         <div class="fgroup" data-group>
           <h2 class="fg-h">${esc(g)}</h2>
           <div class="fgrid">${list.map(f => `<a class="fcard" href="${href(f.id)}" data-fname="${esc(f.name.toLowerCase())}">
-            ${factionBadge(f.id, 34)}<span><strong>${esc(f.name)}</strong><small>${f.units.filter(u => !u.t).length} datasheets</small></span></a>`).join("")}</div>
+            ${soloBadge(factionBadge(f.id, 34), 34)}<span><strong>${esc(f.name)}</strong><small>${f.units.filter(u => !u.t).length} datasheets</small></span></a>`).join("")}</div>
         </div>`).join("")}</div>
       <p class="source">Unit and weapon names come from the community BattleScribe data for Warhammer 40,000 11th edition (${esc(DATA.source || "BSData")}${DATA.commit ? ", " + esc(DATA.commit) : ""}). Emblem icons from <a href="https://github.com/Certseeds/wh40k-icon" target="_blank" rel="noopener">wh40k-icon</a> by shitake, farvig, 夜行漫记 and Certseeds (<a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a>), recoloured for this site. Paint names and colours from <a href="https://github.com/Arcturus5404/miniature-paints" target="_blank" rel="noopener">miniature-paints</a> by Rick Fleuren (MIT). Starting colours are suggestions you can change.</p>`;
     const fq = $("fq");
@@ -2804,7 +2805,7 @@
     view.name = "war-new"; document.title = `New ${f.name} army · War Ledger`;
     app.innerHTML = `
       <div class="crumbs"><a href="#/war">War Ledger</a> / <a href="#/war/new">New army</a> / ${esc(f.name)}</div>
-      <section class="page-head war-head"><div class="wh-id">${factionBadge(fid, 64)}<div><p class="eyebrow">War Ledger · ${esc(f.group || "")}</p><h1>New ${esc(f.name)} army</h1><p class="sub">Name your force. You can add units straight after.</p></div></div></section>
+      <section class="page-head war-head"><div class="wh-id">${soloBadge(factionBadge(fid, 64), 64)}<div><p class="eyebrow">War Ledger · ${esc(f.group || "")}</p><h1>New ${esc(f.name)} army</h1><p class="sub">Name your force. You can add units straight after.</p></div></div></section>
       <form class="panel war-newform" id="wn-form" novalidate>
         <label>Army name<input id="w-name" maxlength="80" placeholder="e.g. ${esc(f.name)} Strike Force" autocomplete="off"></label>
         <label><span>Points you're building to <span class="opt">(optional)</span></span><input id="w-lim" type="number" min="0" max="20000" step="250" inputmode="numeric" placeholder="e.g. 2000"></label>
@@ -3813,7 +3814,7 @@ Redemptor Dreadnought (210 points)</pre>
       const models = kits.reduce((n, k) => n + k.models, 0), value = kits.reduce((n, k) => n + k.price, 0);
       $("sh-stats").innerHTML = `<div class="stat"><b>${kits.length}</b><span>${kits.length === 1 ? "Kit" : "Kits"}</span></div><div class="stat"><b>${num(models)}</b><span>Models</span></div><div class="stat"><b>${esc(money(value))}</b><span>Value</span></div><div class="stat"><b>${kits.length ? esc(ageOf(kits[0].added).replace(" ago", "")) : "—"}</b><span>Oldest kit</span></div>`;
       $("shame-list").innerHTML = kits.length ? `<div class="kits">${kits.map(k => `<article class="panel kit" data-kit="${esc(k.id)}">
-          <div class="kit-top">${k.faction ? factionBadge(k.faction, 40) : `<span class="kit-box" aria-hidden="true"></span>`}
+          <div class="kit-top">${k.faction ? soloBadge(factionBadge(k.faction, 40), 40) : `<span class="kit-box" aria-hidden="true"></span>`}
             <div><h3>${esc(k.name)}</h3><small>${esc([k.faction ? FBY[k.faction].name : "", plural(k.models, "model"), k.price ? money(k.price) : ""].filter(Boolean).join(" · "))}</small></div>
             <button type="button" class="kit-rm" data-rmkit="${esc(k.id)}" aria-label="Remove ${esc(k.name)} from the pile" title="Remove">×</button></div>
           <div class="kit-foot"><span class="kit-age">On the pile ${esc(ageOf(k.added))}</span><button type="button" class="btn-sm primary" data-start="${esc(k.id)}">Start painting</button></div>
@@ -4502,7 +4503,7 @@ Redemptor Dreadnought (210 points)</pre>
     app.innerHTML = `
       <div class="crumbs">${canWrite ? `<a href="#/livery">Livery Ledger</a> / <a href="#/livery/ledgers">Ledgers</a>` : store.session ? `<a href="#/shared">Shared armies</a>` : `<a href="#/">Livery Ledger</a>`} / ${esc(army.name)}</div>
       <section class="page-head war-head liv-head">
-        <div class="wh-id">${armyBadge(army, 64, true)}<div>
+        <div class="wh-id">${armyBadge(army, 64)}<div>
           ${!canWrite ? (army.owner && store.canShare ? `<a class="owner-link" href="#/painter/${esc(army.owner)}">${ownerLine(army, "big")}</a>` : ownerLine(army, "big")) : ""}
           <p class="eyebrow">${esc(f.name)}</p>
           <h1>${esc(army.name)}</h1>
