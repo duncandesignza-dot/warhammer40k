@@ -545,3 +545,41 @@ test("new army pages show the faction's picture under the army name, where there
   await open(page, "#/war/new/ultramarines");
   await expect(page.locator(".faction-hero")).toHaveCount(0);
 });
+
+test("export and paste back: renamed units, two detachments, and a unit that isn't recognised", async ({page}) => {
+  await seed(page, `db.units.find(u => u.id === "u2").name = "Squad Alpha";
+    db.lists[0].detachments = ["Gladius Task Force", "Firestorm Assault Force"];
+    db.lists.push({id: "l2", armyId: "a1", name: "Copy", limit: 2000, detachments: [], units: [], createdAt: "2026-09-01", updatedAt: "2026-09-01"});`);
+  await open(page, "#/war/list/l1");
+  await page.click("[data-export]");
+  const out = await page.inputValue("#w-exp");
+  // Datasheet names, as New Recruit writes them, even for a unit you've renamed.
+  expect(out).toContain("10x Intercessor Squad (150 pts)");
+  expect(out).not.toContain("Squad Alpha");
+  expect(out).toContain("+ DETACHMENT: Gladius Task Force + Firestorm Assault Force");
+  await open(page, "#/war/list/l2");
+  await page.click("[data-import]"); await page.fill("#w-list", out); await page.click("#w-add");
+  await expect.poll(async () => (await saved(page)).lists.find(l => l.id === "l2").detachments).toEqual(["Gladius Task Force", "Firestorm Assault Force"]);
+  // A unit that isn't recognised ends the one before it, so its models aren't counted there.
+  await open(page, "#/war/army/a1");
+  await page.click("[data-from-list]");
+  await page.fill("#w-list", "Intercessor Squad (80 points)\n  • 5x Intercessor\nSome Forge World Unit (100 points)\n  • 5x FW model");
+  await expect(page.locator("#w-found li")).toHaveText(["Intercessor Squad 5 · 80 pts"]);
+});
+
+test("a new unit takes the wargear of the datasheet you switch to, and Custom unit clears the datasheet", async ({page}) => {
+  await seed(page);
+  await open(page, "#/war/army/a1");
+  await page.click("[data-add-unit]");
+  await page.selectOption("#w-sheet", "Intercessor Squad");
+  await expect(page.locator("#w-ranged .gp-chips")).toContainText("Bolt Rifle");
+  await page.selectOption("#w-sheet", "Hellblaster Squad");
+  await expect(page.locator("#w-ranged .gp-chips")).not.toContainText("Bolt Rifle");
+  await expect(page.locator("#w-ranged .gp-chips")).toContainText("Plasma Incinerator");
+  await page.click("dialog[open] [data-x]");
+  // Choosing "Custom unit" for an existing unit saves it without a datasheet.
+  await page.click('[data-unit="u3"]');
+  await page.selectOption("#w-sheet", "");
+  await page.click("dialog[open] [type=submit]");
+  await expect.poll(async () => (await saved(page)).units.find(u => u.id === "u3").datasheet).toBe("");
+});
