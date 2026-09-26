@@ -1,0 +1,63 @@
++++++++++++++++++++++++++++++++++++++++++++++++
++ FACTION KEYWORD: Chaos - World Eaters
++ DETACHMENT: Berzerker Warband (Relentless Rage)
++ FORCE DISPOSITION: Purge the Foe
++ TOTAL ARMY POINTS: 1995pts
++
++ WARLORD: Char3: Daemon Prince of Khorne
++ NUMBER OF UNITS: 17
++ SECONDARY: - Bring It Down: (3x2) - Assassination: 7 Characters
++++++++++++++++++++++++++++++++++++++++++++++++
+
+Char3: 1x Daemon Prince of Khorne (200 pts): Warlord, Hellforged weapons, Infernal cannon
+Char1: 1x Khârn the Betrayer (115 pts): Gorechild, Plasma pistol
+Leading Khorne Berzerkers[1]
+Char2: 1x Lord Invocatus (100 pts): Bladed horn, Bolt pistol, Coward's Bane
+Leading Khorne Berzerkers[2]
+Char4: 1x Master of Executions (60 pts): Axe of dismemberment, Bolt pistol
+Leading Khorne Berzerkers[3]
+Char5: 1x Slaughterbound (100 pts): Lacerator and daemonic claw
+Leading Exalted Eightbound[1]
+Char6: 1x Slaughterbound (100 pts): Lacerator and daemonic claw
+Leading Eightbound
+Char7: 1x Slaughterbound (100 pts): Lacerator and daemonic claw
+
+10x Khorne Berzerkers (160 pts)
+• 9x Khorne Berzerker
+    7 with Bolt pistol, Chainblade
+    2 with Bolt pistol, Khornate eviscerator
+• 1x Khorne Berzerker Champion: Icon of Khorne, Chainblade, Bolt pistol
+  Attached to Khârn the Betrayer
+10x Khorne Berzerkers (160 pts)
+• 9x Khorne Berzerker
+    7 with Bolt pistol, Chainblade
+    2 with Bolt pistol, Khornate eviscerator
+• 1x Khorne Berzerker Champion: Icon of Khorne, Chainblade, Bolt pistol
+  Attached to Lord Invocatus
+10x Khorne Berzerkers (160 pts)
+• 9x Khorne Berzerker
+    7 with Bolt pistol, Chainblade
+    2 with Bolt pistol, Khornate eviscerator
+• 1x Khorne Berzerker Champion: Icon of Khorne, Chainblade, Bolt pistol
+  Attached to Master of Executions
+
+1x Chaos Rhino (75 pts): Armoured tracks, Combi-bolter, Havoc launcher, Combi-weapon
+2x Chaos Spawn (95 pts): 2 with Hideous Mutations
+3x Eightbound (125 pts)
+• 1x Eightbound Champion: Chainblades
+• 2x Eightbound: 2 with Chainblades
+  Attached to Slaughterbound[2]
+3x Exalted Eightbound (130 pts)
+• 1x Exalted Eightbound Champion: Chainblades
+• 2x Exalted Eightbound: 2 with Chainblades
+  Attached to Slaughterbound[1]
+3x Exalted Eightbound (130 pts)
+• 1x Exalted Eightbound Champion: Chainblades
+• 2x Exalted Eightbound: 2 with Chainblades
+1x Helbrute (120 pts): Close combat weapon, Helbrute hammer, Heavy flamer, Helbrute fist
+10x Jakhals (65 pts)
+• 1x Jakhal Pack Leader: Autopistol, Chainblades
+• 1x Dishonoured: Paired manglers
+• 8x Jakhal: 8 with Autopistol, Chainblades
+
+Created with newrecruit.eu v36.25

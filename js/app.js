@@ -1386,6 +1386,36 @@
   const detText = l => (l.detachments || []).join(" + ");
   const entryKey = () => "k" + Math.random().toString(36).slice(2, 10);
   const isCharRole = role => role === "Character" || role === "Epic Hero";
+  // A list as plain text in the tournament layout New Recruit exports (and that "Paste a list" reads back):
+  // a header, the characters as Char1, Char2…, then Battleline, then everything else by name.
+  function exportText(list, s, army){
+    const f = FBY[army.faction] || {}, rows = s.rows.filter(x => !x.gone);
+    const keyword = f.parent === "space-marines" ? `Imperium - Adeptus Astartes - ${f.name}` : army.faction === "space-marines" ? "Imperium - Adeptus Astartes" : [f.group, f.name].filter(Boolean).join(" - ");
+    const chars = rows.filter(x => isCharRole(x.role)).sort((a, b) => b.warlord - a.warlord);
+    const line = rows.filter(x => !isCharRole(x.role) && x.role === "Battleline");
+    const rest = rows.filter(x => !isCharRole(x.role) && x.role !== "Battleline").sort((a, b) => a.name.localeCompare(b.name));
+    const order = [...chars, ...line, ...rest];
+    // Units that share a name get [1], [2]… so "Leading" and "Attached to" say which one.
+    const tag = x => { const same = order.filter(y => y.name === x.name); return same.length > 1 ? `${x.name}[${same.indexOf(x) + 1}]` : x.name; };
+    const byKey = k => order.find(y => y.k === k);
+    const gear = x => x.u ? [x.u.ranged, x.u.melee].map(g => (g || "").trim()).filter(Boolean).join(", ") : (x.e && x.e.gear) || "";
+    // "2x Chaos Spawn (95 pts): wargear"; a character's line starts with Warlord and ends with its enhancement.
+    const unitLine = (x, pre) => { const bits = [x.warlord ? "Warlord" : "", gear(x), x.enh ? x.enh.n : ""].filter(Boolean).join(", "); return `${pre}${x.count}x ${x.name} (${x.points} pts)${bits ? ": " + bits : ""}`; };
+    const charNo = x => `Char${chars.indexOf(x) + 1}: `, wl = chars.find(x => x.warlord);
+    const bar = "+".repeat(47);
+    const head = [bar, `+ FACTION KEYWORD: ${keyword}`, detText(list) ? `+ DETACHMENT: ${detText(list)}` : "", `+ TOTAL ARMY POINTS: ${s.points}pts`, "+",
+      wl ? `+ WARLORD: ${charNo(wl)}${wl.name}` : "", `+ NUMBER OF UNITS: ${rows.length}`, bar].filter(Boolean);
+    const out = [...head, ""];
+    chars.forEach(x => {
+      out.push(unitLine(x, charNo(x)));
+      const led = x.lead && byKey(x.lead); if(led) out.push(`Leading ${tag(led)}`);
+    });
+    [line, rest].forEach(group => { if(!group.length) return; out.push("");
+      group.forEach(x => { out.push(unitLine(x, "")); const by = order.filter(c => c.lead === x.k); if(by.length) out.push(`  Attached to ${by.map(tag).join(" and ")}`); });
+    });
+    out.push("", "Created with War Ledger");
+    return out.join("\n");
+  }
   const DOTS = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="5" cy="12" r="2" fill="currentColor"/><circle cx="12" cy="12" r="2" fill="currentColor"/><circle cx="19" cy="12" r="2" fill="currentColor"/></svg>`;
   // Enhancement and leader pairings for a row in the list, as a short line.
   function entryNotes(x, rows){
@@ -1698,7 +1728,7 @@
           <div class="wh-id">${armyBadge(army, 56)}<div><p class="eyebrow"><a href="#/war/army/${esc(army.id)}">${esc(army.name)}</a> · ${esc(factionName(army.faction))}</p><h1>${esc(list.name)}</h1>
             <p class="sub">${esc([sizeName(list), detText(list), list.limit ? ptsText(list.limit) + " limit" : "No points limit", gs.length ? `${recText(rec)} record` : ""].filter(Boolean).join(" · "))}</p>
             <p class="lst-meta">${crTag(list)}${statusTag(list)}<span>${list.ptsAsOf ? `Points as of ${esc(dayText(list.ptsAsOf))}` : "Points date not set"}</span></p></div></div>
-          <div class="war-actions"><button type="button" class="primary" data-log="${esc(army.id)}" data-list="${esc(list.id)}">Log a battle</button><button type="button" data-import>Paste a list</button><button type="button" data-details>Edit details</button></div>
+          <div class="war-actions"><button type="button" class="primary" data-log="${esc(army.id)}" data-list="${esc(list.id)}">Log a battle</button><button type="button" data-import>Paste a list</button><button type="button" data-export>Export list</button><button type="button" data-details>Edit details</button></div>
         </section>
         ${warTabs("lists")}
         <section class="war-stats" aria-label="List summary">
@@ -1727,7 +1757,7 @@
             <button type="button" class="btn-sm" data-add-unit>+ Add a new unit to the army</button>
           </section>
         </div>
-        <section class="war-sec danger-zone"><div class="row-actions"><button type="button" class="btn-sm" data-copy>Copy as text</button><button type="button" class="btn-sm" data-dup>Duplicate list</button><button type="button" class="btn-sm" data-compare>Compare with another list</button><button type="button" class="btn-sm danger" id="w-dellist">Delete list</button></div></section>`;
+        <section class="war-sec danger-zone"><div class="row-actions"><button type="button" class="btn-sm" data-dup>Duplicate list</button><button type="button" class="btn-sm" data-compare>Compare with another list</button><button type="button" class="btn-sm danger" id="w-dellist">Delete list</button></div></section>`;
       const inp = $("lb-q");
       inp.addEventListener("input", () => { q = inp.value.trim().toLowerCase(); const pos = inp.selectionStart; draw(); const n = $("lb-q"); n.focus(); n.setSelectionRange(pos, pos); });
       armButton($("w-dellist"), "Press again to delete", async () => {
@@ -1906,16 +1936,21 @@
         });
       }
       else if(b.matches("[data-import]")) openListImport(army, list, D, patch => save(patch));
-      else if(b.matches("[data-copy]")) {
-        const s = listState(list, D);
-        const text = [`${list.name} (${ptsText(s.points)}${list.limit ? ` of ${num(list.limit)}` : ""})`, [sizeName(list), detText(list)].filter(Boolean).join(" · "),
-          `${army.name} · ${factionName(army.faction)}`, list.ptsAsOf ? `Points as of ${dayText(list.ptsAsOf)}` : "", ""].filter((x, i) => x || i === 4)
-          .concat(...byRole(s.rows.filter(x => !x.gone)).map(([role, rows]) => [role.toUpperCase(), ...rows.flatMap(x => {
-            const lead = x.lead && (s.rows.find(r => r.k === x.lead && !r.gone) || {}).name;
-            return [`  ${x.name}${x.count > 1 ? ` (${x.count} models)` : ""} · ${x.points} pts${x.warlord ? " · Warlord" : ""}`,
-              x.enh ? `    Enhancement: ${x.enh.n}${x.enh.p ? ` (+${x.enh.p} pts)` : ""}` : "", lead ? `    Leading: ${lead}` : ""].filter(Boolean);
-          }), ""])).join("\n").trim();
-        try { await navigator.clipboard.writeText(text); flash("List copied."); } catch(err){ flash("Couldn't copy. Your browser blocked the clipboard."); }
+      else if(b.matches("[data-export]")) {
+        const text = exportText(list, listState(list, D), army);
+        const d = modal("Export list", `
+          <p class="sub">The tournament layout from New Recruit. Send it to your opponent or organiser, or paste it into another list builder.</p>
+          <label>Army list<textarea id="w-exp" class="exp-text" rows="16" readonly>${esc(text)}</textarea></label>
+          <div class="row-actions"><button type="button" class="primary" id="w-exp-copy">Copy</button><button type="button" id="w-exp-dl">Download .txt</button><span class="msg" id="w-msg" role="status"></span></div>`, "wide");
+        $("w-exp-copy").addEventListener("click", async () => {
+          try { await navigator.clipboard.writeText(text); $("w-msg").textContent = "List copied."; }
+          catch(err){ $("w-exp").select(); $("w-msg").textContent = "Press Ctrl+C (or Cmd+C) to copy the selected list."; }
+        });
+        $("w-exp-dl").addEventListener("click", () => {
+          const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text + "\n"], {type: "text/plain"}));
+          a.download = (list.name.replace(/[^\w\- ]+/g, "").trim() || "army-list") + ".txt"; document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(() => URL.revokeObjectURL(a.href), 1000); $("w-msg").textContent = "Downloaded.";
+        });
       }
       else if(b.matches("[data-dup]")) {
         // A copied Crusade force has none of the battles, so the experience and requisition points they gave are written in.
@@ -2037,8 +2072,11 @@
         const hit = cands.find(u => u.count === x.count) || cands[0];
         const ex = entryExtras(x.notes);
         if(hit){ taken.add(hit.id); return {e: {u: hit.id, k: entryKey(), ...ex}, name: x.name, owned: true}; }
-        return {e: {n: x.name, sheet: x.sheet.n, role: x.sheet.r, count: x.count, points: Math.max(0, x.points - (ex.enh ? ex.enh.p : 0)), k: entryKey(), ...ex}, name: x.name, owned: false};
+        const gear = [...x.ranged, ...x.melee].join(", ");
+        return {e: {n: x.name, sheet: x.sheet.n, role: x.sheet.r, count: x.count, points: Math.max(0, x.points - (ex.enh ? ex.enh.p : 0)), k: entryKey(), ...(gear ? {gear} : {}), ...ex}, name: x.name, owned: false};
       });
+      // "Leading …" lines link a character to the unit it leads.
+      parsed.units.forEach((x, i) => { if(x.leadIdx != null && entries[x.leadIdx]) entries[i].e.lead = entries[x.leadIdx].e.k; });
       plan = {parsed, entries};
       const own = entries.filter(x => x.owned).length;
       $("w-found").innerHTML = `<p><strong>${plural(entries.length, "unit")}</strong> · ${ptsText(parsed.units.reduce((a, x) => a + x.points, 0))} · ${own} matched to your collection</p>
@@ -2858,15 +2896,23 @@
       return {units: out, unmatched, limit: limit >= 500 && limit <= 10000 ? limit : 0, codeFaction: from ? from.name : (d.f || ""), codeFactionId: d.f || "", detachment: typeof d.d === "string" && d.d ? titleCase(d.d) : ""};
     }
     const HEAD = /^(?:[a-z]+\d*\s*:\s*)?(?:(\d+)\s*x\s+)?(.+?)\s*[\(\[]\s*([\d,]+)\s*(?:pts?|points)\s*[\)\]]\s*:?\s*(.*)$/i;
+    // Enhancements by name, so a New Recruit line like "Lord Invocatus (100 pts): Bladed horn, Coward's Bane" finds them.
+    const enhIndex = new Map(factionDets(factionId).flatMap(d => d.e || []).map(e => [norm(e[0]), e]));
     function parseList(text){
-      const lines = String(text || "").replace(/\r/g, "").split("\n");
+      // New Recruit sometimes puts non-breaking spaces inside names ("Berzerker\u00a0Warband").
+      const lines = String(text || "").replace(/\r/g, "").replace(/[\u00a0\u2007\u202f]/g, " ").split("\n");
       const out = [], unmatched = [];
-      let cur = null, limit = 0, softLimit = 0, baseIndent = null;
-      const finish = () => { if(!cur) return; if(!cur.models){ cur.count = guessCount(cur.sheet, cur.points); } else cur.count = cur.models; out.push(cur); cur = null; };
+      let cur = null, limit = 0, softLimit = 0, baseIndent = null, detachment = "";
+      // Model lines ("• 9x Khorne Berzerker") win, then the "10x" at the front of the unit's line, then a guess from its points.
+      const finish = () => { if(!cur) return; cur.count = cur.models || cur.said || guessCount(cur.sheet, cur.points); delete cur.said; out.push(cur); cur = null; };
       lines.forEach((raw, idx) => {
         const indent = raw.match(/^\s*/)[0].replace(/\t/g, "    ").length;
         const line = raw.trim().replace(/^[•◦▪·*+\-–>]+\s*/, "");
         if(!line) return;
+        // The tournament layout's header: "+ DETACHMENT: Berzerker Warband (Relentless Rage)".
+        const dm = line.match(/^detachment\s*:\s*(.+)$/i);
+        if(dm){ const full = dm[1].trim(), short = full.replace(/\s*\(.*\)\s*$/, ""); detachment = (detByName(factionId, full) || detByName(factionId, short) || {n: short}).n; return; }
+        if(/^(total army points|number of units|faction keyword|force disposition|secondary|warlord\s*:)/i.test(line)) return;
         if(idx < 15 && !limit){
           const hh = line.match(HEAD);
           if(!(hh && matchSheet(hh[2]))){
@@ -2880,7 +2926,7 @@
           const sh = matchSheet(h[2]);
           if(sh){
             finish();
-            cur = {sheet: sh, name: sh.n, points: parseInt(h[3].replace(/,/g, ""), 10) || 0, models: 0, melee: [], ranged: [], notes: [], include: true};
+            cur = {sheet: sh, name: sh.n, points: parseInt(h[3].replace(/,/g, ""), 10) || 0, models: 0, said: +h[1] || 0, melee: [], ranged: [], notes: [], include: true};
             baseIndent = null;
             if(h[4]) parseItems(h[4], 0);
             return;
@@ -2888,7 +2934,7 @@
           const al = !/(strike force|incursion|onslaught|combat patrol|detachment)/i.test(h[2]) && allySheet(h[2]);
           if(al){
             finish();
-            cur = {sheet: al.sheet, name: al.sheet.n, points: parseInt(h[3].replace(/,/g, ""), 10) || 0, models: 0, melee: [], ranged: [], notes: ["Allied: " + al.from], include: true};
+            cur = {sheet: al.sheet, name: al.sheet.n, points: parseInt(h[3].replace(/,/g, ""), 10) || 0, models: 0, said: +h[1] || 0, melee: [], ranged: [], notes: ["Allied: " + al.from], include: true};
             baseIndent = null;
             if(h[4]) parseItems(h[4], 0);
             return;
@@ -2899,20 +2945,26 @@
         if(!cur) return;
         if(/^(characters?|battleline|other datasheets|dedicated transports?|allied units|exported with|\+\+|=+)/i.test(line)){ finish(); return; }
         if(/^warlord\b/i.test(line)){ cur.notes.push("Warlord"); return; }
+        // "Leading Khorne Berzerkers[2]": the [2] says which of several units with that name.
+        const ld = line.match(/^leading\s+(.+?)\s*(?:\[(\d+)\])?$/i); if(ld){ cur.lead = {name: ld[1], n: +ld[2] || 1}; return; }
+        if(/^attached to\b/i.test(line)) return;
         const enh = line.match(/^enhancements?\s*:\s*(.+)$/i); if(enh){ cur.notes.push("Enhancement: " + enh[1]); return; }
         if(baseIndent === null) baseIndent = indent;
         parseItems(line, indent - baseIndent);
       });
       finish();
       if(!limit) limit = softLimit;
+      out.forEach(u => { if(!u.lead) return; const same = out.filter(o => o !== u && norm(o.name) === norm(u.lead.name)); const hit = same[u.lead.n - 1]; if(hit) u.leadIdx = out.indexOf(hit); delete u.lead; });
       function parseItems(text, depth){
-        text.split(/,(?![^()]*\))/).forEach(part => {
+        text.split(/[,:](?![^()]*\))/).forEach(part => {   // "1x Jakhal Pack Leader: Autopistol, Chainblades"
           const inner = (part.match(/\(([^)]*)\)/) || [])[1];
-          const p = part.replace(/\(.*?\)/g, "").trim();
+          const p = part.replace(/\(.*?\)/g, "").trim().replace(/^\d+\s+with\s+/i, "");   // "2 with Hideous Mutations"
           const m = p.match(/^(\d+)\s*x\s+(.+)$/i);
           const qty = m ? parseInt(m[1], 10) : 1, name = (m ? m[2] : p).trim();
           if(!name) return;
           const wn = norm(name);
+          if(wn === "warlord"){ if(!cur.notes.includes("Warlord")) cur.notes.push("Warlord"); return; }
+          const en = enhIndex.get(wn); if(en){ cur.notes.push(`Enhancement: ${en[0]} (+${en[1]})`); return; }
           const w = (list) => (list || []).find(x => norm(x) === wn || wn.startsWith(norm(x) + " "));
           const mw = w(cur.sheet.wm), rw = w(cur.sheet.wr);
           if(mw || rw){ if(mw && !cur.melee.includes(mw)) cur.melee.push(mw); if(rw && !cur.ranged.includes(rw)) cur.ranged.push(rw); }
@@ -2920,7 +2972,7 @@
           if(inner) parseItems(inner, depth + 1);
         });
       }
-      return {units: out, unmatched, limit};
+      return {units: out, unmatched, limit, detachment};
     }
     return {parseCode, parseList, matchSheet};
   }

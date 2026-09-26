@@ -306,3 +306,30 @@ test("select units on an army page: star, add to a list, move and delete", async
   await page.click('[data-bb="done"]');
   await expect(page.locator("#wa-bar")).toHaveCount(0);
 });
+
+test("export a list in New Recruit's tournament layout, and paste it back in without losing anything", async ({page}) => {
+  const text = require("fs").readFileSync(require("path").join(__dirname, "fixtures/newrecruit-world-eaters.txt"), "utf8");
+  await seed(page, `db.armies.push({id: "w1", faction: "world-eaters", name: "Butchers", scheme: window.LEDGER_PRESETS.presetFor("world-eaters"), createdAt: "2026-01-01", updatedAt: "2026-01-01"});
+    db.lists.push({id: "wl", armyId: "w1", name: "Imported", limit: 2000, detachments: [], units: [], createdAt: "2026-09-01", updatedAt: "2026-09-01"},
+      {id: "w2", armyId: "w1", name: "Round trip", limit: 2000, detachments: [], units: [], createdAt: "2026-09-01", updatedAt: "2026-09-01"});`);
+  await open(page, "#/war/list/wl");
+  await page.click("[data-import]"); await page.fill("#w-list", text); await page.click("#w-add");
+  await expect(page.locator(".war-stats")).toContainText("1,995");
+  await page.click("[data-export]");
+  const out = await page.inputValue("#w-exp");
+  for(const line of ["+ FACTION KEYWORD: Chaos - World Eaters", "+ DETACHMENT: Berzerker Warband", "+ TOTAL ARMY POINTS: 1995pts", "+ WARLORD: Char1: Daemon Prince of Khorne", "+ NUMBER OF UNITS: 17",
+    "Char1: 1x Daemon Prince of Khorne (200 pts): Warlord, Infernal cannon, Hellforged weapons", "Char3: 1x Lord Invocatus (100 pts): Bolt pistol, Bladed horn, Coward's Bane",
+    "Leading Khorne Berzerkers[2]", "Leading Eightbound", "2x Chaos Spawn (95 pts): Hideous Mutations", "  Attached to Slaughterbound[1]"]) expect(out.split("\n")).toContain(line);
+  // Pasting the export into another list gives the same list back.
+  const list = async id => (await saved(page)).lists.find(l => l.id === id);
+  await open(page, "#/war/list/w2");
+  await page.click("[data-import]"); await page.fill("#w-list", out); await page.click("#w-add");
+  await expect(page.locator(".war-stats")).toContainText("1,995");
+  const shape = l => { const key = new Map(l.units.map((e, i) => [e.k, i])); return {det: l.detachments, units: l.units.map(e => ({n: e.n, count: e.count, points: e.points, gear: e.gear, warlord: !!e.warlord, enh: e.enh, lead: e.lead ? key.get(e.lead) : null}))}; };
+  const a = shape(await list("wl")), b = shape(await list("w2"));
+  expect(b.det).toEqual(a.det);
+  // Same units, in export order (characters first), with the same leaders.
+  const byName = xs => xs.map(({lead, ...x}) => x).sort((p, q) => JSON.stringify(p).localeCompare(JSON.stringify(q)));
+  expect(byName(b.units)).toEqual(byName(a.units));
+  expect(b.units.filter(x => x.lead != null).map(x => [x.n, b.units[x.lead].n])).toEqual(a.units.filter(x => x.lead != null).map(x => [x.n, a.units[x.lead].n]));
+});
