@@ -3006,7 +3006,12 @@
     "deathwatch": "Deathwatch: a kill team in black armour fights Genestealer Cult hybrids",
     "grey-knights": "Grey Knights: silver-armoured Grey Knights and their Rhinos face the Death Guard",
     "imperial-fists": "Imperial Fists: yellow-armoured Terminators, a tank and a Dreadnought hold the walls",
-    "iron-hands": "Iron Hands: an Iron Father leads a line of black-armoured Space Marines"
+    "iron-hands": "Iron Hands: an Iron Father leads a line of black-armoured Space Marines",
+    "salamanders": "Salamanders: green-armoured Space Marines, tanks and a Dreadnought advance through a ruined city",
+    "dark-angels": "Dark Angels: the Lion and a Chaplain lead Dark Angels tanks, a Dreadnought and a flyer",
+    "space-wolves": "Space Wolves: a Wolf Lord, Fenrisian wolves and a Land Raider charge the Thousand Sons",
+    "white-scars": "White Scars: jump pack Space Marines in white armour strike at Drukhari raiders",
+    "raven-guard": "Raven Guard: black-armoured Space Marines with jump packs drop onto the battlefield"
   };
   const factionHero = fid => FACTION_HEROES[fid] ? `<figure class="faction-hero"><img src="img/heroes/${esc(fid)}.webp" alt="${esc(FACTION_HEROES[fid])}" width="800" height="250" decoding="async"></figure>` : "";
   // Second step of a new army: its name and the points you're building to.
