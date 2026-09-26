@@ -1194,7 +1194,14 @@
         <section class="page-head war-head">
           <div class="wh-id">${armyBadge(army, 64)}<div><p class="eyebrow">${esc(factionName(army.faction))}</p><h1>${esc(army.name)}</h1>
             <p class="sub"><a href="#/army/${esc(id)}">Open in Livery Ledger</a> to plan its colours and painting.</p></div></div>
-          <div class="war-actions"><button type="button" class="primary" data-add-unit>+ Add unit</button><button type="button" data-from-list>Add from a list</button><button type="button" class="share-btn${army.public ? " on" : ""}" data-share><span class="dot${army.public ? " on" : ""}"></span>${army.public ? "Shared" : "Share"}</button></div>
+          <div class="war-actions"><button type="button" class="primary" data-add-unit>+ Add unit</button><button type="button" data-from-list>Add from a list</button><button type="button" class="share-btn${army.public ? " on" : ""}" data-share><span class="dot${army.public ? " on" : ""}"></span>${army.public ? "Shared" : "Share"}</button>
+            <div class="more"><button type="button" id="wa-more" aria-expanded="false" aria-controls="wa-menu">More</button>
+              <div class="more-menu" id="wa-menu" hidden>
+                <a href="#/army/${esc(id)}/colours">Edit colours</a>
+                ${D.warMissing ? "" : `<button type="button" data-new-list="${esc(id)}">New army list</button><button type="button" data-log="${esc(id)}">Log a battle</button>`}
+                <button type="button" data-rename>Rename army</button>
+                <hr><button type="button" class="menu-danger" id="w-delarmy">Delete army</button>
+              </div></div></div>
         </section>
         ${warTabs("armies")}
         ${missingBanner(D)}
@@ -1222,10 +1229,7 @@
         <section class="war-sec" aria-labelledby="al-h"><div class="sec-h"><h2 id="al-h">Army lists</h2>${D.warMissing ? "" : `<button type="button" class="btn-sm" data-new-list="${esc(id)}">+ New list</button>`}</div>
           ${ls.length ? `<div class="ledgers">${ls.map(l => listCard(l, D)).join("")}</div>` : `<p class="hint">Build lists from this collection for the games you play, and see whether each one is ready for the table.</p>`}</section>
         <section class="war-sec" aria-labelledby="ab-h"><div class="sec-h"><h2 id="ab-h">Battles</h2>${D.warMissing ? "" : `<button type="button" class="btn-sm" data-log="${esc(id)}">Log a battle</button>`}</div>
-          ${gs.length ? gameRows(gs.slice(0, 8), D) : `<p class="hint">No battles with this army yet.</p>`}</section>
-        <section class="war-sec danger-zone" aria-labelledby="dz-h"><h2 id="dz-h" class="sr-only">Manage army</h2>
-          <p class="hint dz-note">Deleting removes this army from War Ledger and Livery Ledger: its ${plural(units.length, "unit")} and their photos, colours and recipes${ls.length ? `, ${plural(ls.length, "army list")}` : ""}${gs.length ? `, ${plural(gs.length, "battle report")}` : ""}. It can't be undone.</p>
-          <div class="row-actions"><button type="button" class="btn-sm" data-rename>Rename army</button><button type="button" class="btn-sm danger" id="w-delarmy">Delete army</button><span class="msg" id="w-amsg" role="status"></span></div></section>`;
+          ${gs.length ? gameRows(gs.slice(0, 8), D) : `<p class="hint">No battles with this army yet.</p>`}</section>`;
       if(selecting) app.insertAdjacentHTML("beforeend", batchBar());
       document.body.classList.toggle("selecting", selecting);
       updateBar();
@@ -1242,14 +1246,22 @@
       else if(e.target.id === "wa-list" && e.target.value) addToList(e.target.value);
     };
     app.addEventListener("change", onPickChange);
-    const onKey = e => { if(e.key === "Escape" && selecting && !document.querySelector("dialog[open]")) setSelecting(false); };
+    const menuClose = () => { const m = $("wa-menu"); if(m && !m.hidden){ m.hidden = true; $("wa-more").setAttribute("aria-expanded", "false"); return true; } return false; };
+    const onDocClick = e => { if(!e.target.closest(".more")) menuClose(); };
+    document.addEventListener("click", onDocClick);
+    const onKey = e => {
+      if(e.key === "Escape" && menuClose()){ $("wa-more").focus(); return; }
+      if(e.key === "Escape" && selecting && !document.querySelector("dialog[open]")) setSelecting(false);
+    };
     document.addEventListener("keydown", onKey);
     const before = view.cleanup;
-    view.cleanup = () => { app.removeEventListener("change", onPickChange); document.removeEventListener("keydown", onKey); document.body.classList.remove("selecting"); if(before) before(); };
+    view.cleanup = () => { app.removeEventListener("change", onPickChange); document.removeEventListener("keydown", onKey); document.removeEventListener("click", onDocClick); document.body.classList.remove("selecting"); if(before) before(); };
     onApp(async e => {
       const pk = e.target.closest("[data-pick]");
       if(pk){ if(pk.checked) picked.add(pk.dataset.pick); else picked.delete(pk.dataset.pick); pk.closest("tr").classList.toggle("picked", pk.checked); updateBar(); return; }
       const b = e.target.closest("button"); if(!b) return;
+      if(b.id === "wa-more"){ const m = $("wa-menu"), open = m.hidden; m.hidden = !open; b.setAttribute("aria-expanded", open); if(open) (m.querySelector("a,button") || b).focus(); return; }
+      if($("wa-menu") && !$("wa-menu").hidden && b.closest("#wa-menu")){ $("wa-menu").hidden = true; $("wa-more").setAttribute("aria-expanded", "false"); }
       if(b.matches("[data-select]")){ setSelecting(!selecting); return; }
       if(b.dataset.bb){ barAction(b.dataset.bb); return; }
       if(b.matches("[data-add-unit]")) openUnit(army, null, reload, {armies: D.armies, pools: D.pools});
@@ -3025,7 +3037,7 @@
     const nSheets = FACTIONS.reduce((n, f) => n + f.units.filter(u => !u.t).length, 0);
     const nSchemes = FACTIONS.reduce((n, f) => n + P.schemesFor(f.id).length, 0);
     const demo = P.presetFor("ultramarines"), c = demo.colors, sp = demo.slotPaints || {};
-    const b = (tierColor, size, extra) => ART.badge({...c, helmet: tierColor, shape: demo.shape, ...(extra || {})}, demo.style, size, "");
+    const b = (tierColor, size, extra) => soloBadge(ART.badge({...c, helmet: tierColor, shape: demo.shape, ...(extra || {})}, demo.style, size, ""), size);
     const show = ["ultramarines", "blood-angels", "necrons", "orks", "tau-empire", "death-guard", "adepta-sororitas", "tyranids", "space-wolves", "aeldari"].filter(id => FBY[id]);
     const swatch = (label, k) => `<div class="ill-row"><span class="sw" style="background:${ART.hexOk(c[k]) ? c[k] : "#777"}"></span><span>${label}</span><em>${esc(paintName(sp[k]) || cname(c[k]))}</em></div>`;
     const ICON = {
@@ -3152,7 +3164,7 @@ Redemptor Dreadnought (210 points)</pre>
           ${shot("community", "Shared armies from other painters", `<div class="ill ill-community">
             ${[["Brother Dmitri", "BD", "Crusade of Sigismund", "Black Templars", "black-templars", 47, 12, true], ["Kaylee R", "KR", "The Silver Host", "Necrons", "necrons", 81, 31, false]].filter(x => FBY[x[4]]).map(([who, ini, name, fac, fid, pct, likes, fol]) => `<div class="ill-card ill-share">
               <div class="owner-line"><span class="avatar" aria-hidden="true">${ini}</span><span><small>Collection of</small><strong>${who}</strong></span></div>
-              <div class="ill-top">${factionBadge(fid, 48)}<div><strong>${name}</strong><small>${fac}</small></div></div>
+              <div class="ill-top">${soloBadge(factionBadge(fid, 48), 48)}<div><strong>${name}</strong><small>${fac}</small></div></div>
               <div class="ill-prog"><i style="width:${pct}%"></i></div>
               <div class="ill-foot"><span>${pct}% painted</span><span class="ill-soc"><em class="like">♥ ${likes}</em><em class="${fol ? "on" : ""}">${fol ? "Following" : "Follow"}</em></span></div>
             </div>`).join("")}
@@ -3393,7 +3405,7 @@ Redemptor Dreadnought (210 points)</pre>
           <ul class="lp-ticks">
             <li>${tick}Free to use</li><li>${tick}Import your army list</li><li>${tick}Works on your phone</li>
           </ul>`}
-          <div class="lp-parade" aria-hidden="true">${show.map(id => `<span title="${esc(FBY[id].name)}">${factionBadge(id, 46)}</span>`).join("")}</div>
+          <div class="lp-parade" aria-hidden="true">${show.map(id => `<span title="${esc(FBY[id].name)}">${soloBadge(factionBadge(id, 46), 46)}</span>`).join("")}</div>
         </div>
         <div class="lp-side">
           ${me ? `<div class="panel lp-card lp-welcome">
@@ -3488,7 +3500,7 @@ Redemptor Dreadnought (210 points)</pre>
       </div>
       <article class="guide">
         <header class="g-head">
-          <div class="g-badges">${scheme.tiers.slice(0, 4).map(t => tierBadge(scheme, t, 64)).join("")}</div>
+          <div class="g-badges">${armyBadge(army, 64)}</div>
           <div>
             <p class="eyebrow">Painting guide</p>
             <h1>${esc(army.name)}</h1>
@@ -4333,7 +4345,7 @@ Redemptor Dreadnought (210 points)</pre>
       });
     }
     function renderPreview(){
-      $("s-preview").innerHTML = sch.tiers.map(t => `<div class="pv-tier">${tierBadge(sch, t, 60)}<span><strong>${esc(t.name || "Rank")}</strong><small>${esc(t.note || cname(t.color) + " " + PROF.head)}</small></span></div>`).join("");
+      $("s-preview").innerHTML = sch.tiers.map(t => `<div class="pv-tier"><span class="rank-sw" style="background:${ART.hexOk(t.color) ? t.color : "#1f1f22"}" aria-hidden="true"></span><span><strong>${esc(t.name || "Rank")}</strong><small>${esc(t.note || cname(t.color) + " " + PROF.head)}</small></span></div>`).join("");
       $("s-shapes").querySelectorAll("[data-shape]").forEach(b => { b.setAttribute("aria-pressed", b.dataset.shape === sch.shape); b.innerHTML = ART.shapeIcon(b.dataset.shape, sch.colors.emblem, 34) + esc(P.SHAPES.find(s => s[0] === b.dataset.shape)[1]); });
       renderCurrent();
       colorKeys().forEach(([k]) => slots[k].set({hex: sch.colors[k], paint: sch.slotPaints[k] || ""}));
@@ -4512,8 +4524,8 @@ Redemptor Dreadnought (210 points)</pre>
         </div></div>
         <div class="war-actions">
           ${canWrite ? `<button type="button" class="primary" id="b-add">+ Add unit</button><button type="button" id="b-list">Add from a list</button>
-          <button type="button" class="share-btn${army.public ? " on" : ""}" id="b-share"><span class="dot${army.public ? " on" : ""}"></span><span id="share-label">${army.public ? "Shared" : "Share"}</span></button>
-          <a class="btn" href="#/army/${esc(army.id)}/colours">Edit colours</a>` : ""}
+          <a class="btn" href="#/army/${esc(army.id)}/colours">Edit colours</a>
+          <button type="button" class="share-btn${army.public ? " on" : ""}" id="b-share"><span class="dot${army.public ? " on" : ""}"></span><span id="share-label">${army.public ? "Shared" : "Share"}</span></button>` : ""}
           <div class="more">
             <button type="button" id="b-more" aria-expanded="false" aria-controls="more-menu">More</button>
             <div class="more-menu" id="more-menu" hidden>
@@ -4861,7 +4873,7 @@ Redemptor Dreadnought (210 points)</pre>
     }
     function preview(){
       const u = readForm();
-      $("pv-svg").innerHTML = unitBadge(u, scheme, 120);
+      $("pv-svg").innerHTML = soloBadge(unitBadge(u, scheme, 120), 120);
       $("pv-name").textContent = u.name || u.datasheet || "Unnamed unit";
       const tier = scheme.tiers[u.tier];
       $("pv-meta").textContent = [u.datasheet || "Unit", tier && tier.name, plural(u.count, "model"), u.points ? u.points + "\u00a0pts" : ""].filter(Boolean).join(" · ");

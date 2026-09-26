@@ -11,7 +11,7 @@ const db = page => page.evaluate(() => window.__db);
 test("build a list online and save its details", async ({page}) => {
   await mockSupabase(page, {db: DB});
   await page.goto("/#/war/army/a1");
-  await page.click("[data-new-list]");
+  await page.click(".sec-h [data-new-list]");
   await page.fill("#w-ln", "Test list");
   await page.click("dialog[open] [type=submit]");
   await page.click('[data-add="n1"]'); await page.click('[data-add="n2"]');

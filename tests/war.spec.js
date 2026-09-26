@@ -159,7 +159,7 @@ test("when the browser is full, a battle isn't logged and nothing shows as saved
   await seed(page);
   await page.evaluate(() => { let i = 0; for(const n of [262144, 1024, 16]){ const s = "x".repeat(n); try { for(;;) localStorage.setItem("fill" + i++, s); } catch(e){} } });
   await open(page, "#/war/army/a1");
-  await page.click("button[data-log]");
+  await page.click(".sec-h button[data-log]");
   await page.fill("#w-gp", "Robin"); await page.fill("#w-gn", "A long game. ".repeat(60));
   await page.click("dialog[open] [type=submit]");
   await expect(page.locator("dialog[open] #w-msg")).toContainText("out of storage space");
