@@ -1691,8 +1691,7 @@
           <div class="wstat"><b>${gs.length}</b><span>${gs.length === 1 ? "Game" : "Games"}</span><small>${gs[0] ? "Last on " + esc(dayText(gs[0].date)) : "None logged yet"}</small></div>
           <div class="wstat"><b>${recText(rec)}</b><span>Record</span><small>${gs.length ? `${pctOf(rec.w, gs.length)}% won` : "Wins – losses"}</small></div>
         </section>
-        ${isCrusade(list) ? crusadePanel(s) : ""}
-        ${checksPanel(s)}
+        ${isCrusade(list) ? crusadePanel(s, checksPanel(s)) : checksPanel(s)}
         <div class="lb">
           <section class="panel lb-in" aria-labelledby="lb-in-h"><h2 class="ph" id="lb-in-h">In this list</h2>
             ${s.rows.length ? byRole(s.rows.filter(x => !x.gone)).map(([role, rows]) => `<h3 class="lb-role">${esc(role)} <small>${ptsText(rows.reduce((a, x) => a + x.points, 0))}</small></h3>
@@ -1721,7 +1720,8 @@
       });
     }
     // A Crusade force: requisition points, battles and crusade points, then the Order of Battle.
-    function crusadePanel(s){
+    // Things to check sit between the Crusade cards and the Order of Battle, so they're near the top.
+    function crusadePanel(s, checks){
       const cs = crusadeState(list, D), us = s.rows.filter(x => !x.gone).map(x => [x, crUnit(x, cs)]), cp = us.reduce((a, [, c]) => a + c.cp, 0);
       const bar = c => c.next == null ? "" : `<span class="cr-bar" aria-hidden="true"><i style="width:${pctOf(c.xp - c.from, c.next - c.from)}%"></i></span>`;
       return `<section class="war-stats cr-stats" aria-label="Crusade">
@@ -1730,6 +1730,7 @@
           <div class="wstat"><b>${cp}</b><span>Crusade points</span><small>From honours and scars</small></div>
           <div class="wstat"><b>${us.filter(([, c]) => c.idx >= 2).length}</b><span>Battle-hardened or better</span><small>of ${plural(us.length, "unit")}</small></div>
         </section>
+        ${checks}
         <section class="panel cr-ob" aria-labelledby="ob-h"><h2 class="ph" id="ob-h">Order of Battle</h2>
           <p class="hint">Each battle logged with this force gives the units that took part 1 XP, 3 more to the one Marked for Greatness, and the force 1 requisition point. Choose a unit to add battle honours, scars or experience.</p>
           ${us.length ? `<div class="wt-scroll"><table class="wtable wt-cards cr-t">
