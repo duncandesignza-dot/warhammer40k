@@ -44,5 +44,36 @@ test("deleting a ledger warns that its lists and battles go too", async ({page})
   await open(page, "#/army/a1");
   await page.click("#b-more");
   await page.click("#b-delarmy");
-  await expect(page.locator("#dl-text")).toContainText("along with its 1 army list and 2 battle reports");
+  await expect(page.locator("dialog[open]")).toContainText("its 4 units, with their photos, colours and recipes, 1 army list and 2 battle reports");
+});
+
+test("deleting from War Ledger asks the same way, offers a backup, and deletes everywhere", async ({page}) => {
+  await seed(page);
+  await open(page, "#/war/army/a1");
+  await page.click("#w-delarmy");
+  const dlg = page.locator("dialog[open]");
+  await expect(dlg).toContainText("from Livery Ledger and War Ledger");
+  const [dl] = await Promise.all([page.waitForEvent("download"), page.click("#dl-export")]);
+  expect(dl.suggestedFilename()).toMatch(/^livery-ultramarines-2nd-company-/);
+  await page.click("#dl-go");
+  await expect(page).toHaveURL(/#\/war\/armies$/);
+  const d = await saved(page);
+  expect([d.armies.some(a => a.id === "a1"), d.units.some(u => u.armyId === "a1"), d.lists.some(l => l.armyId === "a1"), d.games.some(g => g.armyId === "a1")]).toEqual([false, false, false, false]);
+});
+
+test("a kit from the pile of shame keeps the model count you type, and joins a ledger priced for it", async ({page}) => {
+  await seed(page);
+  await open(page, "#/shame");
+  await page.fill("#kit-name", "Intercessor Squad");
+  await expect(page.locator("#kit-models")).toHaveValue("5");
+  await page.click("#kit-models");
+  await page.keyboard.type("10");
+  await expect(page.locator("#kit-models")).toHaveValue("10");
+  await page.click('button:has-text("Add to the pile")');
+  await page.click('.kit button:has-text("Start")');
+  await page.selectOption(".kit [data-to]", "a1");
+  await page.click("[data-move]");
+  await expect.poll(async () => (await saved(page)).units.filter(u => u.name === "Intercessor Squad").length).toBe(2);
+  const u = (await saved(page)).units.filter(x => x.name === "Intercessor Squad").pop();
+  expect([u.armyId, u.count, u.points, u.role]).toEqual(["a1", 10, 150, "Battleline"]);
 });
