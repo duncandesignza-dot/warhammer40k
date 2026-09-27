@@ -42,9 +42,9 @@ test("the homepage's Community view is gold, says who runs it and lists every fe
   for(const w of [1280, 390, 320]){
     await page.setViewportSize({width: w, height: 800});
     await page.goto("/#/");
-    await page.click('.lp-switch [data-lp-mode="community"]');
-    await expect(page.locator('.lp-switch [data-lp-mode="community"]')).toHaveAttribute("aria-pressed", "true");
-    await expect(page.locator(".lp-switch [aria-pressed=true]")).toHaveCount(1);
+    await page.click('.lp-hero [data-lp-mode="community"]');
+    await expect(page.locator('.lp-hero [data-lp-mode="community"]')).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator(".lp-hero .lp-switch [aria-pressed=true]")).toHaveCount(1);
     await expect(page.locator(".lp-hero .eyebrow")).toHaveText("Run by the Eastern Cape Warlords");
     await expect(page.locator("#lp-club-h")).toContainText("Eastern Cape Warlords");
     await expect(page.locator(".lp-both-col.liv li")).toContainText(["Scheme lab: try schemes side by side"]);
@@ -52,7 +52,7 @@ test("the homepage's Community view is gold, says who runs it and lists every fe
     expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--brand").trim())).toBe("#f5b83d");
     expect(await noSidewaysScroll(page)).toBeLessThanOrEqual(0);
     // Back to Livery Ledger: green again, and the saved tool wasn't changed.
-    await page.click('.lp-switch [data-lp-mode="livery"]');
+    await page.click('.lp-hero [data-lp-mode="livery"]');
     expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--brand").trim())).toBe("#3ddc84");
   }
 });
