@@ -907,7 +907,7 @@ test("events online: your sign-up is saved to your account", async ({page}) => {
   await page.selectOption("#ej-list", "l1");
   await page.click("dialog[open] [type=submit]");
   await expect(page.locator(".ev .ev-list")).toContainText("You're going, taking Strike force");
-  expect(await page.evaluate(() => window.__upd.data.settings.eventLog)).toEqual({"winter-gt": {listId: "l1", notes: ""}});
+  expect(await page.evaluate(() => window.__db.user_settings[0].data.eventLog)).toEqual({"winter-gt": {listId: "l1", notes: ""}});
 });
 
 test("events: with none added yet, say they'll show here", async ({page}) => {

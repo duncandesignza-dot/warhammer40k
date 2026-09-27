@@ -147,3 +147,11 @@ test("logging out forgets the settings kept in this browser, so the next person 
   await expect.poll(() => page.evaluate(() => localStorage.getItem("ll-settings"))).toBeNull();
   await expect(page.locator("body")).not.toHaveClass(/no-points/);
 });
+
+test("online, settings are saved in their own table, not on the login", async ({page}) => {
+  await mockSupabase(page, {db: DB});
+  await page.goto("/#/settings");
+  await page.check("#set-points");
+  await expect.poll(async () => ((await db(page)).user_settings || [])[0] && (await db(page)).user_settings[0].data.hidePoints).toBe(true);
+  expect(await page.evaluate(() => window.__upd && window.__upd.data && window.__upd.data.settings)).toBeFalsy();
+});
