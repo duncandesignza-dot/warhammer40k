@@ -578,8 +578,8 @@
     const raw = location.hash.replace(/^#\/?/, "") || "", anchor = raw.includes("#") ? raw.slice(raw.indexOf("#") + 1) : "";
     const parts = raw.split("#")[0].split("/").filter(Boolean);
     // War Ledger pages are red, Livery Ledger's own pages green; shared pages keep the last one used.
-    // Old links to the profile page and the pile of shame (now gone) open Livery Ledger's overview.
-    if(parts[0] === "profile" || parts[0] === "shame"){ history.replaceState(null, "", "#/livery"); lastHash = location.hash; parts.splice(0, parts.length, "livery"); }
+    // Old links to the profile page open Livery Ledger's overview.
+    if(parts[0] === "profile"){ history.replaceState(null, "", "#/livery"); lastHash = location.hash; parts.splice(0, parts.length, "livery"); }
     setMode(parts[0] === "war" ? "war" : ["livery", "army", "new"].includes(parts[0]) ? "livery" : savedMode());
     // Community belongs to both tools: its page is gold, and neither Livery nor War is lit in the switch.
     if(["community", "shared", "player", "painter"].includes(parts[0])) document.documentElement.dataset.page = "community"; else delete document.documentElement.dataset.page;
@@ -603,7 +603,7 @@
         else if(parts[1] === "points") await viewWarPoints();
         else if(parts[1] === "datasheets") await viewWarDatasheets(FBY[parts[2]] ? parts[2] : "");
         else if(parts[1] === "events") await viewWarEvents();
-        else if(parts[1] === "play") await viewWarPlayPick();
+        else if(parts[1] === "play"){ history.replaceState(null, "", "#/war/battles"); lastHash = location.hash; await viewWarBattles(); }
         else if(!parts[1]) await viewWarDash();
         else viewNotFound();
       } else
@@ -723,7 +723,7 @@
   };
   const BOTNAV = {
     livery: {label: "Livery Ledger", items: [["", "Overview", "home"], ["ledgers", "Ledgers", "book"], ["collection", "Collection", "list"], ["paints", "Paints", "drop"], ["activity", "Activity", "chart"]]},
-    war: {label: "War Ledger", items: [["", "Overview", "home"], ["armoury", "Armoury", "shield"], ["lists", "Lists", "clip"], ["play", "Play", "dice"], ["battles", "Battles", "swords"], ["buy", "To buy", "cart"]]},
+    war: {label: "War Ledger", items: [["", "Overview", "home"], ["armoury", "Armoury", "shield"], ["lists", "Lists", "clip"], ["battles", "Battles", "swords"], ["buy", "To buy", "cart"]]},
     // Community Ledger has two sections of its own; the rest go to the events page and the other two tools.
     community: {label: "Community Ledger", items: [["", "Overview", "home"], ["shared", "Shared", "grid"], ["events", "Events", "dice", "#/war/events"], ["livery", "Livery", "drop", "#/livery"], ["war", "War", "swords", "#/war"]]}
   };
@@ -752,7 +752,7 @@
   const COMM_TABS = [["", "Overview"], ["shared", "Shared armies"]];
   const commTabs = on => `<nav class="war-tabs" aria-label="Community Ledger">${COMM_TABS.map(([k, l]) => `<a href="#/community${k ? "/" + k : ""}"${k === on ? ` aria-current="page"` : ""}>${l}</a>`).join("")}</nav>`;
   // The overview sums up your forces; the Armoury is every unit you own, and lists are where you try out units you don't.
-  const WAR_TABS = [["", "Overview"], ["armoury", "Armoury"], ["lists", "Army lists"], ["datasheets", "Datasheets"], ["play", "Play"], ["battles", "Battles"], ["events", "Events"], ["buy", "To buy"]];
+  const WAR_TABS = [["", "Overview"], ["armoury", "Armoury"], ["lists", "Army lists"], ["datasheets", "Datasheets"], ["battles", "Battles"], ["events", "Events"], ["buy", "To buy"]];
   // How many units your lists want that you don't own, for the To buy tab (worked out whenever War data loads).
   let buyCount = 0;
   const warTabs = on => { on = on === "armies" || on === "collection" ? "armoury" : on; return `<nav class="war-tabs" aria-label="War Ledger">${WAR_TABS.map(([k, l]) => `<a href="#/war${k ? "/" + k : ""}"${k === on ? ` aria-current="page"` : ""}>${l}${k === "buy" && buyCount ? ` <span class="count">${buyCount}</span>` : ""}</a>`).join("")}</nav>`; };
@@ -1096,7 +1096,7 @@
         {done: D.armies.length > 0, label: "Add an army", href: "#/war/new", hint: "Pick its faction and give it a name."},
         {done: mine.length > 0, label: "Add the units you own", href: D.armies[0] ? `#/war/army/${D.armies[0].id}` : "#/war/new", hint: "One at a time, or paste an army list."},
         {done: D.lists.length > 0, label: "Make an army list", href: "#/war/lists", hint: "Pick units for a game, including ones you don't own yet."},
-        {done: D.games.length > 0, label: "Play it and log the battle", href: "#/war/play", hint: "Take it to the table on Game day, then log the result."}])}
+        {done: D.games.length > 0, label: "Play it and log the battle", href: "#/war/battles", hint: "Take it to the table on Game day, then log the result."}])}
       ${forceStatus(mine)}
       ${warOverview(D, mine)}`
       : warEmpty()}`;
@@ -2989,26 +2989,25 @@
       }
     });
   }
-  /* ---------- play: pick a list for Game day ---------- */
-  async function viewWarPlayPick(){
-    const D = await warData();
-    view.name = "war-play-pick"; document.title = "Play · War Ledger";
+  /* ---------- play a game (on the Battles page): pick a list for Game day ---------- */
+  function playHtml(D){
     const saved = id => { try { const st = JSON.parse(localStorage.getItem("ll-play-" + id) || "null"); return st && Array.isArray(st.vp) ? st : null; } catch(e){ return null; } };
     const lists = D.lists.filter(l => l.status !== "archived" && D.armies.some(a => a.id === l.armyId));
+    if(!lists.length) return "";
     const going = lists.map(l => [l, saved(l.id)]).filter(x => x[1]);
     const today = isoDay(new Date()), evs = eventData().evs;
     const todays = evs.filter(e => e.date === today && e.mine && lists.some(l => l.id === e.mine.listId));
     const vpOf = (st, side) => st.vp.reduce((a, r) => a + (+r[side] || 0), 0);
     const row = (l, extra, resume) => { const a = D.armies.find(x => x.id === l.armyId), s = listState(l, D); return `<li>${armyBadge(a, 34)}<span class="lb-name">${esc(l.name)}<small>${esc([a.name, ptsText(s.points), extra].filter(Boolean).join(" · "))}</small></span><a class="btn btn-sm primary" href="#/war/list/${esc(l.id)}/play">${resume ? "Carry on" : "Play"}</a></li>`; };
-    app.innerHTML = `
-      <section class="page-head war-head">
-        <div><p class="eyebrow">War Ledger</p><h1>Play</h1><p class="sub">Which list are you playing? Game day keeps the round, Command Points and score, with your datasheets to hand.</p></div>
-      </section>
-      ${warTabs("play")}
-      ${todays.length ? `<section class="war-sec" aria-labelledby="pp-today"><div class="sec-h"><h2 id="pp-today">Today's event</h2></div><ul class="pp-rows">${todays.map(e => row(D.lists.find(l => l.id === e.mine.listId), e.name)).join("")}</ul></section>` : ""}
-      ${going.length ? `<section class="war-sec" aria-labelledby="pp-go"><div class="sec-h"><h2 id="pp-go">Games in progress</h2></div><ul class="pp-rows">${going.map(([l, st]) => row(l, `Round ${st.round} · ${vpOf(st, 0)}–${vpOf(st, 1)}`, true)).join("")}</ul></section>` : ""}
-      ${lists.length ? D.armies.map(a => [a, lists.filter(l => l.armyId === a.id)]).filter(g => g[1].length).map(([a, ls]) => `<section class="war-sec" aria-labelledby="pp-${esc(a.id)}"><div class="sec-h"><h2 id="pp-${esc(a.id)}">${esc(a.name)}</h2></div><ul class="pp-rows">${ls.map(l => row(l)).join("")}</ul></section>`).join("")
-        : `<section class="panel war-empty"><h2>No lists to play yet</h2><p class="sub">Build an army list first, then play it here.</p><a class="btn primary" href="#/war/lists">Your army lists</a></section>`}`;
+    const first = (todays[0] && todays[0].mine.listId) || lists[0].id;
+    return `<section class="panel pp-play" aria-labelledby="pp-h">
+        <div class="sec-h"><h2 id="pp-h">Play a game</h2></div>
+        <p class="hint">Game day keeps the round, Command Points and score, with your datasheets to hand. When you finish, the battle is logged with the score filled in.</p>
+        ${todays.length ? `<section aria-labelledby="pp-today"><h3 class="pp-sub" id="pp-today">Today's event</h3><ul class="pp-rows">${todays.map(e => row(D.lists.find(l => l.id === e.mine.listId), e.name)).join("")}</ul></section>` : ""}
+        ${going.length ? `<section aria-labelledby="pp-go"><h3 class="pp-sub" id="pp-go">Games in progress</h3><ul class="pp-rows">${going.map(([l, st]) => row(l, `Round ${st.round} · ${vpOf(st, 0)}–${vpOf(st, 1)}`, true)).join("")}</ul></section>` : ""}
+        <div class="pp-pick"><label class="sr-only" for="pp-list">List to play</label><select id="pp-list">${D.armies.map(a => [a, lists.filter(l => l.armyId === a.id)]).filter(g => g[1].length).map(([a, ls]) => `<optgroup label="${esc(a.name)}">${ls.map(l => `<option value="${esc(l.id)}"${l.id === first ? " selected" : ""}>${esc(l.name)} · ${esc(ptsText(listState(l, D).points))}</option>`).join("")}</optgroup>`).join("")}</select>
+          <a class="btn primary" id="pp-go-btn" href="#/war/list/${esc(first)}/play">Start Game day</a></div>
+      </section>`;
   }
   /* ---------- game day ----------
      The list at the table, on a phone: the round, Command Points and Victory Points for both sides, your units
@@ -3213,12 +3212,14 @@
     const again = async () => { D = await warData(); draw(); loadTagged(); };
     app.innerHTML = `
       <section class="page-head war-head">
-        <div><p class="eyebrow">War Ledger</p><h1>Battle reports</h1><p class="sub">Every game you've played, and how each army and list has fared.</p></div>
+        <div><p class="eyebrow">War Ledger</p><h1>Battles</h1><p class="sub">Play a game with Game day, then see every battle you've played and how each army and list has fared.</p></div>
         <div class="war-actions">${D.armies.length && !D.warMissing ? `<button type="button" class="primary" data-log="">Log a battle</button>` : ""}</div>
       </section>
       ${warTabs("battles")}
       ${missingBanner(D)}
+      ${playHtml(D)}
       <div id="wb-out"></div>`;
+    if($("pp-list")) $("pp-list").addEventListener("change", e => { $("pp-go-btn").href = `#/war/list/${e.target.value}/play`; });
     function table(title, rows){
       return rows.length ? `<section class="panel wrec"><h2 class="ph">${title}</h2><div class="wt-scroll"><table class="wtable compact">
         <thead><tr><th scope="col">${title.replace(/^By /, "")}</th><th scope="col" class="n">Games</th><th scope="col" class="n">W</th><th scope="col" class="n">L</th><th scope="col" class="n">D</th><th scope="col" class="n">Won</th></tr></thead>
@@ -7775,8 +7776,7 @@ Redemptor Dreadnought (210 points)</pre>
     ['a[href="#/war/armoury"]', "Every unit you own, by faction, with points and painting"],
     ['.war-tabs a[href="#/war/lists"]', "Lists for your games, with units you own and ones you don't"],
     ['.war-tabs a[href="#/war/datasheets"]', "Every faction's datasheets, with points and profiles"],
-    ['.war-tabs a[href="#/war/play"]', "Game day: take a list to the table on your phone"],
-    ['.war-tabs a[href="#/war/battles"]', "Games you've logged, and each army's record"],
+    ['.war-tabs a[href="#/war/battles"]', "Play a game with Game day, and every battle you've logged"],
     ['.war-tabs a[href="#/war/events"]', "Club and national events to sign up for with a list"],
     ['.war-tabs a[href="#/war/buy"]', "Units your lists want that you don't own yet"],
     // Livery Ledger tabs
