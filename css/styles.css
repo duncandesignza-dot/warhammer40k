@@ -1281,10 +1281,23 @@ html[data-mode="war"]{
 }
 :root{--mark-dark:#0b2418}
 html[data-mode="war"]{--mark-dark:#2a0709}
+/* Community: gold, the colour of its shield. */
+html[data-page="community"]{
+  --brand:#f5b83d; --brand-2:#ffd36b; --brand-ink:#1c1402;
+  --brand-rgb:245,184,61; --brand-2-rgb:255,211,107; --brand-hi:#ffcf6e; --brand-deep:#c28a1c;
+  --focus:#ffd98a; --mark-dark:#2a1f05;
+}
+/* Club and national tags would both be gold here: club goes plain. */
+html[data-page="community"] .ev-kind.club{color:var(--ink);background:rgba(255,255,255,.06);border-color:var(--line-strong)}
 .brand-mark .mk-war,.bw-war{display:none}
 html[data-mode="war"] .brand-mark .mk-war{display:inline}
 html[data-mode="war"] .brand-mark .mk-livery,html[data-mode="war"] .bw-livery{display:none}
 html[data-mode="war"] .bw-war{display:inline}
+/* On the Community page the logo carries its two figures, under the site's name. */
+.brand-mark .mk-comm{display:none}
+html[data-page="community"] .brand-mark .mk-comm{display:inline}
+html[data-page="community"] .brand-mark .mk-livery,html[data-page="community"] .brand-mark .mk-war,html[data-page="community"] .bw-war{display:none}
+html[data-page="community"] .bw-livery{display:inline}
 
 /* ---------- Livery / War switch in the top bar ---------- */
 .mode-switch{display:inline-flex;padding:3px;gap:2px;border:1px solid var(--line-strong);border-radius:99px;background:var(--surface-2)}
@@ -2122,3 +2135,26 @@ a.cm-card:hover,a.cm-card:focus-visible{border-color:var(--brand-line)}
 .yr-sws{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 .yr-sw{position:relative;aspect-ratio:1.4;border-radius:10px;border:1px solid rgba(255,255,255,.14)}
 .yr-sw small{position:absolute;left:6px;right:6px;bottom:5px;font-size:.7rem;font-weight:700;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.9);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Homepage: Community, the third choice, in gold. */
+.lp-switch button[data-lp-mode="community"][aria-pressed="true"]{background:rgba(245,184,61,.12);border-color:rgba(245,184,61,.5);color:var(--ink);box-shadow:0 10px 30px -14px rgba(245,184,61,.7)}
+@media (max-width:760px){.lp-switch{display:flex;width:100%}.lp-switch button{flex:1 1 0;padding:9px 10px;gap:8px}.lp-switch strong{font-size:.95rem}.lp-switch small{font-size:.7rem}.lps-ico svg{width:26px;height:26px}}
+@media (max-width:560px){.lp-switch button{flex-direction:column;align-items:center;text-align:center;gap:4px;padding:8px 4px}.lp-switch strong{font-size:.82rem;white-space:normal}.lp-switch small{display:none}}
+.lp-club .lp-club-art{display:flex;flex-direction:column;align-items:center;gap:16px}
+.lp-club-mark svg{width:120px;height:120px;filter:drop-shadow(0 18px 40px rgba(245,184,61,.35))}
+.lp-club-art .cm-evs{width:100%;grid-template-columns:1fr}
+.lp-both{margin-top:56px}
+.lp-both-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-top:22px}
+.lp-both-cols>.panel{margin:0}
+.lp-both-col{display:flex;flex-direction:column;gap:14px}
+.lp-both-col h3{display:flex;align-items:center;gap:10px;margin:0;font-size:1.05rem}
+.lp-both-col .lps-ico svg{width:30px;height:30px}
+.lp-both-col .lp-list{margin:0}
+.lp-both-col .btn{align-self:flex-start;margin-top:auto}
+.lp-both-col.liv{border-color:rgba(61,220,132,.35)}.lp-both-col.liv .lp-list svg{color:#3ddc84}
+.lp-both-col.war{border-color:rgba(236,90,95,.35)}.lp-both-col.war .lp-list svg{color:#ec5a5f}
+.lp-both-col .lps-ico{opacity:1;filter:none}
+/* The club section reuses the companion box, which sets War or Livery colours: here it's gold. */
+.lp-war.lp-club{--brand:#f5b83d;--brand-2:#ffd36b;--brand-rgb:245,184,61;--brand-2-rgb:255,211,107;--brand-ink:#1c1402;--brand-hi:#ffcf6e;--brand-soft:rgba(245,184,61,.12);--brand-line:rgba(245,184,61,.45)}
+.panel.lp-both-col h3{font-family:var(--display);font-size:1.05rem;text-transform:none;letter-spacing:-.01em;color:var(--ink);margin:0}
+.lp-war.lp-club{background:radial-gradient(700px 360px at 0% 0%,rgba(245,184,61,.16),transparent 65%),radial-gradient(500px 300px at 100% 100%,rgba(255,211,107,.08),transparent 60%),var(--surface)}
+.lp-club .lp-cta-btns{margin-top:20px}

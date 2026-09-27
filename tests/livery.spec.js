@@ -264,6 +264,13 @@ test("community: in the header once you're logged in, with the events coming up"
   await expect(page).toHaveURL(/#\/community$/);
   await expect(page.locator("h1")).toHaveText("Community");
   await expect(page.locator(".topnav .top-comm")).toHaveAttribute("aria-current", "page");
+  // Neither Livery nor War is lit, and the page is gold.
+  await expect(page.locator(".mode-switch a[aria-current]")).toHaveCount(0);
+  expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--brand").trim())).toBe("#f5b83d");
+  await page.click(".mode-switch a[href='#/war']");
+  await expect(page.locator(".mode-switch a[aria-current]")).toHaveAttribute("href", "#/war");
+  expect(await page.evaluate(() => document.documentElement.dataset.page)).toBeUndefined();
+  await page.goBack();
   await expect(page.locator(".cm-evs li")).toHaveCount(1);
   await expect(page.locator(".cm-evs li")).toContainText("Winter GT");
   await expect(page.locator('.cm-card[href="#/shared"]')).toBeVisible();

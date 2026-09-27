@@ -254,16 +254,25 @@
     return true;
   }
   const clearOfflineData = () => { try { navigator.serviceWorker && navigator.serviceWorker.controller && navigator.serviceWorker.controller.postMessage({type: "clear-data"}); } catch(e){} };
+  // The top bar, then the background picker moved in beside your profile (or the log in buttons).
   function setTop(){
-    const nav = $("topnav"), a = store.kind === "supabase" ? acct() : null, war = isWar();
-    const sw = `<div class="mode-switch" role="group" aria-label="Switch between Livery Ledger and War Ledger"><a href="#/livery"${war ? "" : ` aria-current="true"`}><span class="ms-ico">${LOGO_DROP}</span><span class="ms-text"><span class="ms-long">Livery<span class="ms-full" aria-hidden="true"> Ledger</span></span><span class="ms-sub" aria-hidden="true">Paint your army</span></span><span class="ms-short" aria-hidden="true">L</span><span class="sr-only"> Ledger: painting</span></a><a href="#/war"${war ? ` aria-current="true"` : ""}><span class="ms-ico">${LOGO_SWORDS}</span><span class="ms-text"><span class="ms-long">War<span class="ms-full" aria-hidden="true"> Ledger</span></span><span class="ms-sub" aria-hidden="true">Command your army</span></span><span class="ms-short" aria-hidden="true">W</span><span class="sr-only"> Ledger: your fighting force</span></a></div>`;
+    const nav = $("topnav"), bg = document.querySelector(".bgpick");
+    if(bg && nav.contains(bg)) nav.before(bg);   // keep it out of the way while the bar is redrawn
+    drawTop();
+    if(!bg) return;
+    const acct = nav.querySelector(".acct"), auth = nav.querySelector("[data-auth-open]");
+    if(acct) nav.insertBefore(bg, acct); else if(auth) nav.insertBefore(bg, auth); else nav.appendChild(bg);
+  }
+  function drawTop(){
+    const nav = $("topnav"), a = store.kind === "supabase" ? acct() : null, war = isWar(), comm = document.documentElement.dataset.page === "community";
+    const sw = `<div class="mode-switch" role="group" aria-label="Switch between Livery Ledger and War Ledger"><a href="#/livery"${war || comm ? "" : ` aria-current="true"`}><span class="ms-ico">${LOGO_DROP}</span><span class="ms-text"><span class="ms-long">Livery<span class="ms-full" aria-hidden="true"> Ledger</span></span><span class="ms-sub" aria-hidden="true">Paint your army</span></span><span class="ms-short" aria-hidden="true">L</span><span class="sr-only"> Ledger: painting</span></a><a href="#/war"${war && !comm ? ` aria-current="true"` : ""}><span class="ms-ico">${LOGO_SWORDS}</span><span class="ms-text"><span class="ms-long">War<span class="ms-full" aria-hidden="true"> Ledger</span></span><span class="ms-sub" aria-hidden="true">Command your army</span></span><span class="ms-short" aria-hidden="true">W</span><span class="sr-only"> Ledger: your fighting force</span></a></div>`;
     if(store.kind !== "supabase"){ nav.innerHTML = sw; return; }
     if(!a){
       nav.innerHTML = `<button type="button" class="btn-sm ghost" data-auth-open="in">Log in</button><button type="button" class="btn-sm primary" data-auth-open="up">Sign up</button>`;
       return;
     }
-    const comm = `<a class="top-comm" href="#/community" title="Community"${(location.hash || "").startsWith("#/community") ? ` aria-current="page"` : ""}><span class="tc-ico">${LOGO_COMMUNITY}</span><span class="tc-l">Community</span></a>`;
-    nav.innerHTML = comm + sw + `<div class="acct">
+    const commLink = `<a class="top-comm" href="#/community" title="Community"${comm ? ` aria-current="page"` : ""}><span class="tc-ico">${LOGO_COMMUNITY}</span><span class="tc-l">Community</span></a>`;
+    nav.innerHTML = commLink + sw + `<div class="acct">
       <button type="button" class="acct-btn" id="b-acct" aria-haspopup="menu" aria-expanded="false" aria-controls="acct-menu" aria-label="Account menu for ${esc(a.name)}">${avatarHtml(a)}<span class="acct-name">${esc(a.name)}</span>${CARET}</button>
       <div class="acct-menu" id="acct-menu" role="menu" hidden>
         <div class="acct-head">${avatarHtml(a, "lg")}<span><strong>${esc(a.name)}</strong><small>${esc(a.email)}</small></span></div>
@@ -573,6 +582,8 @@
     // Old links to the profile page now open Livery Ledger's overview.
     if(parts[0] === "profile"){ history.replaceState(null, "", "#/livery"); lastHash = location.hash; parts.splice(0, parts.length, "livery"); }
     setMode(parts[0] === "war" ? "war" : ["livery", "army", "new"].includes(parts[0]) ? "livery" : savedMode());
+    // Community belongs to both tools: its page is gold, and neither Livery nor War is lit in the switch.
+    if(parts[0] === "community") document.documentElement.dataset.page = "community"; else delete document.documentElement.dataset.page;
     document.querySelectorAll("dialog.wdlg[open]").forEach(d => d.close());
     setTop(); setBotNav(parts);
     try {
@@ -4323,10 +4334,13 @@
   // A feature's picture: img/shots/<name>.webp when it's been added, otherwise a drawing made from the app's own parts.
   const shot = (name, alt, art) => `<figure class="shot" data-shot="${name}"><div class="shot-art" aria-hidden="true">${art}</div><img src="img/shots/${name}.webp" alt="${esc(alt)}" loading="lazy" decoding="async"></figure>`;
   const paintName = l => String(l || "").replace(/^Citadel\s+/, "").replace(/\s*\([^)]*\)\s*$/, "");
-  async function viewLanding(){
+  // The homepage shows Livery Ledger, War Ledger or Community; Community is gold and doesn't change the saved tool.
+  async function viewLanding(opts){
     view.name = "landing";
-    const war = isWar();
-    document.title = war ? "War Ledger · Track your Warhammer 40,000 armies, lists and battles" : "Livery Ledger · Plan and track your Warhammer 40,000 painting";
+    const comm = !!(opts && opts.comm), war = isWar() && !comm;
+    if(comm) document.documentElement.dataset.page = "community"; else delete document.documentElement.dataset.page;
+    setTop();
+    document.title = comm ? "Community · Livery Ledger and War Ledger, run by the Eastern Cape Warlords" : war ? "War Ledger · Track your Warhammer 40,000 armies, lists and battles" : "Livery Ledger · Plan and track your Warhammer 40,000 painting";
     PROF = P.profileFor("ultramarines");
     const me = acct(), online = store.kind === "supabase";
     const nSheets = FACTIONS.reduce((n, f) => n + f.units.filter(u => !u.t).length, 0);
@@ -4351,11 +4365,21 @@
       check: '<path d="M12 3 4 6v6c0 4.6 3.4 8 8 9 4.6-1 8-4.4 8-9V6Z"/><path d="m8.5 12 2.5 2.5 4.5-5"/>',
       copy: '<rect x="8" y="8" width="13" height="13" rx="2.5"/><path d="M16 8V5.5A2.5 2.5 0 0 0 13.5 3h-8A2.5 2.5 0 0 0 3 5.5v8A2.5 2.5 0 0 0 5.5 16H8"/>',
       trophy: '<path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0Z"/><path d="M7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4"/>',
-      brush: '<path d="M14.5 4.5 19.5 9.5 11 18l-5-5Z"/><path d="M6 13c-2 0-3 1.5-3 3.5S2 20 2 20s3.5.5 5.5-1 1.5-3.5 1.5-3.5"/><path d="m17 2 5 5"/>'
+      brush: '<path d="M14.5 4.5 19.5 9.5 11 18l-5-5Z"/><path d="M6 13c-2 0-3 1.5-3 3.5S2 20 2 20s3.5.5 5.5-1 1.5-3.5 1.5-3.5"/><path d="m17 2 5 5"/>',
+      flag: '<path d="M5 21V4"/><path d="M5 4h11l-2 4 2 4H5"/>',
+      cal: '<rect x="3" y="5" width="18" height="16" rx="2.5"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+      clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+      note: '<path d="M5 4h10l4 4v12H5Z"/><path d="M15 4v4h4M8 12h8M8 16h6"/>',
+      drop: '<path d="M12 3s-6 7-6 11.5a6 6 0 0 0 12 0C18 10 12 3 12 3z"/>',
+      users: '<circle cx="9" cy="8" r="3.2"/><path d="M3 19c.6-3.3 3-5 6-5s5.4 1.7 6 5"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14.2c2.6-.2 4.5 1.3 5 4.3"/>',
+      dice: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8.5 8.5h.01M15.5 8.5h.01M12 12h.01M8.5 15.5h.01M15.5 15.5h.01" stroke-width="3"/>',
+      book: '<path d="M5 5a2 2 0 0 1 2-2h12v15H7a2 2 0 0 0-2 2z"/><path d="M5 20a2 2 0 0 0 2 2h12v-4"/>',
+      heart: '<path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10Z"/>',
+      shield: '<path d="M12 3 20 6v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/>'
     };
     const icon = k => `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[k]}</svg>`;
     const tick = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg>';
-    const cta = me ? `<a class="btn primary lg" href="${isWar() ? "#/war" : "#/livery"}">${isWar() ? "Go to your armies" : "Go to your ledgers"}</a>` : online ? `<button type="button" class="primary lg" data-cta="up">Create your free account</button>` : `<a class="btn primary lg" href="${war ? "#/war" : "#/livery"}">${war ? "Open War Ledger" : "Start a ledger"}</a>`;
+    const cta = me ? `<a class="btn primary lg" href="${comm ? "#/community" : isWar() ? "#/war" : "#/livery"}">${comm ? "Open Community" : isWar() ? "Go to your armies" : "Go to your ledgers"}</a>` : online ? `<button type="button" class="primary lg" data-cta="up">Create your free account</button>` : `<a class="btn primary lg" href="${war ? "#/war" : "#/livery"}">${war ? "Open War Ledger" : "Start a ledger"}</a>`;
 
     const liveryBody = () => `
       <section class="lp-features" id="features" aria-labelledby="lp-feat-h">
@@ -4370,7 +4394,7 @@
             <p class="eyebrow">Colour schemes</p>
             <h3>Your army's colours, area by area</h3>
             <p>Pick your faction and start from its official Citadel colours, or a known scheme like a successor chapter. Then make it yours: armour, trim, lenses and cloth, each pauldron, and extra areas for weapons and details.</p>
-            <ul class="lp-list"><li>${tick}Official colours for every faction</li><li>${tick}Rank colours for sergeants, veterans and heroes</li><li>${tick}Colour badges that show how each unit will look</li></ul>
+            <ul class="lp-list"><li>${tick}Official colours for every faction</li><li>${tick}Rank colours for sergeants, veterans and heroes</li><li>${tick}A scheme lab to try other colours on a unit, side by side</li></ul>
           </div>
           ${shot("colours", "Choosing an army's colours in Livery Ledger", `<div class="ill ill-scheme">
             <div class="ill-badges">${demo.tiers.map(t => `<div>${b(t.color, 92)}<small>${esc(t.name)}</small></div>`).join("")}</div>
@@ -4382,8 +4406,8 @@
           <div class="lp-text">
             <p class="eyebrow">Unit tracker</p>
             <h3>Every unit, from built to varnished</h3>
-            <p>Add units from real datasheets with their weapons, points and model count. Tick off each stage as you go and watch your army's progress climb.</p>
-            <ul class="lp-list"><li>${tick}Stages from built and primed to based and varnished</li><li>${tick}Search, filter and group your units</li><li>${tick}Points total against your list's limit</li></ul>
+            <p>Add units from real datasheets with their weapons, points and model count. Tick off each stage as you go, jot down what you tried in each unit's journal, and watch your army's progress climb.</p>
+            <ul class="lp-list"><li>${tick}Stages from built and primed to based and varnished</li><li>${tick}Select several units and set their stage together</li><li>${tick}A painting journal, photos and a timer on every unit</li></ul>
           </div>
           ${shot("units", "A unit card with painting stages and progress", `<div class="ill ill-unit">
             <div class="ill-card">
@@ -4401,10 +4425,29 @@
 
         <article class="lp-feat">
           <div class="lp-text">
+            <p class="eyebrow">Projects and deadlines</p>
+            <h3>Finish what you start, on time</h3>
+            <p>Set yourself a goal, like finishing a squad by the end of the month, and pick the units in it. Livery Ledger shows what's left and how many models a day it takes. Going to an event? Your Overview shows what's still to paint in the list you're taking.</p>
+            <ul class="lp-list"><li>${tick}Projects with a finish date and models a day</li><li>${tick}Before your events: what's left to paint</li><li>${tick}Up next: starred and nearly finished units</li></ul>
+          </div>
+          ${shot("projects", "A painting project with models left and models a day", `<div class="ill ill-proj">
+            <div class="ill-card">
+              <div class="ill-rh"><strong>Finish the 2nd Company</strong><small>In 20 days</small></div>
+              <div class="ill-prog"><i style="width:58%"></i></div>
+              <p class="lpw-verdict">10 models to paint · about one every 2 days</p>
+              <div class="ill-row"><span>Terminator Squad</span><em>5 to go · next: basecoat</em></div>
+              <div class="ill-row"><span>Intercessor Squad</span><em>4 to go · next: shade</em></div>
+              <div class="ill-row"><span>Redemptor Dreadnought</span><em>1 to go · next: built</em></div>
+            </div>
+          </div>`)}
+        </article>
+
+        <article class="lp-feat flip">
+          <div class="lp-text">
             <p class="eyebrow">Paints and recipes</p>
             <h3>Recipes you write once and use everywhere</h3>
-            <p>Write down each step: prime, basecoat, shade, layer, highlight. Your recipes are saved to your account, so the next army can reuse them. Mark the paints you own and Livery Ledger tells you what to buy.</p>
-            <ul class="lp-list"><li>${tick}Over 3,700 paints from 11 brands</li><li>${tick}Recipes shared across all your ledgers</li><li>${tick}A shopping list of paints you don't have yet</li></ul>
+            <p>Write down each step: prime, basecoat, shade, layer, highlight. Your recipes are saved to your account, so the next army can reuse them. Mark the paints you own and Livery Ledger tells you what to buy, or finds the closest one already on your shelf.</p>
+            <ul class="lp-list"><li>${tick}Over 3,700 paints from 11 brands</li><li>${tick}A paint matcher across every brand</li><li>${tick}A shopping list, with the paints you've marked running low</li></ul>
           </div>
           ${shot("recipes", "A step-by-step paint recipe", `<div class="ill ill-recipe">
             <div class="ill-rh"><strong>Ultramarine armour</strong><small>5 steps</small></div>
@@ -4413,7 +4456,7 @@
           </div>`)}
         </article>
 
-        <article class="lp-feat flip">
+        <article class="lp-feat">
           <div class="lp-text">
             <p class="eyebrow">List import</p>
             <h3>Paste your army list, get your units</h3>
@@ -4431,12 +4474,12 @@ Redemptor Dreadnought (210 points)</pre>
           </div>`)}
         </article>
 
-        <article class="lp-feat">
+        <article class="lp-feat flip">
           <div class="lp-text">
             <p class="eyebrow">Painting history</p>
             <h3>Watch your painted pile grow, month by month</h3>
-            <p>Every model you mark as painted is dated, so you can see how much you get done each month. Set a monthly goal, keep a weekly streak going and look back over the whole year.</p>
-            <ul class="lp-list"><li>${tick}A monthly goal with progress as you paint</li><li>${tick}Weekly streaks and your best month</li><li>${tick}A chart of the last twelve months</li></ul>
+            <p>Every model you mark as painted is dated, so you can see how much you get done each month. Set a monthly goal, keep a weekly streak going, time your painting, and look back with a year in review you can share.</p>
+            <ul class="lp-list"><li>${tick}A monthly goal with progress as you paint</li><li>${tick}Weekly streaks, your best month and time at the desk</li><li>${tick}Your year in review, with a picture to share</li></ul>
           </div>
           ${shot("activity", "Painting activity with a monthly goal and chart", `<div class="ill ill-activity">
             <div class="ill-stats">
@@ -4449,12 +4492,12 @@ Redemptor Dreadnought (210 points)</pre>
           </div>`)}
         </article>
 
-        <article class="lp-feat flip">
+        <article class="lp-feat">
           <div class="lp-text">
             <p class="eyebrow">Community</p>
             <h3>Share your army and see what others are painting</h3>
-            <p>Share a ledger and it joins the Shared armies page, with your name and picture on it. Browse other painters' schemes for ideas, like the ones you love and follow the painters you want to keep up with.</p>
-            <ul class="lp-list"><li>${tick}Read-only links anyone can open</li><li>${tick}Likes and follows</li><li>${tick}Private until you choose to share</li></ul>
+            <p>Share a ledger and it joins the Shared armies page, with your name and picture on it. Browse other painters' schemes for ideas, like and comment on the ones you love, follow the painters you want to keep up with, and find the club's events on the Community page.</p>
+            <ul class="lp-list"><li>${tick}Read-only links anyone can open</li><li>${tick}Likes, follows and comments</li><li>${tick}Private until you choose to share</li></ul>
           </div>
           ${shot("community", "Shared armies from other painters", `<div class="ill ill-community">
             ${[["Brother Dmitri", "BD", "Crusade of Sigismund", "Black Templars", "black-templars", 47, 12, true], ["Kaylee R", "KR", "The Silver Host", "Necrons", "necrons", 81, 31, false]].filter(x => FBY[x[4]]).map(([who, ini, name, fac, fid, pct, likes, fol]) => `<div class="ill-card ill-share">
@@ -4471,10 +4514,10 @@ Redemptor Dreadnought (210 points)</pre>
         <div class="lpw-copy">
           <p class="eyebrow">The companion: War Ledger</p>
           <h2 id="lp-war-h">Livery Ledger records the hobby. <span class="grad">War Ledger records the war.</span></h2>
-          <p>Flip the switch at the top and your collection becomes a fighting force. Same account, same armies, no painting required: put together any army, even one you don't own yet, build lists from it and log how every game went.</p>
+          <p>Flip the switch at the top and your collection becomes a fighting force. Same account, same armies, no painting required: see everything you own in the Armoury, build lists with it (and with units you don't own yet), play them on Game day and log how every game went.</p>
           <div class="lpw-cols">
             <div><h3>Livery Ledger · the hobby</h3><ul class="lp-list"><li>${tick}Colour schemes and recipes</li><li>${tick}Painting stages and progress</li><li>${tick}Photos of every unit</li></ul></div>
-            <div><h3>War Ledger · the fighting force</h3><ul class="lp-list"><li>${tick}Try out armies you don't own yet</li><li>${tick}Army lists checked against the points</li><li>${tick}Battle reports and win–loss records</li></ul></div>
+            <div><h3>War Ledger · the fighting force</h3><ul class="lp-list"><li>${tick}Try units you don't own yet in a list</li><li>${tick}Army lists checked against the points</li><li>${tick}Battle reports and win–loss records</li></ul></div>
           </div>
           <div class="lp-cta-btns"><button type="button" class="primary" data-lp-mode="war">See War Ledger</button>${me || !online ? `<a class="btn" href="#/war">Open War Ledger</a>` : ""}</div>
         </div>
@@ -4498,13 +4541,19 @@ Redemptor Dreadnought (210 points)</pre>
       <section class="lp-grid" aria-labelledby="lp-more-h">
         <h2 id="lp-more-h" class="lp-grid-h">And the little things that help</h2>
         <div class="lp-cards">
-          ${[["box", "Pile of shame", "Log the kits you've bought but haven't started, what they cost and how long they've waited."],
-             ["swap", "Paint swaps", "Out of a paint? Find the closest match from the other ten brands."],
-             ["photo", "Photo gallery", "Up to twelve photos per unit, from bare plastic to finished."],
+          ${[["flag", "Projects", "Set a goal, like finishing a squad by the end of the month, and see how many models a day it takes."],
+             ["cal", "Before your events", "For each event you're going to, what's left to paint in the list you're taking."],
+             ["star", "Up next", "Your starred and nearly finished units, each with the stage it's on next."],
+             ["swap", "Paint matcher", "Pick a paint and see the closest ones you already own, then the nearest in ten other brands."],
+             ["drop", "Scheme lab", "Try two or three colour schemes on a unit side by side before you change anything."],
+             ["note", "Painting journal", "Dated notes and photos on each unit, so you can see how it came along."],
+             ["trophy", "Year in review", "Models painted, hours at the desk, your busiest month and favourite paints, with a picture to share."],
+             ["clock", "Painting timer", "Start the timer when you sit down to paint and see where the hours go."],
+             ["photo", "Photos, before and after", "Up to twelve photos per unit, a before and after slider, and a picture of the finished unit to share."],
+             ["box", "Pile of shame", "Log the kits you've bought but haven't started, what they cost and how long they've waited."],
              ["print", "Printable guide", "Print your army's colours, recipes and paint list to keep by the brushes."],
-             ["cart", "Shopping list", "Every paint your recipes need that you don't own yet, ready to copy."],
-             ["list", "Your collection", "Every unit you own, across all your ledgers, in one list."],
-             ["star", "Starred units", "Star the units you're painting next and find them in a tap."],
+             ["cart", "Shopping list", "Every paint your recipes need, plus the ones you've marked running low or empty, ready to copy."],
+             ["list", "Your collection", "Every unit you own, across all your ledgers, in one list. Select several to set their stage together."],
              ["layers", "Batch updates", "Pick several units and set their stage, mark them painted or star them in one go."],
              ["points", "Points at a glance", "See your army's total against the limit you're building to."],
              ["share", "Share a link", "Send a read-only link so friends can see your colours and progress."],
@@ -4553,9 +4602,9 @@ Redemptor Dreadnought (210 points)</pre>
 
         <article class="lp-feat">
           <div class="lp-text">
-            <p class="eyebrow">Your collection</p>
-            <h3>Any army, whether you own it or not</h3>
-            <p>Add units from every faction's datasheets, or paste an army list to add them all at once. Try an army before you buy a single model, or keep the one on your shelf in order.</p>
+            <p class="eyebrow">The Armoury</p>
+            <h3>Every unit you own, by faction</h3>
+            <p>Add units from every faction's datasheets, or paste an army list to add them all at once. The Armoury shows everything on your shelf with its points, how much is painted and how many of your lists use it.</p>
             <ul class="lp-list"><li>${tick}Every datasheet, with points and unit sizes</li><li>${tick}Wargear filled in from the datasheet</li><li>${tick}Points and models across all your armies</li></ul>
           </div>
           ${shot("war-collection", "War Ledger's collection", `<div class="ill ill-wcoll">
@@ -4585,8 +4634,8 @@ Redemptor Dreadnought (210 points)</pre>
           <div class="lp-text">
             <p class="eyebrow">Army lists</p>
             <h3>Will this list work?</h3>
-            <p>Build as many lists as you like from the units you own, plus ones you don't have yet. Each one is checked against the points limit and the rules, so you can try ideas before you buy or build anything.</p>
-            <ul class="lp-list"><li>${tick}Paste a list from the app, New Recruit or BattleScribe</li><li>${tick}Points against the limit as you build</li><li>${tick}Copy any list as text to send to your opponent</li></ul>
+            <p>Build as many lists as you like from the units you own, plus ones you don't have yet. Each one is checked against the points limit and the rules, including which characters can lead which units, so you can try ideas before you buy or build anything.</p>
+            <ul class="lp-list"><li>${tick}Paste a list from the app, New Recruit or BattleScribe</li><li>${tick}Points against the limit as you build</li><li>${tick}Crusade forces, with experience, ranks and requisition</li></ul>
           </div>
           ${shot("war-list", "An army list against its points limit", `<div class="ill ill-wlist">
             <div class="ill-card lpw-list">
@@ -4602,10 +4651,28 @@ Redemptor Dreadnought (210 points)</pre>
 
         <article class="lp-feat flip">
           <div class="lp-text">
+            <p class="eyebrow">Game day and events</p>
+            <h3>Your list at the table</h3>
+            <p>On the day, open your list on your phone: the round, Command Points and the score for both sides, your units with their datasheets, and your notes on the army you're facing. Sign up for club and national events with the list you're taking, and War Ledger checks its points before you go.</p>
+            <ul class="lp-list"><li>${tick}Rounds, Command Points and Victory Points</li><li>${tick}Datasheets and notes on your opponent to hand</li><li>${tick}Club and national events, with Game day on the day</li></ul>
+          </div>
+          ${shot("war-gameday", "Game day in War Ledger", `<div class="ill ill-wgame">
+            <div class="ill-stats"><div><b>3</b><small>Round</small></div><div><b>4</b><small>Command</small></div><div class="rdy-tile"><b>45–38</b><small>Score</small></div></div>
+            <div class="ill-card">
+              <div class="ill-rh"><strong>Winter GT · Strike force</strong><small>Game day</small></div>
+              <div class="ill-row"><span>Captain</span><em>Character</em></div>
+              <div class="ill-row"><span>Intercessor Squad</span><em>Battleline</em></div>
+              <div class="ill-row"><span>Redemptor Dreadnought</span><em>Destroyed</em></div>
+            </div>
+          </div>`)}
+        </article>
+
+        <article class="lp-feat">
+          <div class="lp-text">
             <p class="eyebrow">Battle reports</p>
             <h3>Every game, every result</h3>
-            <p>Log each game with the list you took, who you faced, the mission, the score and your most valuable unit. See how each army and list performs, and against which factions.</p>
-            <ul class="lp-list"><li>${tick}A win–loss record for every army and list</li><li>${tick}Results by opponent faction</li><li>${tick}Your record shown when you share an army</li></ul>
+            <p>Log each game with the list you took, who you faced, the mission, the score and your most valuable unit. See how each army and list performs, and against which factions. Tag a friend as your opponent and it shows on both your records.</p>
+            <ul class="lp-list"><li>${tick}A win–loss record for every army and list</li><li>${tick}Results and your notes for each opponent faction</li><li>${tick}Battles against friends</li></ul>
           </div>
           ${shot("war-battles", "Battle reports and records", `<div class="ill ill-wbattles">
             <div class="ill-stats"><div><b>17</b><small>Games</small></div><div><b>10–7</b><small>Record</small></div><div class="rdy-tile"><b>59%</b><small>Won</small></div></div>
@@ -4635,11 +4702,21 @@ Redemptor Dreadnought (210 points)</pre>
       <section class="lp-grid" aria-labelledby="lp-more-h">
         <h2 id="lp-more-h" class="lp-grid-h">And the little things that help</h2>
         <div class="lp-cards">
-          ${[["check", "Things to check", "Friendly notes on a list, like going over the points or having no warlord."],
+          ${[["dice", "Game day", "Your list at the table on your phone: the round, Command Points, the score and your datasheets."],
+             ["cal", "Events", "Club and national events. Say you're going with a list, play it on the day and see how it went."],
+             ["shield", "Crusade forces", "Keep an Order of Battle: experience and ranks for each unit, battle honours and scars, and requisition points."],
+             ["book", "Datasheets", "Browse every faction's datasheets, sort by points and add one straight to a list."],
+             ["cart", "To buy", "The units your lists want that you don't own yet, in one list."],
+             ["points", "Points check", "See how the latest points change each of your lists."],
+             ["print", "Print a list", "A clean copy of any list to take to the table."],
+             ["swap", "Compare lists", "Put two lists side by side to see what's different."],
+             ["note", "Opponent notes", "Your notes on each faction you face, shown when you play them."],
+             ["users", "Battles against friends", "Tag a friend as your opponent and they can add the game to their own record."],
+             ["check", "Things to check", "Friendly notes on a list, like going over the points, having no warlord or a leader with nothing to lead."],
              ["layers", "Wargear", "Note each unit's loadout, filled in from its datasheet to start with."],
              ["list", "Your whole collection", "Every unit across every army in one list, grouped by army or role."],
              ["copy", "Copy a list", "Copy any list as text to send to an opponent or tournament organiser."],
-             ["swap", "Duplicate lists", "Try a variation of a list without touching the original."],
+             ["layers", "Duplicate lists", "Try a variation of a list without touching the original."],
              ["trophy", "Records by opponent", "See how you fare against each faction you face."],
              ["share", "Shared armies", "Share an army and its win–loss record shows alongside it."],
              ["brush", "Works with Livery Ledger", "Every army here can be given colours and painted in Livery Ledger."],
@@ -4652,9 +4729,9 @@ Redemptor Dreadnought (210 points)</pre>
       <section class="lp-steps" aria-labelledby="lp-steps-h">
         <div class="lp-head"><p class="eyebrow">How it works</p><h2 id="lp-steps-h">From collection to battlefield in three steps</h2></div>
         <ol>
-          <li><span class="n">1</span><h3>Muster your army</h3><p>Pick your faction, then add your units or paste an army list.</p></li>
-          <li><span class="n">2</span><h3>Build your lists</h3><p>Make lists from your collection and check them against the points.</p></li>
-          <li><span class="n">3</span><h3>Play and log</h3><p>Record each game and watch every army's record grow.</p></li>
+          <li><span class="n">1</span><h3>Muster your army</h3><p>Pick your faction, then add the units you own or paste an army list.</p></li>
+          <li><span class="n">2</span><h3>Build your lists</h3><p>Make lists from your Armoury, plus units you don't own yet, and check them against the points.</p></li>
+          <li><span class="n">3</span><h3>Play and log</h3><p>Play on Game day, log each game and watch every army's record grow.</p></li>
         </ol>
       </section>
 
@@ -4662,7 +4739,7 @@ Redemptor Dreadnought (210 points)</pre>
         <div class="lp-head"><p class="eyebrow">Questions</p><h2 id="lp-faq-h">Good to know</h2></div>
         <div class="lp-faq-list">
           ${[["Is it free?", "Yes. Every feature is free to use."],
-             ["Do I need to own the models?", "No. Add any unit from the datasheets and build lists with it, so you can try an army before you buy it."],
+             ["Do I need to own the models?", "No. Army lists can include units you don't own yet, straight from the datasheets, so you can try a list before you buy it."],
              ["Do I need to paint my models?", "No. War Ledger works without choosing colours or tracking painting. If you do paint, Livery Ledger shares the same armies."],
              online ? ["Do I need an account?", "A free account keeps your armies, lists and battles safe online, so they follow you from your phone to your computer. Sign up with just an email and password."]
                     : ["Do I need an account?", "Not on this copy. Everything is saved in this browser, so use Backups now and then to keep a copy somewhere safe."],
@@ -4679,16 +4756,84 @@ Redemptor Dreadnought (210 points)</pre>
       </section>
     `;
 
+    // The Community homepage: events, shared armies and friends, and everything both tools do, run by the Eastern Cape Warlords.
+    const today = isoDay(new Date()), upcoming = eventData().evs.filter(e => e.date >= today).sort((a, b) => a.date.localeCompare(b.date));
+    const commBody = () => `
+      <section class="lp-grid" aria-labelledby="lp-comm-h">
+        <div class="lp-head"><p class="eyebrow">What's in Community</p><h2 id="lp-comm-h">Where players meet</h2><p class="sub">The part of Livery Ledger and War Ledger that's about other players, not just your own shelf.</p></div>
+        <div class="lp-cards">
+          ${[["cal", "Club and national events", "Club nights and national events, added by the club. Say you're going, choose the list you're taking and log how it went."],
+             ["dice", "Game day", "On the day, open your list at the table: rounds, Command Points, the score and your datasheets."],
+             ["brush", "Painting deadlines", "Going to an event? Livery Ledger shows what's left to paint in your list and how many models a day it takes."],
+             ["share", "Shared armies", "Browse the armies other painters have shared: their colours, units and progress."],
+             ["heart", "Likes, follows and comments", "Follow painters you like, leave a like or a comment on their armies."],
+             ["users", "Battles against friends", "Tag a friend as your opponent and the game shows on both your records."],
+             ["star", "Spotlights", "Painted armies and painters picked out from the community. Coming soon."],
+             ["trophy", "Painting events", "Painting challenges to take part in, with everyone's progress and finished models. Coming soon."]]
+            .map(([k, h, t]) => `<div class="panel lp-mini"><span class="lp-ico">${icon(k)}</span><h3>${h}</h3><p>${t}</p></div>`).join("")}
+        </div>
+      </section>
+
+      <section class="lp-war lp-club panel" aria-labelledby="lp-club-h">
+        <div class="lpw-copy">
+          <p class="eyebrow">Run by the club</p>
+          <h2 id="lp-club-h">Run by the <span class="grad">Eastern Cape Warlords</span></h2>
+          <p>Livery Ledger and War Ledger are run by the Eastern Cape Warlords, a Warhammer 40,000 club. The club adds its club nights and national events here, so everyone can sign up with their list, play on Game day and log the results in one place.</p>
+          <div class="lp-cta-btns">${me ? `<a class="btn primary" href="#/community">Open Community</a><a class="btn" href="#/war/events">See the events</a>` : online ? `<button type="button" class="primary" data-cta="up">Join free</button>` : `<a class="btn primary" href="#/war/events">See the events</a>`}</div>
+        </div>
+        <div class="lpw-art lp-club-art">
+          <span class="lp-club-mark" aria-hidden="true">${LOGO_COMMUNITY}</span>
+          ${upcoming.length ? `<ul class="cm-evs">${upcoming.slice(0, 3).map(e => `<li><a href="#/war/events"><span class="tag ev-kind ${esc(e.kind)}">${EVENT_KIND[e.kind]}</span><span class="lb-name">${esc(e.name)}<small>${esc([dayText(e.date), e.place].filter(Boolean).join(" · "))}</small></span></a></li>`).join("")}</ul>`
+            : `<p class="hint">The club's next events show here once they're added.</p>`}
+        </div>
+      </section>
+
+      <section class="lp-both" aria-labelledby="lp-both-h">
+        <div class="lp-head"><p class="eyebrow">One account, two tools</p><h2 id="lp-both-h">Everything you can do</h2><p class="sub">Livery Ledger for the painting, War Ledger for the playing. Same armies in both.</p></div>
+        <div class="lp-both-cols">
+          <div class="panel lp-both-col liv"><h3><span class="lps-ico">${LOGO_DROP}</span>Livery Ledger · paint your army</h3>
+            <ul class="lp-list">${["Colour schemes for every faction, area by area", "Paint recipes, and a library you use across ledgers", "Painting stages and progress for every unit", "Projects with a finish date and models a day", "Before your events: what's left to paint", "Up next: starred and nearly finished units", "Paint matcher across 11 brands", "Scheme lab: try schemes side by side", "Painting journal with photos", "Painting timer and monthly goals", "Year in review, with a picture to share", "Photos, before and after, and share images", "Your paints, with low and empty ones on the shopping list", "Pile of shame, printable guide and backups"].map(t => `<li>${tick}${t}</li>`).join("")}</ul>
+            <button type="button" class="btn" data-lp-mode="livery">See Livery Ledger</button></div>
+          <div class="panel lp-both-col war"><h3><span class="lps-ico">${LOGO_SWORDS}</span>War Ledger · command your army</h3>
+            <ul class="lp-list">${["The Armoury: every unit you own, by faction", "Army lists with units you own and ones you don't", "Lists checked against points, rules and leaders", "Paste lists from the app, New Recruit or BattleScribe", "Datasheets for every faction", "Game day at the table", "Events: sign up with your list", "Battle reports and win–loss records", "Records by opponent, and notes on each faction", "Battles against friends", "Crusade forces with experience and requisition", "To buy: units your lists still need", "Points check, print, compare and duplicate lists"].map(t => `<li>${tick}${t}</li>`).join("")}</ul>
+            <button type="button" class="btn" data-lp-mode="war">See War Ledger</button></div>
+        </div>
+      </section>
+
+      <section class="lp-faq" aria-labelledby="lp-faq-h">
+        <div class="lp-head"><p class="eyebrow">Questions</p><h2 id="lp-faq-h">Good to know</h2></div>
+        <div class="lp-faq-list">
+          ${[["Is it free?", "Yes. Every feature is free to use."],
+             ["Who runs it?", "The Eastern Cape Warlords, a Warhammer 40,000 club. The club adds the events you see here."],
+             ["Do I need to be in the club?", "No. Anyone can use Livery Ledger and War Ledger, and sign up for the events listed."],
+             ["Can other people see my armies?", "Only the ones you share. Your ledgers, lists and battles are private until you choose to share an army."],
+             ["Is this made by Games Workshop?", "No. Livery Ledger and War Ledger are an unofficial fan tool and aren't endorsed by Games Workshop."]]
+            .map(([q, a]) => `<details class="lp-q"><summary>${esc(q)}</summary><p>${esc(a)}</p></details>`).join("")}
+        </div>
+      </section>
+
+      <section class="lp-cta panel">
+        <div><h2>Join the table</h2><p class="sub">Free, and ready in under a minute.</p></div>
+        <div class="lp-cta-btns">${me ? `<a class="btn lg" href="#/shared">Browse shared armies</a>` : ""}${cta}</div>
+      </section>
+    `;
+
     app.innerHTML = `
       <section class="lp-hero">
         <div class="lp-copy">
           <div class="lp-switch" role="group" aria-label="Show the homepage for">
-            <button type="button" data-lp-mode="livery" aria-pressed="${!war}"><span class="lps-ico">${LOGO_DROP}</span><span><strong>Livery Ledger</strong><small>Paint your army</small></span></button>
+            <button type="button" data-lp-mode="livery" aria-pressed="${!war && !comm}"><span class="lps-ico">${LOGO_DROP}</span><span><strong>Livery Ledger</strong><small>Paint your army</small></span></button>
             <button type="button" data-lp-mode="war" aria-pressed="${war}"><span class="lps-ico">${LOGO_SWORDS}</span><span><strong>War Ledger</strong><small>Command your army</small></span></button>
+            <button type="button" data-lp-mode="community" aria-pressed="${comm}"><span class="lps-ico">${LOGO_COMMUNITY}</span><span><strong>Community</strong><small>Meet other players</small></span></button>
           </div>
-          ${war ? `<p class="eyebrow">For Warhammer 40,000 players</p>
-          <h1>Try any army. <span class="grad">Field the best list.</span></h1>
-          <p class="lead">War Ledger lets you put together any army, whether you own it or not, build lists from it and see how every game went. Check each list against the points and keep a win–loss record for every army.</p>
+          ${comm ? `<p class="eyebrow">Run by the Eastern Cape Warlords</p>
+          <h1>Paint, play <span class="grad">and meet up.</span></h1>
+          <p class="lead">Community is where Livery Ledger and War Ledger meet other players: club and national events to sign up for with your list, armies other painters have shared, and battles against friends. Spotlights and painting challenges are on the way.</p>
+          <ul class="lp-ticks">
+            <li>${tick}Free to use</li><li>${tick}Club and national events</li><li>${tick}Run by the club</li>
+          </ul>` : war ? `<p class="eyebrow">For Warhammer 40,000 players</p>
+          <h1>Know your army. <span class="grad">Field the best list.</span></h1>
+          <p class="lead">War Ledger keeps every unit you own in your Armoury, lets you build lists with them (and with units you don't own yet), and sees you through game day. Check each list against the points and keep a win–loss record for every army.</p>
           <ul class="lp-ticks">
             <li>${tick}Free to use</li><li>${tick}Import your army list</li><li>${tick}No painting required</li>
           </ul>` : `<p class="eyebrow">For Warhammer 40,000 painters</p>
@@ -4704,7 +4849,7 @@ Redemptor Dreadnought (210 points)</pre>
               ${avatarHtml(me, "xl")}
               <h2>Welcome back, ${esc(me.name)}</h2>
               <p class="sub">Your ledgers are waiting.</p>
-              <a class="btn primary" href="${isWar() ? "#/war" : "#/livery"}">${isWar() ? "Go to your armies" : "Go to your ledgers"}</a>
+              <a class="btn primary" href="${comm ? "#/community" : isWar() ? "#/war" : "#/livery"}">${comm ? "Open Community" : isWar() ? "Go to your armies" : "Go to your ledgers"}</a>
             </div>`
           : online ? `<div class="panel lp-card auth" id="lp-auth"></div>`
           : `<div class="panel lp-card lp-welcome">
@@ -4715,15 +4860,20 @@ Redemptor Dreadnought (210 points)</pre>
         </div>
       </section>
 
-      <section class="lp-numbers" aria-label="${war ? "War" : "Livery"} Ledger in numbers">
+      ${comm ? `<section class="lp-numbers" aria-label="Community in numbers">
+        <div><b>${upcoming.length}</b><span>${upcoming.length === 1 ? "Event" : "Events"} coming up</span></div>
+        <div><b>2</b><span>Tools, one account</span></div>
+        <div><b>${FACTIONS.length}</b><span>Factions and chapters</span></div>
+        <div><b>Free</b><span>For every player</span></div>
+      </section>` : `<section class="lp-numbers" aria-label="${war ? "War" : "Livery"} Ledger in numbers">
         <div><b>${FACTIONS.length}</b><span>Factions and chapters</span></div>
         <div><b>${num(nSheets)}</b><span>Datasheets${war ? " with points" : ", 11th edition"}</span></div>
         ${war ? `<div><b>4</b><span>List formats you can paste</span></div>
         <div><b>0</b><span>Brushes required</span></div>` : `<div><b>${num(nSchemes)}</b><span>Official and known colour schemes</span></div>
         <div><b>3,700+</b><span>Paints from 11 brands</span></div>`}
-      </section>
+      </section>`}
 
-      ${war ? warBody() : liveryBody()}
+      ${comm ? commBody() : war ? warBody() : liveryBody()}
     `;
     app.querySelectorAll(".shot img").forEach(img => {
       const ok = () => img.closest(".shot").classList.add("has-img");
@@ -4731,13 +4881,14 @@ Redemptor Dreadnought (210 points)</pre>
       img.addEventListener("error", () => img.remove());
     });
     let heroAuth = null;
-    if($("lp-auth")) heroAuth = authForm($("lp-auth"), "in", {onDone: () => { location.hash = isWar() ? "#/war" : "#/livery"; }});
+    if($("lp-auth")) heroAuth = authForm($("lp-auth"), "in", {onDone: () => { location.hash = comm ? "#/community" : isWar() ? "#/war" : "#/livery"; }});
     // Switch the homepage between Livery Ledger and War Ledger without leaving it.
     app.querySelectorAll("[data-lp-mode]").forEach(btn => btn.addEventListener("click", async () => {
       const to = btn.dataset.lpMode, inHero = !!btn.closest(".lp-switch");
-      if((to === "war") === isWar()) return;
+      if(to === "community" ? comm : !comm && (to === "war") === isWar()) return;
       const y = window.scrollY;
-      setMode(to); setTop(); await viewLanding();
+      if(to !== "community") setMode(to);
+      await viewLanding({comm: to === "community"});
       if(inHero){ window.scrollTo(0, y); const b = app.querySelector(`.lp-switch [data-lp-mode="${to}"]`); if(b) b.focus(); }
       else { window.scrollTo(0, 0); const b = app.querySelector(`.lp-switch [data-lp-mode="${to}"]`); if(b) b.focus({preventScroll: true}); }
     }));
