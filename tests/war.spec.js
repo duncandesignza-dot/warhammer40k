@@ -667,3 +667,24 @@ test("the shopping list gathers units you don't own from every list, and buying 
   await expect(page.locator(".buy-rows li").first()).toContainText("Gladiator Lancer");
   await expect(page.locator(".buy-rows li").first().locator(".buy-lists")).toHaveText("In Big game");
 });
+
+test("a list prints on one clean page, with its datasheets if you like", async ({page}) => {
+  await seed(page, `db.lists[0].units[0].warlord = true; db.lists[0].units[0].enh = {n: "Artificer Armour", p: 10};
+    db.units.find(u => u.id === "u2").ranged = "Bolt Rifle";`);
+  await open(page, "#/war/list/l1");
+  await page.click('a:has-text("Print list")');
+  await expect(page).toHaveURL(/#\/war\/list\/l1\/print$/);
+  const pl = page.locator(".pl");
+  await expect(pl.locator("h1")).toHaveText("Club night");
+  await expect(pl.locator(".pl-total")).toContainText("595 / 2,000 pts · 4 units · 13 models");
+  await expect(pl.locator('tr:has-text("Captain")')).toContainText("Warlord");
+  await expect(pl.locator('tr:has-text("Captain")')).toContainText("Enhancement: Artificer Armour (+10)");
+  await expect(pl.locator('tr:has-text("Intercessor Squad")')).toContainText("Bolt Rifle");
+  await expect(pl.locator(".pl-sheet")).toHaveCount(0);
+  await page.check("#pl-sheets");
+  await expect(pl.locator(".pl-sheet")).toHaveCount(4);
+  await expect(pl.locator('.pl-sheet:has(h2:text-is("Intercessor Squad")) table').nth(1).locator("tbody th")).toHaveText(["Bolt Rifle"]);
+  // Remembered next time.
+  await page.reload();
+  await expect(page.locator("#pl-sheets")).toBeChecked();
+});

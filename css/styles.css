@@ -1855,3 +1855,29 @@ dialog.wdlg.xwide{max-width:min(1120px,calc(100vw - 24px))}
 .buy-lists a{color:inherit}
 .war-actions .btn .count,.lb-own .count{margin-left:6px;font-family:var(--mono);font-size:.72rem;padding:1px 7px;border-radius:99px;background:var(--brand-soft);color:var(--brand)}
 @media (max-width:640px){.buy-rows li{flex-wrap:wrap}.buy-rows li .btn-sm{width:100%}}
+/* A list to print: the page on screen, and clean black on white on paper. */
+.pl-tools{margin-bottom:18px}
+.pl{max-width:900px}
+.pl-head h1{margin:0 0 4px}
+.pl-head p{margin:0 0 4px;color:var(--muted)}
+.pl-total b{color:var(--ink);font-size:1.2rem}
+.pl-role{margin-top:20px}
+.pl-role h2,.pl-sheet h2{font-size:1rem;margin:0 0 8px;display:flex;align-items:baseline;gap:10px}
+.pl-role h2 small{color:var(--muted);font-weight:500;font-size:.84rem}
+.pl-t{width:100%;border-collapse:collapse;font-size:.9rem}
+.pl-t th,.pl-t td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+.pl-t thead th{font-family:var(--mono);font-size:.64rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted)}
+.pl-t .n{text-align:right;white-space:nowrap}
+.pl-t th,.pl-t td{overflow-wrap:anywhere}
+@media (max-width:420px){.pl-t th,.pl-t td{padding:6px 4px}.pl-t thead th{letter-spacing:.04em}}
+.pl-t tbody th small{display:block;font-weight:400;color:var(--muted);font-size:.8rem}
+.pl-wl{font-family:var(--mono);font-size:.62rem;text-transform:uppercase;letter-spacing:.08em;border:1px solid var(--line-strong);border-radius:5px;padding:1px 5px;margin-left:4px}
+.pl-sheet{margin-top:22px;break-inside:avoid}
+@media print{
+  .no-print,.war-tabs{display:none!important}
+  .pl-t th,.pl-t td{border-color:#ccc}
+  .pl-sheet .ds-more{display:none}
+  .pl .wt-scroll,.pl .wtable,.pl .wtable thead,.pl .wtable tr,.pl .wtable th,.pl .wtable td,.pl .tag{background:#fff!important;color:#111!important;border-color:#ccc!important;box-shadow:none!important}
+  .pl .wtable thead th{color:#555!important}
+  .pl-role{break-inside:avoid}
+}

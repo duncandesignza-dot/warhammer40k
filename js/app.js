@@ -532,6 +532,7 @@
         else if(parts[1] === "army" && parts[2]) await viewWarArmy(parts[2]);
         else if(parts[1] === "armies"){ history.replaceState(null, "", "#/war"); lastHash = location.hash; await viewWarDash(); }
         else if(parts[1] === "collection") await viewWarCollection();
+        else if(parts[1] === "list" && parts[2] && parts[3] === "print") await viewWarListPrint(parts[2]);
         else if(parts[1] === "list" && parts[2]) await viewWarList(parts[2]);
         else if(parts[1] === "compare") await viewWarCompare(parts[2], parts[3]);
         else if(parts[1] === "lists") await viewWarLists();
@@ -1935,7 +1936,7 @@
           <div class="wh-id">${armyBadge(army, 56)}<div><p class="eyebrow"><a href="#/war/army/${esc(army.id)}">${esc(army.name)}</a> · ${esc(factionName(army.faction))}</p><h1>${esc(list.name)}</h1>
             <p class="sub">${esc([sizeName(list), detText(list), list.limit ? ptsText(list.limit) + " limit" : "No points limit", gs.length ? `${recText(rec)} record` : ""].filter(Boolean).join(" · "))}</p>
             <p class="lst-meta">${crTag(list)}${statusTag(list)}<span>${list.ptsAsOf ? `Points as of ${esc(dayText(list.ptsAsOf))}` : "Points date not set"}</span></p></div></div>
-          <div class="war-actions"><button type="button" class="primary" data-log="${esc(army.id)}" data-list="${esc(list.id)}">Log a battle</button><button type="button" data-import>Paste a list</button><button type="button" data-export>Export list</button><button type="button" data-details>Edit details</button></div>
+          <div class="war-actions"><button type="button" class="primary" data-log="${esc(army.id)}" data-list="${esc(list.id)}">Log a battle</button><button type="button" data-import>Paste a list</button><button type="button" data-export>Export list</button><a class="btn" href="#/war/list/${esc(list.id)}/print">Print list</a><button type="button" data-details>Edit details</button></div>
         </section>
         ${warTabs("lists")}
         <section class="war-stats" aria-label="List summary">
@@ -2581,6 +2582,48 @@
     };
     wrap.addEventListener("pointermove", show); wrap.addEventListener("pointerdown", show);
     wrap.addEventListener("pointerleave", () => { tip.hidden = true; });
+  }
+  /* ---------- a list to print ----------
+     The list on one clean page for a tournament or to hand your opponent: units by role with their models,
+     wargear, enhancements and points, and (if you like) each datasheet's profiles after them. */
+  async function viewWarListPrint(id){
+    const D = await warData(), list = D.lists.find(l => l.id === id), army = list && D.armies.find(a => a.id === list.armyId);
+    if(!list || !army){ app.innerHTML = `${warTabs("lists")}<div class="banner"><span class="dot warn"></span><span>That list couldn't be found. It may have been deleted.</span></div>`; return; }
+    view.name = "war-print"; document.title = `${list.name} · print · War Ledger`;
+    let withSheets = false;
+    try { withSheets = localStorage.getItem("ll-print-sheets") === "1"; } catch(e){}
+    const s = listState(list, D), rows = s.rows.filter(x => !x.gone);
+    const gearOf = x => x.u ? [x.u.ranged, x.u.melee].filter(Boolean).join(", ") : (x.e.gear || "");
+    const byRole = ROLE_ORDER.map(role => [role, rows.filter(x => (ROLE_ORDER.includes(x.role) ? x.role : "Other") === role)]).filter(g => g[1].length);
+    const name = k => (rows.find(r => r.k === k) || {}).name;
+    app.innerHTML = `
+      <div class="crumbs no-print"><a href="#/war">War Ledger</a> / <a href="#/war/lists">Army lists</a> / <a href="#/war/list/${esc(list.id)}">${esc(list.name)}</a> / Print</div>
+      <div class="row-actions no-print pl-tools"><button type="button" class="primary" data-print>Print</button><a class="btn" href="#/war/list/${esc(list.id)}">Back to the list</a>
+        <label class="chk"><input type="checkbox" id="pl-sheets"${withSheets ? " checked" : ""}><span>Include datasheets</span></label></div>
+      <article class="pl">
+        <header class="pl-head"><h1>${esc(list.name)}</h1>
+          <p>${esc([army.name, factionName(army.faction), sizeName(list), detText(list)].filter(Boolean).join(" · "))}</p>
+          <p class="pl-total"><b>${num(s.points)}</b>${list.limit ? ` / ${num(list.limit)}` : ""} pts · ${plural(rows.length, "unit")} · ${plural(s.models, "model")}</p></header>
+        ${byRole.map(([role, xs]) => `<section class="pl-role"><h2>${esc(role)} <small>${ptsText(xs.reduce((a, x) => a + x.points, 0))}</small></h2>
+          <table class="pl-t"><thead><tr><th scope="col">Unit</th><th scope="col" class="n">Models</th><th scope="col">Wargear</th><th scope="col" class="n">Points</th></tr></thead>
+          <tbody>${xs.map(x => `<tr><th scope="row">${esc(x.name)}${x.warlord ? ` <span class="pl-wl">Warlord</span>` : ""}
+            ${[x.enh ? `Enhancement: ${esc(x.enh.n)}${x.enh.p ? ` (+${x.enh.p})` : ""}` : "", x.lead && name(x.lead) ? `Leading ${esc(name(x.lead))}` : ""].filter(Boolean).map(t => `<small>${t}</small>`).join("")}</th>
+            <td class="n">${x.count}</td><td>${esc(gearOf(x)) || "–"}</td><td class="n">${num(x.points)}</td></tr>`).join("")}</tbody></table></section>`).join("")}
+        <div id="pl-sheets-out"></div>
+      </article>`;
+    // Each datasheet once, with the weapons the list's units have first.
+    async function sheets(){
+      const out = $("pl-sheets-out"); if(!out) return;
+      if(!withSheets){ out.innerHTML = ""; return; }
+      out.innerHTML = `<p class="hint">Loading the datasheets…</p>`;
+      const find = await loadSheets(army.faction), seen = new Map();
+      rows.forEach(x => { const n = rowSheetName(x); if(!seen.has(n)) seen.set(n, []); seen.get(n).push(gearOf(x)); });
+      if($("pl-sheets-out") !== out) return;
+      out.innerHTML = [...seen.entries()].map(([n, gear]) => `<section class="pl-sheet ds"><h2>${esc(n)}</h2>${datasheetHtml(find(n), gear.join(", "))}</section>`).join("");
+    }
+    sheets();
+    $("pl-sheets").addEventListener("change", e => { withSheets = e.target.checked; try { localStorage.setItem("ll-print-sheets", withSheets ? "1" : "0"); } catch(err){} sheets(); });
+    onApp(e => { if(e.target.closest("[data-print]")) window.print(); });
   }
   /* ---------- shopping list ----------
      Every unit you don't own, from all your lists (not archived): one row per army, datasheet and size,
