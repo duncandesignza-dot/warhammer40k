@@ -536,6 +536,7 @@
         else if(parts[1] === "compare") await viewWarCompare(parts[2], parts[3]);
         else if(parts[1] === "lists") await viewWarLists();
         else if(parts[1] === "battles") await viewWarBattles();
+        else if(parts[1] === "buy") await viewWarBuy();
         else if(!parts[1]) await viewWarDash();
         else viewNotFound();
       } else
@@ -653,7 +654,7 @@
   };
   // Which section a page belongs to, so its tab is lit (a ledger counts as Ledgers, an army list as Lists).
   function navSection(parts){
-    if(parts[0] === "war") return ({army: "", armies: "", new: "", collection: "", list: "lists", compare: "lists"})[parts[1]] ?? (BOTNAV.war.items.some(i => i[0] === parts[1]) ? parts[1] || "" : "");
+    if(parts[0] === "war") return ({army: "", armies: "", new: "", collection: "", list: "lists", compare: "lists", buy: "lists"})[parts[1]] ?? (BOTNAV.war.items.some(i => i[0] === parts[1]) ? parts[1] || "" : "");
     if(parts[0] === "army" || parts[0] === "new") return "ledgers";
     if(parts[0] === "livery") return parts[1] === "new" ? "ledgers" : parts[1] || "";
     return null;
@@ -1726,6 +1727,14 @@
     return {rows, models: live.reduce((a, x) => a + x.count, 0), points: live.reduce((a, x) => a + x.points, 0), gone: rows.filter(x => x.gone),
       notOwned, notOwnedPts: notOwned.reduce((a, x) => a + x.points, 0)};
   }
+  // Buying a unit you don't own: it becomes a unit in the army (so in Livery Ledger too), made from the list entry,
+  // and the entry points at it, keeping its place, warlord, enhancement, leader and Crusade record.
+  async function unitFromEntry(army, e){
+    const sh = sheetByName(army.faction, e.sheet || e.n), gear = splitGear(e.gear), isRanged = g => (sh && sh.wr || []).some(w => w.toLowerCase() === g.toLowerCase());
+    return store.saveUnit(army.id, unitRow(army, sh, {name: e.n, count: e.count, points: e.points, role: e.role,
+      ranged: gear.filter(isRanged).join(", "), melee: gear.filter(g => !isRanged(g)).join(", "), own: "owned"}), null, null, false, null);
+  }
+  const ownedEntry = (e, unit) => { const {n, sheet, role, count, points, gear, ...keep} = e; return {...keep, u: unit.id}; };
   function listCard(l, D){
     const s = listState(l, D), a = D.armies.find(x => x.id === l.armyId), gs = D.games.filter(g => g.listId === l.id), r = recordOf(gs);
     const hidden = new Set(l.ignored || []), checks = listChecksOn() && a ? listChecks(l, s, a.faction).filter(c => !hidden.has(c.id)).length : 0;
@@ -1754,7 +1763,7 @@
     app.innerHTML = `
       <section class="page-head war-head">
         <div><p class="eyebrow">War Ledger</p><h1>Army lists</h1><p class="sub">A list is a force to try out: units from your army, plus any you don't own yet. It's what you take to a particular game, and a Crusade force is the Order of Battle you grow over a campaign.</p></div>
-        <div class="war-actions">${D.warMissing ? "" : `${D.armies.length ? `<button type="button" class="primary" data-new-list="">+ New list</button><button type="button" data-new-list="" data-kind="crusade">+ New Crusade force</button>` : ""}<button type="button"${D.armies.length ? "" : ` class="primary"`} data-import-army>Import a list</button>`}</div>
+        <div class="war-actions">${D.warMissing ? "" : `${D.armies.length ? `<button type="button" class="primary" data-new-list="">+ New list</button><button type="button" data-new-list="" data-kind="crusade">+ New Crusade force</button>` : ""}<button type="button"${D.armies.length ? "" : ` class="primary"`} data-import-army>Import a list</button>${shoppingRows(D).length ? `<a class="btn" href="#/war/buy">Shopping list <span class="count">${shoppingRows(D).reduce((a, r) => a + r.want, 0)}</span></a>` : ""}`}</div>
       </section>
       ${warTabs("lists")}
       ${missingBanner(D)}
@@ -1941,7 +1950,7 @@
             <div class="lb-total${over ? " over" : ""}"><h2 class="ph" id="lb-in-h">In this list</h2><span class="lb-sum"><b>${num(s.points)}</b>${list.limit ? ` / ${num(list.limit)}` : ""} pts${list.limit ? ` · ${over ? `${num(s.points - list.limit)} over` : `${num(list.limit - s.points)} left`}` : ""}</span>
               ${list.limit ? `<div class="wbar" aria-hidden="true"><i style="width:${Math.min(100, pctOf(s.points, list.limit))}%"></i></div>` : ""}<button type="button" class="btn-sm lb-jump" data-jump-add>+ Add units</button></div>
             ${s.rows.length && !s.gone.length || s.notOwned.length ? `<p class="lb-own" aria-live="polite">${s.notOwned.length
-              ? `You own ${s.rows.length - s.gone.length - s.notOwned.length} of ${plural(s.rows.length - s.gone.length, "unit")} · <b>${ptsText(s.notOwnedPts)}</b> not owned <button type="button" class="btn-sm" data-own-all>Mark all as owned</button>`
+              ? `You own ${s.rows.length - s.gone.length - s.notOwned.length} of ${plural(s.rows.length - s.gone.length, "unit")} · <b>${ptsText(s.notOwnedPts)}</b> not owned <button type="button" class="btn-sm" data-own-all>Mark all as owned</button><a href="#/war/buy">Shopping list</a>`
               : `You own every unit in this list.`}</p>` : ""}
             ${configRow()}
             ${s.rows.length ? byRole(s.rows.filter(x => !x.gone)).map(([role, rows]) => `<h3 class="lb-role">${esc(role)} <small>${ptsText(rows.reduce((a, x) => a + x.points, 0))}</small></h3>
@@ -2071,11 +2080,7 @@
       const units = list.units.slice(); let n = 0;
       for(const i of idxs){
         const e = units[i]; if(!e || e.u) continue;
-        const sh = sheetByName(army.faction, e.sheet || e.n), gear = splitGear(e.gear), isRanged = g => (sh && sh.wr || []).some(w => w.toLowerCase() === g.toLowerCase());
-        const row = await store.saveUnit(army.id, unitRow(army, sh, {name: e.n, count: e.count, points: e.points, role: e.role,
-          ranged: gear.filter(isRanged).join(", "), melee: gear.filter(g => !isRanged(g)).join(", "), own: "owned"}), null, null, false, null);
-        const {n: _n, sheet, role, count, points, gear: _g, ...keep} = e;
-        units[i] = {...keep, u: row.id}; n++;
+        units[i] = ownedEntry(e, await unitFromEntry(army, e)); n++;
       }
       if(!n) return;
       D = await warData(); list = {...list, units}; await save({units});
@@ -2576,6 +2581,65 @@
     };
     wrap.addEventListener("pointermove", show); wrap.addEventListener("pointerdown", show);
     wrap.addEventListener("pointerleave", () => { tip.hidden = true; });
+  }
+  /* ---------- shopping list ----------
+     Every unit you don't own, from all your lists (not archived): one row per army, datasheet and size,
+     with how many you'd need (the most any one list has) and which lists want it. */
+  function shoppingRows(D){
+    const rows = new Map();
+    D.lists.filter(l => l.status !== "archived").forEach(l => {
+      const a = D.armies.find(x => x.id === l.armyId); if(!a) return;
+      const here = {};
+      l.units.forEach((e, i) => {
+        if(!e || e.u) return;
+        const key = [a.id, e.sheet || e.n, e.count].join("|");
+        const r = rows.get(key) || {key, army: a, name: e.sheet || e.n, count: e.count, points: e.points, role: e.role || "Other", lists: [], refs: [], want: 0};
+        here[key] = (here[key] || 0) + 1;
+        if(!r.lists.includes(l)) r.lists.push(l);
+        r.refs.push({list: l, i});
+        r.want = Math.max(r.want, here[key]);
+        rows.set(key, r);
+      });
+    });
+    return [...rows.values()].sort((x, y) => y.lists.length - x.lists.length || y.points - x.points || x.name.localeCompare(y.name));
+  }
+  async function viewWarBuy(){
+    view.name = "war-buy"; document.title = "Shopping list · War Ledger";
+    let D = await warData();
+    function draw(){
+      const rows = shoppingRows(D), total = rows.reduce((a, r) => a + r.points * r.want, 0), models = rows.reduce((a, r) => a + r.count * r.want, 0);
+      const byArmy = D.armies.map(a => [a, rows.filter(r => r.army.id === a.id)]).filter(g => g[1].length);
+      app.innerHTML = `
+        <div class="crumbs"><a href="#/war">War Ledger</a> / <a href="#/war/lists">Army lists</a> / Shopping list</div>
+        <section class="page-head war-head">
+          <div><p class="eyebrow">War Ledger</p><h1>Shopping list</h1><p class="sub">${rows.length ? `${plural(rows.reduce((a, r) => a + r.want, 0), "unit")} you don't own yet, from your army lists · ${plural(models, "model")} · ${ptsText(total)}` : "Units your lists use that you don't own yet show here."}</p></div>
+        </section>
+        ${warTabs("lists")}
+        ${rows.length ? byArmy.map(([a, rs]) => `<section class="war-sec buy-sec" aria-labelledby="buy-${esc(a.id)}">
+          <div class="sec-h"><div class="buy-h">${armyBadge(a, 34)}<h2 id="buy-${esc(a.id)}">${esc(a.name)}</h2></div><small>${ptsText(rs.reduce((x, r) => x + r.points * r.want, 0))}</small></div>
+          <ul class="buy-rows">${rs.map(r => `<li>
+            <span class="buy-name"><strong>${r.want > 1 ? `${r.want}× ` : ""}${esc(r.name)}</strong><small>${esc([r.role, plural(r.count, "model"), ptsText(r.points) + (r.want > 1 ? " each" : "")].join(" · "))}</small>
+              <small class="buy-lists">In ${r.lists.map(l => `<a href="#/war/list/${esc(l.id)}">${esc(l.name)}</a>`).join(", ")}</small></span>
+            <button type="button" class="btn-sm" data-buy="${esc(r.key)}">I've bought ${r.want > 1 ? "one" : "this"}</button></li>`).join("")}</ul>
+        </section>`).join("")
+          : `<section class="panel war-empty"><h2>Nothing to buy</h2><p class="sub">Every unit in your army lists is one you own. Add a datasheet to a list to try out a unit before you buy it, and it will show here.</p><a class="btn" href="#/war/lists">Your army lists</a></section>`}`;
+    }
+    draw();
+    onApp(async e => {
+      const b = e.target.closest("[data-buy]"); if(!b) return;
+      const r = shoppingRows(D).find(x => x.key === b.dataset.buy); if(!r) return;
+      b.disabled = true;
+      try {
+        // One unit bought: it fills that spot in every list that wanted it.
+        const first = r.refs[0], unit = await unitFromEntry(r.army, first.list.units[first.i]), done = new Set();
+        for(const {list, i} of r.refs){
+          if(done.has(list.id)) continue; done.add(list.id);
+          await store.saveList({...list, units: list.units.map((x, j) => j === i ? ownedEntry(x, unit) : x)}, list.id);
+        }
+        flash(`${r.name} added to ${r.army.name}, and to Livery Ledger ready to paint.`);
+        D = await warData(); draw();
+      } catch(err){ console.error(err); flash("Couldn't save: " + errText(err)); b.disabled = false; }
+    });
   }
   async function viewWarBattles(){
     view.name = "war-battles"; document.title = "Battles · War Ledger";

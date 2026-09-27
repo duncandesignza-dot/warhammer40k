@@ -1846,3 +1846,12 @@ dialog.wdlg.xwide{max-width:min(1120px,calc(100vw - 24px))}
 .faction-hero{margin:0;border-radius:10px;overflow:hidden;border:1px solid var(--line);background:var(--surface)}
 .faction-hero img{display:block;width:100%;height:auto;aspect-ratio:16/5;object-fit:cover}
 .setup .panel>label+.faction-hero{margin-top:14px}
+/* Shopping list: units your lists use that you don't own yet. */
+.buy-h{display:flex;align-items:center;gap:10px}.buy-h h2{margin:0}
+.buy-rows{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.buy-rows li{display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface)}
+.buy-name{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.buy-name small{color:var(--muted);font-size:.84rem}
+.buy-lists a{color:inherit}
+.war-actions .btn .count,.lb-own .count{margin-left:6px;font-family:var(--mono);font-size:.72rem;padding:1px 7px;border-radius:99px;background:var(--brand-soft);color:var(--brand)}
+@media (max-width:640px){.buy-rows li{flex-wrap:wrap}.buy-rows li .btn-sm{width:100%}}

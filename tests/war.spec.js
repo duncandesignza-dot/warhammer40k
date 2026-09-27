@@ -639,3 +639,27 @@ test("Army lists has Import a list, and the faction picker has a Back button", a
   await page.click(".war-actions a:has-text('Back')");
   await expect(page).toHaveURL(/#\/war$/);
 });
+
+test("the shopping list gathers units you don't own from every list, and buying one fills it everywhere", async ({page}) => {
+  await seed(page, `db.lists.push({id: "l2", armyId: "a1", name: "Big game", limit: 3000, detachments: [], status: "draft", units: [
+    {n: "Gladiator Lancer", sheet: "Gladiator Lancer", role: "Vehicle", count: 1, points: 160, k: "x"}, {n: "Gladiator Lancer", sheet: "Gladiator Lancer", role: "Vehicle", count: 1, points: 160, k: "y"},
+    {n: "Hellblaster Squad", sheet: "Hellblaster Squad", role: "Infantry", count: 5, points: 115, k: "z"}], createdAt: "2026-09-02", updatedAt: "2026-09-02"});`);
+  await open(page, "#/war/lists");
+  await expect(page.locator('a[href="#/war/buy"]')).toContainText("3");
+  await open(page, "#/war/buy");
+  // Most wanted first: the Lancer is in both lists, and Big game wants two.
+  const rows = page.locator(".buy-rows li");
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(0)).toContainText("2× Gladiator Lancer");
+  await expect(rows.nth(0).locator(".buy-lists")).toHaveText("In Club night, Big game");
+  await expect(page.locator(".page-head .sub")).toContainText("3 units you don't own yet");
+  // One bought: it fills one spot in each list, and the second Lancer is still wanted.
+  await rows.nth(0).locator("[data-buy]").click();
+  await expect(page.locator(".toast")).toContainText("Gladiator Lancer added to Ultramarines 2nd Company");
+  const d = await saved(page), lancer = d.units.find(u => u.name === "Gladiator Lancer");
+  expect(d.lists.find(l => l.id === "l1").units.find(e => e.k === "d").u).toBe(lancer.id);
+  const l2 = d.lists.find(l => l.id === "l2").units;
+  expect([l2[0].u, l2[1].u]).toEqual([lancer.id, undefined]);
+  await expect(page.locator(".buy-rows li").first()).toContainText("Gladiator Lancer");
+  await expect(page.locator(".buy-rows li").first().locator(".buy-lists")).toHaveText("In Big game");
+});
