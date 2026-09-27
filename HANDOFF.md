@@ -142,7 +142,7 @@ python3 tools/build_factions.py bsdata && python3 tools/build_sheets.py bsdata
   - Factions: `allyFactions(fid)`, `fitsFaction(fid, sheet)`, `sameFamily(a, b)`, `sheetFaction(fid, name)` (which faction's datasheets hold a name).
   - `rowSheetName(x)`: the datasheet of a list row (collection unit or list-only entry).
 - **Key War functions:**
-  - Army cards and lists: `armyCard`, `listCard`, `listState(l, D)` (the rows with points), `listChecks(l, s, faction)` ("Things to check").
+  - Army cards and lists: `warOverview` (its army cards), `listCard`, `listState(l, D)` (the rows with points), `listChecks(l, s, faction)` ("Things to check").
   - `latestChanges` (points-update warnings), and `crusadeState` / `crUnit` (Crusade).
   - `viewWarList`: the New Recruit-style builder.
     - The roster: `configRow`, `sizePick`, `sheetRows`.
@@ -247,7 +247,7 @@ python3 tools/build_factions.py bsdata && python3 tools/build_sheets.py bsdata
   - `setup.sql` has a policy "units: army is yours (update)" (a unit can't be moved into someone else's army). If the project was set up before it was added, run just that policy in the SQL editor.
   - Army lists and battles need `supabase/features.sql` (`warMissing` / `code: "nowar"` when missing).
   - A shared ledger shows its owner as `scheme.by`/`scheme.byPic`, written on save (`myName()` in store.js: display name, else the account name, else the part of the email before @, the same name the profile shows). `store.syncShared()` runs on sign-in and fixes any shared ledgers whose name or picture is out of date.
-  - Comments, likes, `army_follows` and `games.opp_user` are also in features.sql. **Follow is per army** (`army_follows`: army_id, user_id); the older `follows` table (people) is no longer used, and features.sql copies its rows into `army_follows`. The people you can tag as a battle opponent are the owners of armies you follow. **Run features.sql again** to create `army_follows`; until then Follow buttons stay hidden.
+  - Comments, likes, `army_follows` and `games.opp_user` are also in features.sql. **Follow is per army** (`army_follows`: army_id, user_id); the older `follows` table (people) is copied into `army_follows` once and then dropped by features.sql. The people you can tag as a battle opponent are the owners of armies you follow. **Run features.sql again** to create `army_follows`; until then Follow buttons stay hidden.
 - **Store changes:** keep `cleanUnit` / `cleanList` in step with any new field, or it's silently dropped on save. That already happened once with list-entry `gear`.
 
 ## Ideas that came up but aren't done

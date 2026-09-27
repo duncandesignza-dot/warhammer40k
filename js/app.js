@@ -161,7 +161,7 @@
     window.addEventListener("resize", onMove);
     document.addEventListener("scroll", onMove, true);
     // Opens on a click, typing or the down arrow, not on focus alone, so the page can put the
-    // cursor back in the box (say after adding a kit) without the list covering what's below.
+    // cursor back in the box (say after adding a unit) without the list covering what's below.
     input.addEventListener("click", () => { if(box.hidden) show(); });
     input.addEventListener("input", e => { active = -1; if(e.isTrusted) show(true); });
     input.addEventListener("blur", () => setTimeout(() => { if(document.activeElement !== input) hide(); }, 150));
@@ -187,7 +187,9 @@
   /* ---------- settings: saved in this browser, and on the account when logged in (so they follow you) ---------- */
   const SETTINGS_KEY = "ll-settings";
   let settings = {hidePoints: false};
+  // Built fresh each time, so nothing carries over from someone who logged out on this browser.
   function loadSettings(){
+    settings = {hidePoints: false};
     try { settings = {...settings, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}")}; } catch(e){}
     const acc = store && store.session && (store.session.user.user_metadata || {}).settings;
     if(acc && typeof acc === "object") settings = {...settings, ...acc};
@@ -251,6 +253,8 @@
     installEvt = null; setTop();
     return true;
   }
+  // Settings and dismissed battles kept in this browser belong to whoever was logged in.
+  const forgetLocalSettings = () => { try { ["ll-settings", "ll-tag-dismissed"].forEach(k => localStorage.removeItem(k)); } catch(e){} };
   const clearOfflineData = () => { try { navigator.serviceWorker && navigator.serviceWorker.controller && navigator.serviceWorker.controller.postMessage({type: "clear-data"}); } catch(e){} };
   // The top bar, then the background picker moved in beside your profile (or the log in buttons).
   function setTop(){
@@ -290,7 +294,7 @@
     if(view.guard && !(await view.guard())) return;
     view.guard = null;
     try { await store.signOut(); } catch(e){ console.error(e); }
-    clearOfflineData();
+    forgetLocalSettings(); loadSettings(); clearOfflineData();
     if(location.hash !== "#/") location.hash = "#/";
   }
   const AUTH = {
@@ -386,7 +390,7 @@
   function openAuth(mode, note){
     if(store.kind !== "supabase") return;
     const d = $("authdlg");
-    if(!dlgAuth) dlgAuth = authForm($("auth-host"), "in", {onDone: () => { if(view.name === "landing" && !/^#\/(shared|livery|war|settings)\b/.test(location.hash)) location.hash = "#/livery"; setTimeout(() => { if(d.open) d.close(); }, 700); }});
+    if(!dlgAuth) dlgAuth = authForm($("auth-host"), "in", {onDone: () => { if(view.name === "landing" && !/^#\/(shared|community|player|painter|livery|war|settings|help)\b/.test(location.hash)) location.hash = "#/livery"; setTimeout(() => { if(d.open) d.close(); }, 700); }});
     dlgAuth.set(typeof mode === "string" ? mode : "in", note);
     if(!d.open) d.showModal();
     dlgAuth.focus();
@@ -623,7 +627,7 @@
       else if(parts[0] === "community" || parts[0] === "shared"){
         const shared = parts[0] === "shared" || parts[1] === "shared";
         if(parts[0] === "shared"){ history.replaceState(null, "", "#/community/shared"); lastHash = location.hash; }
-        if(store.kind === "supabase" && !store.session){ await viewLanding(); setTimeout(() => openAuth("in", shared ? "Log in to browse shared armies." : "Log in to see the community."), 0); }
+        if(store.kind === "supabase" && !store.session){ await viewLanding({comm: true}); setTimeout(() => openAuth("in", shared ? "Log in to browse shared armies." : "Log in to see the community."), 0); }
         else if(shared) await viewShared();
         else if(!parts[1]) viewCommunity();
         else viewNotFound();
@@ -980,15 +984,7 @@
     const html = a.scheme && a.scheme.tiers ? tierBadge(a.scheme, a.scheme.tiers[0], size) : factionBadge(a.faction, size);
     PROF = keep; return soloBadge(html, size);
   }
-  function armyCard(a, D){
-    const t = sumUp(D.byArmy(a.id)), gs = D.games.filter(g => g.armyId === a.id), r = recordOf(gs), lim = a.scheme.limit || 0, nl = D.lists.filter(l => l.armyId === a.id).length;
-    return `<a class="lcard war-card" href="#/war/army/${esc(a.id)}">
-      <div class="card-top">${armyBadge(a, 52)}<div><h3>${esc(a.name)}</h3><div class="meta">${esc(factionName(a.faction))}</div></div></div>
-      <div class="wc-nums"><span><b>${num(t.points)}</b>${a.scheme.limit ? ` / ${num(a.scheme.limit)}` : ""} pts</span><span><b>${num(t.models)}</b> ${t.models === 1 ? "model" : "models"}</span><span><b>${gs.length}</b> ${gs.length === 1 ? "game" : "games"}</span></div>
-      ${lim ? `<div class="prog" aria-hidden="true"><i style="width:${Math.min(100, pctOf(t.points, lim))}%"></i></div>` : ""}
-      <div class="foot"><span>${nl ? plural(nl, "army list") : "No army lists yet"}</span><span>${gs.length ? `${r.w} W · ${r.l} L${r.d ? ` · ${r.d} D` : ""}` : "No games yet"}</span></div>
-    </a>`;
-  }
+
   const warEmpty = () => `<section class="panel war-empty">
       <span class="we-mark" aria-hidden="true">${SWORDS}</span>
       <h2>Muster your first army</h2>
@@ -1054,7 +1050,7 @@
   const paintedOf = us => us.reduce((a, u) => a + Math.min(modelsOf(u), +u.painted || 0), 0);
   // The overview (your profile, getting started and force composition) or the Armoury (every unit, by faction).
   function drawWarDash(D, q, armoury){
-    const homes = D.armies.concat(D.pools), mine = D.units.filter(u => homes.some(a => a.id === u.armyId)), all = sumUp(mine), paintedAll = paintedOf(mine);
+    const homes = D.armies.concat(D.pools), mine = D.units.filter(u => homes.some(a => a.id === u.armyId)), all = sumUp(mine);
     // How many lists (not archived) use each unit.
     const inLists = {};
     D.lists.filter(l => l.status !== "archived").forEach(l => new Set(l.units.filter(e => e && e.u).map(e => e.u)).forEach(id => { inLists[id] = (inLists[id] || 0) + 1; }));
@@ -1619,7 +1615,7 @@
   // read-only view (units, colours, progress and battle record), and the army shows on Shared armies.
   function openShareArmy(army, changed){
     const link = location.origin + location.pathname + "#/army/" + army.id;
-    const d = modal("Share this army", store.canShare ? `
+    modal("Share this army", store.canShare ? `
       <label class="switch"><input type="checkbox" id="wsh-on" ${army.public ? "checked" : ""}><span class="track" aria-hidden="true"><i></i></span><span>Share this army</span></label>
       <p class="hint">Anyone with the link can view it, and logged-in players can find it on the <a href="#/community/shared">Shared armies</a> page. They'll see your units, colours, points, painting progress and battle record, and your display name. Your army lists and battle reports stay private. Turn this off any time and the link stops working.</p>
       <div class="copyrow" id="wsh-row" ${army.public ? "" : "hidden"}><input id="wsh-link" readonly value="${esc(link)}" aria-label="Share link"><button type="button" class="primary" id="wsh-copy">Copy link</button></div>
@@ -2503,7 +2499,7 @@
       else if(b.matches("[data-import]")) openListImport(army, list, D, patch => save(patch));
       else if(b.matches("[data-export]")) {
         const text = exportText(list, listState(list, D), army);
-        const d = modal("Export list", `
+        modal("Export list", `
           <p class="sub">The tournament layout from New Recruit. Send it to your opponent or organiser, or paste it into another list builder.</p>
           <label>Army list<textarea id="w-exp" class="exp-text" rows="16" readonly>${esc(text)}</textarea></label>
           <div class="row-actions"><button type="button" class="primary" id="w-exp-copy">Copy</button><button type="button" id="w-exp-dl">Download .txt</button><span class="msg" id="w-msg" role="status"></span></div>`, "wide");
@@ -3666,7 +3662,7 @@
         <button type="button" class="btn-sm" id="rb-unstar">Unstar</button>
         <button type="button" class="btn-sm primary" id="rb-exit">Done</button>
       </div>` : ""}`;
-    rosterSel = null; rosterBusy = false;
+    roster = null; rosterSel = null; rosterBusy = false;
     if(store.canWrite) wireRosterBatch();
     try { $("ro-g").value = localStorage.getItem("ll-roster-group") || "army"; } catch(e){}
     if(!$("ro-g").value) $("ro-g").value = "army";
@@ -3956,6 +3952,7 @@
       else if(act === "del") {
         if(delArmed !== b.dataset.id){ delArmed = b.dataset.id; draw(); setTimeout(() => { if(delArmed === b.dataset.id){ delArmed = ""; if(!editing && paintsTab === "recipes" && $("pp-body")) draw(); } }, 4000); return; }
         const r = find(); delArmed = "";
+        if(!r){ draw(); return; }   // already gone (removed in another tab)
         // Removed from the library; ledgers that use it keep their own copy.
         try { await saveLib([{...r, deleted: true, at: new Date().toISOString()}]); flash(`Deleted ${r.name}`); draw(); } catch(err){ flash("Couldn't delete: " + errText(err)); }
       }
@@ -5265,7 +5262,7 @@ Redemptor Dreadnought (210 points)</pre>
     let social = null;
     if(store.session){ try { social = await store.communityState(armies.map(a => a.id)); } catch(err){ console.warn(err); } }
     const draw = () => {
-      const newest = armies[0], o = newest ? ownerOf(newest) : {name: "A player", initials: "?", avatar: ""};
+      const newest = armies[0], o = newest ? ownerOf(newest) : id === mine && acct() ? {...acct(), you: true} : {name: "A player", initials: "?", avatar: ""};
       const t = armies.reduce((x, a) => { const s = sum[a.id] || {}; x.models += s.models || 0; x.done += s.done || 0; ["w", "l", "d"].forEach(k => x.rec[k] += a.scheme.rec[k]); return x; }, {models: 0, done: 0, rec: {w: 0, l: 0, d: 0}});
       const played = t.rec.w + t.rec.l + t.rec.d;
       if(newest) document.title = `${o.you ? "Your profile" : o.name} · ${toolName()}`;
@@ -5337,7 +5334,7 @@ Redemptor Dreadnought (210 points)</pre>
     const opt = (v, cur, label) => `<option value="${esc(v)}"${String(v) === String(cur) ? " selected" : ""}>${esc(label)}</option>`;
     app.innerHTML = `
       <div class="crumbs">${isWar() ? `<a href="#/war">War Ledger</a>` : `<a href="#/livery">Livery Ledger</a>`} / Settings</div>
-      <section class="page-head"><p class="eyebrow">${me ? esc(me.email) : "This browser"}</p><h1>Settings</h1><p class="sub">Your name and picture, how points and prices show, list checks, backups of your data, and your account. Need a hand? See <a href="#/help">Help</a>.</p></section>
+      <section class="page-head"><p class="eyebrow">${me ? esc(me.email) : "This browser"}</p><h1>Settings</h1><p class="sub">Your name and picture, how points show, list checks, backups of your data, and your account. Need a hand? See <a href="#/help">Help</a>.</p></section>
       <div class="settings">
         ${me ? `<section class="panel set-sec">
           <h2>Profile</h2>
@@ -5435,7 +5432,7 @@ Redemptor Dreadnought (210 points)</pre>
       const b = $("del-go"); if($("del-confirm").value.trim() !== "DELETE") return;
       b.disabled = true; say("del-msg", online ? "Deleting your account…" : "Clearing…");
       try {
-        await store.deleteAccount(); clearOfflineData();
+        await store.deleteAccount(); forgetLocalSettings(); loadSettings(); clearOfflineData();
         if(online){ location.hash = "#/"; setTimeout(() => alertBanner("Your account has been deleted."), 300); }
         else { location.hash = "#/livery"; }
       } catch(err){ say("del-msg", errText(err), true); b.disabled = false; }
@@ -6718,7 +6715,7 @@ Redemptor Dreadnought (210 points)</pre>
       if(e.target.id === "f-photo") return;
       if(e.target.id === "f-points") pointsTouched = true;
       if(e.target.name === "head"){ headTouched = true; setHead(getHead()); }
-      if(e.target.id === "f-count" && !pointsTouched){ const sel = $("f-sheet").value; const p = sheetPts(sheetNow(), Math.max(1, parseInt($("f-count").value, 10) || 1)); if(p != null) $("f-points").value = p; }
+      if(e.target.id === "f-count" && !pointsTouched){ const p = sheetPts(sheetNow(), Math.max(1, parseInt($("f-count").value, 10) || 1)); if(p != null) $("f-points").value = p; }
       if(e.target.closest && e.target.closest("#f-stages") && e.target.value === "varnish" && e.target.checked) $("f-painted").value = $("f-count").value;
       setDirty(true); preview();
     });
@@ -7475,8 +7472,9 @@ Redemptor Dreadnought (210 points)</pre>
     // Viewing someone else's shared ledger while logged in: like it and follow it.
     async function viewerSocial(){
       let st = null;
+      const box = $("vo-social"); if(!box) return;
       try { st = await store.communityState([army.id]); } catch(e){}
-      const box = $("vo-social"); if(!st || !box) return;
+      if(!st || !box.isConnected) return;   // left for another page (or another shared ledger) while loading
       const draw = () => {
         const liked = st.liked.has(army.id), n = st.likes[army.id] || 0, fol = !!st.following && st.following.has(army.id);
         box.innerHTML = `<button type="button" class="btn-sm like${liked ? " on" : ""}" data-vlike aria-pressed="${liked}">${HEART(liked)}<span>${liked ? "Liked" : "Like"}${n ? ` · ${n}` : ""}</span></button>
@@ -7978,6 +7976,7 @@ Redemptor Dreadnought (210 points)</pre>
       const changed = first || (!!session) !== (!!was) || (session && was && session.user.id !== was.user.id);
       const wasFirst = first;
       if(changed) friendsCache = null;   // another person's friends
+      if(changed && !first && was && (!session || session.user.id !== was.user.id)) forgetLocalSettings();   // logged out, or someone else logged in
       store.setSession(session); first = false;
       loadSettings(); setTop();
       if(changed) setTimeout(route, 0);

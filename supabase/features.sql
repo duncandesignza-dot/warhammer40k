@@ -41,22 +41,7 @@ create policy "Like shared armies as yourself" on public.likes for insert to aut
 drop policy if exists "Remove your own likes" on public.likes;
 create policy "Remove your own likes" on public.likes for delete to authenticated using (user_id = auth.uid());
 
--- 3. Following people (no longer used by the site: it follows armies now, see army_follows below)
-create table if not exists public.follows (
-  follower uuid not null default auth.uid() references auth.users(id) on delete cascade,
-  followee uuid not null references auth.users(id) on delete cascade,
-  created_at timestamptz not null default now(),
-  primary key (follower, followee),
-  check (follower <> followee)
-);
-alter table public.follows enable row level security;
-drop policy if exists "See who you follow and who follows you" on public.follows;
-create policy "See who you follow and who follows you" on public.follows for select to authenticated
-  using (follower = auth.uid() or followee = auth.uid());
-drop policy if exists "Follow as yourself" on public.follows;
-create policy "Follow as yourself" on public.follows for insert to authenticated with check (follower = auth.uid());
-drop policy if exists "Unfollow as yourself" on public.follows;
-create policy "Unfollow as yourself" on public.follows for delete to authenticated using (follower = auth.uid());
+-- 3. (Removed.) Following people: replaced by following armies (3b), which copies the old follows once.
 
 -- 3b. Following armies (Follow army on Shared armies -> Following)
 create table if not exists public.army_follows (
@@ -74,10 +59,16 @@ create policy "Follow shared armies as yourself" on public.army_follows for inse
   with check (user_id = auth.uid() and exists (select 1 from public.armies a where a.id = army_id and a.public and a.owner <> auth.uid()));
 drop policy if exists "Unfollow armies as yourself" on public.army_follows;
 create policy "Unfollow armies as yourself" on public.army_follows for delete to authenticated using (user_id = auth.uid());
--- Anyone who followed a person now follows each army that person shares.
-insert into public.army_follows (army_id, user_id)
-  select a.id, f.follower from public.follows f join public.armies a on a.owner = f.followee and a.public
-  on conflict do nothing;
+-- Anyone who followed a person now follows each army that person shares, once: the old table is
+-- dropped afterwards, so running this file again doesn't bring back follows people have since removed.
+do $$ begin
+  if to_regclass('public.follows') is not null then
+    insert into public.army_follows (army_id, user_id)
+      select a.id, f.follower from public.follows f join public.armies a on a.owner = f.followee and a.public
+      on conflict do nothing;
+    drop table public.follows;
+  end if;
+end $$;
 
 -- 4. (Removed.) Drops the old kits table.
 drop table if exists public.kits;
