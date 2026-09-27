@@ -63,7 +63,6 @@ function supabaseMock(){
       const match = r => f.every(([c, v]) => String(r[c]) === String(v));
       const exec = () => {
         if(window.__noWar && (t === "lists" || t === "games")) return {data: null, error: {code: "PGRST205", message: "Could not find the table"}};
-        if(window.__noEvents && t === "events") return {data: null, error: {code: "PGRST205", message: "Could not find the table"}};
         if(op === "insert"){ const arr = (Array.isArray(payload) ? payload : [payload]).map(p => ({id: "x" + Math.random().toString(36).slice(2), owner: "u1", created_at: new Date().toISOString(), ...JSON.parse(JSON.stringify(p))})); rows().push(...arr); return {data: arr, error: null}; }
         if(op === "update"){ const hit = rows().filter(match); hit.forEach(r => Object.assign(r, JSON.parse(JSON.stringify(payload)))); return {data: hit, error: null}; }
         if(op === "delete"){ window.__db[t] = rows().filter(r => !match(r)); return {data: null, error: null}; }

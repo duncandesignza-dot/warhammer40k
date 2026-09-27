@@ -226,15 +226,6 @@
       byName: String(g.byName || "").slice(0, 40), byArmy: String(g.byArmy || "").slice(0, 80), byFaction: String(g.byFaction || "").slice(0, 60),
       mirror: /^[\w-]{1,60}$/.test(g.mirror || "") ? g.mirror : ""};
   }
-  /* Club and national events, added by the site's admins. Everyone logged in can see them; players sign up
-     with a list in their own settings. */
-  const EVENT_KINDS = ["club", "national"];
-  function cleanEvent(e){
-    e = e || {};
-    const link = String(e.link || "").trim().slice(0, 300);
-    return {name: String(e.name || "Event").trim().slice(0, 80) || "Event", date: day(e.date), kind: EVENT_KINDS.includes(e.kind) ? e.kind : "club",
-      place: String(e.place || "").trim().slice(0, 80), notes: String(e.notes || "").trim().slice(0, 600), link: /^https:\/\/[^\s"'<>]+$/.test(link) ? link : ""};
-  }
   function cleanArmy(a){
     return {faction: String(a.faction || "").slice(0, 60), name: String(a.name || "My army").slice(0, 80), scheme: cleanScheme(a.scheme), public: a.public === true};
   }
@@ -303,12 +294,12 @@
   function LocalStore(){
     const KEY = "livery-ledger-v3";
     let ok = true;
-    let db = {armies: [], units: [], lists: [], games: [], events: []};
+    let db = {armies: [], units: [], lists: [], games: []};
 
     function load(){
       try {
         const v = JSON.parse(localStorage.getItem(KEY) || "null");
-        if(v && Array.isArray(v.armies) && Array.isArray(v.units)){ db = {lists: [], games: [], events: [], ...v}; return; }
+        if(v && Array.isArray(v.armies) && Array.isArray(v.units)){ db = {lists: [], games: [], ...v}; return; }
         migrateOld();
       } catch(e){ ok = false; }
     }
@@ -409,15 +400,6 @@
         db.games = putRow(db.games, row); save(); return {...row};
       },
       async removeGame(id){ db.games = db.games.filter(x => x.id !== id); save(); },
-      // Events: saved in this browser there's nobody else to run them, so you add your own.
-      async listEvents(){ return db.events.map(e => ({...cleanEvent(e), id: e.id})); },
-      async isEventAdmin(){ return true; },
-      async saveEvent(e, id){
-        const prev = id ? db.events.find(x => x.id === id) : null, now = new Date().toISOString();
-        const row = {...cleanEvent(e), id: prev ? prev.id : newId(), createdAt: prev ? prev.createdAt : now, updatedAt: now};
-        db.events = putRow(db.events, row); save(); return {...row};
-      },
-      async removeEvent(id){ db.events = db.events.filter(x => x.id !== id); save(); },
       async setArmyRecord(army, rec){ const a = db.armies.find(x => x.id === army.id); if(a){ a.scheme = cleanScheme({...a.scheme, rec}); save(); } },
       async listUnits(armyId){ return db.units.filter(u => u.armyId === armyId).map(out); },
       async listAllUnits(){ return db.units.map(out); },
@@ -446,7 +428,7 @@
       // "Delete account" when saving in this browser: clear everything this site saved here.
       async deleteAccount(){
         try { Object.keys(localStorage).filter(k => /^(livery-|ll-)/.test(k)).forEach(k => localStorage.removeItem(k)); } catch(e){}
-        db = {armies: [], units: [], lists: [], games: [], events: []};
+        db = {armies: [], units: [], lists: [], games: []};
         pics.clear();
       },
       async addUnitPhoto(armyId, u, file){
@@ -485,7 +467,7 @@
     };
     const sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY, {global: {fetch: timedFetch}});
     const A = CFG.ARMIES_TABLE || "armies", U = CFG.UNITS_TABLE || "units", B = CFG.BUCKET || "unit-images", R = CFG.RECIPES_TABLE || "recipes";
-    const L = "lists", G = "games", E = "events";
+    const L = "lists", G = "games";
     // A table that hasn't been created yet (the optional ones in features.sql and recipes.sql).
     const tableMissing = e => /PGRST205|42P01/.test(e.code || "") || /could not find the table|does not exist/i.test(e.message || "");
     // The recipes table is optional (added later): say so plainly when it hasn't been created yet.
@@ -513,8 +495,6 @@
     const warErr = e => tableMissing(e) ? Object.assign(new Error("Army lists and battles aren't set up in Supabase yet. Run supabase/features.sql to add them."), {code: "nowar"}) : e;
     const warOk = ({data, error}) => { if(error) throw warErr(error); return data; };
     const toList = r => ({...cleanList({...(r.data || {}), armyId: r.army_id}), id: r.id, createdAt: r.created_at, updatedAt: r.updated_at});
-    const toEvent = r => ({...cleanEvent(r.data || {}), id: r.id, createdAt: r.created_at, updatedAt: r.updated_at});
-    const evErr = e => tableMissing(e) ? Object.assign(new Error("Events aren't set up in Supabase yet. Run supabase/features.sql to add them."), {code: "noevents"}) : e;
     const toGame = r => ({...cleanGame({...(r.data || {}), armyId: r.army_id}), id: r.id, createdAt: r.created_at, updatedAt: r.updated_at});
     // by_pic is only shown when it's a picture from this site's own storage.
     const toComment = r => ({id: r.id, armyId: r.army_id, owner: r.owner, body: String(r.body || ""), createdAt: r.created_at,
@@ -645,25 +625,6 @@
         if(res.error && /opp_user/.test(res.error.message || "")) throw Object.assign(new Error("Tagging a friend needs a quick database update. Run supabase/features.sql in Supabase."), {code: "setup"});
         return toGame(warOk(res));
       },
-      // Events: null when the table isn't set up yet. Only admins (listed in event_admins) can add or change them.
-      async listEvents(){
-        if(!session) return [];
-        const {data, error} = await sb.from(E).select("*").order("created_at", {ascending: true});
-        if(error){ if(tableMissing(error)) return null; throw error; }
-        return (data || []).map(toEvent);
-      },
-      async isEventAdmin(){
-        if(!session) return false;
-        const {data, error} = await sb.from("event_admins").select("user_id").eq("user_id", session.user.id);
-        return !error && !!(data && data.length);
-      },
-      async saveEvent(e, id){
-        need(); const row = {data: cleanEvent(e), updated_at: new Date().toISOString()};
-        const res = id ? await sb.from(E).update(row).eq("id", id).select().single() : await sb.from(E).insert(row).select().single();
-        if(res.error) throw evErr(res.error);
-        return toEvent(res.data);
-      },
-      async removeEvent(id){ need(); const {error} = await sb.from(E).delete().eq("id", id); if(error) throw evErr(error); },
       // Battles friends logged against you. null when that part of the database isn't set up.
       async listTagged(){
         if(!session) return [];

@@ -837,20 +837,20 @@ test("datasheets: browse a faction, open one and add it to a list as a unit you 
   await expect(page.locator("#dsp-f")).toHaveValue("necrons");
 });
 
-test("events: an admin adds one, you sign up with a list, see its points checked, play it on the day and see the result after", async ({page}) => {
+// Events come from js/data/events.js; these tests serve their own.
+const withEvents = (page, evs) => page.route("**/js/data/events.js", r => r.fulfill({contentType: "text/javascript", body: `window.LEDGER_EVENTS = ${JSON.stringify(evs)};`}));
+const dayFrom = n => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
+
+test("events: sign up with a list, see its points checked, play it on the day and see the result after", async ({page}) => {
+  const today = dayFrom(0);
+  await withEvents(page, [{id: "club-night", name: "Club night", date: today, kind: "national", place: "The Games Room", link: "https://example.com/gt"},
+    {id: "later", name: "Winter GT", date: dayFrom(9), kind: "club"}, {id: "bad-link", name: "Old one", date: dayFrom(-20), link: "javascript:alert(1)"}, {name: "No id", date: today}]);
   await seed(page, `db.units.find(u => u.id === "u4").points = 180;`);
   await open(page, "#/war/events");
-  // Saved in this browser you run your own events, so you're the admin.
-  await page.click(".war-actions [data-ev-new]");
-  await page.fill("#ev-name", "Club night");
-  const today = await page.inputValue("#ev-date");
-  await page.fill("#ev-place", "The Games Room");
-  await page.selectOption("#ev-kind", "national");
-  await page.fill("#ev-link", "http://example.com");
-  await page.click("dialog[open] [type=submit]");
-  await expect(page.locator("#ev-msg")).toHaveText("The link needs to start with https://");
-  await page.fill("#ev-link", "https://example.com/gt");
-  await page.click("dialog[open] [type=submit]");
+  // Players can't add or change events.
+  await expect(page.locator(".ev")).toHaveCount(3);
+  await expect(page.locator("[data-ev-new], [data-ev-edit]")).toHaveCount(0);
+  await expect(page.locator('.ev:has-text("Old one") .ev-link')).toHaveCount(0);
   const ev = page.locator(".ev").first();
   await expect(ev.locator(".ev-h")).toHaveText("Club night");
   await expect(ev).toContainText("Today · The Games Room");
@@ -871,55 +871,40 @@ test("events: an admin adds one, you sign up with a list, see its points checked
   await expect(page.locator("#w-gd")).toHaveValue(today);
   await page.click("dialog[open] [type=submit]");
   await expect(page.locator(".ev .ev-res")).toContainText("Result: 1–0 over 1 game");
-  // Only the events you're going to.
+  // Only the events you're going to, or of one kind.
   await page.selectOption("#ev-show", "mine");
   await expect(page.locator(".ev")).toHaveCount(1);
   await page.selectOption("#ev-show", "club");
-  await expect(page.locator(".ev")).toHaveCount(0);
-  await expect(page.locator("text=No events match.")).toBeVisible();
-  // It's on Play too, as today's event; the event is saved with the data and your sign-up with your settings.
+  await expect(page.locator(".ev .ev-h")).toHaveText(["Winter GT", "Old one"]);
+  // It's on Play too, as today's event, and your sign-up is kept with your settings.
   await open(page, "#/war/play");
   await expect(page.locator('section:has(#pp-today) .pp-rows li')).toContainText("Club night");
-  const evId = (await saved(page)).events[0].id;
-  expect((await saved(page)).events[0]).toMatchObject({name: "Club night", kind: "national", date: today, place: "The Games Room"});
-  expect(JSON.parse(await page.evaluate(() => localStorage.getItem("ll-settings"))).eventLog[evId]).toEqual({listId: "l1", notes: "Table 4"});
+  expect(JSON.parse(await page.evaluate(() => localStorage.getItem("ll-settings"))).eventLog).toEqual({"club-night": {listId: "l1", notes: "Table 4"}});
   // Not going after all.
   await open(page, "#/war/events");
-  await page.click("[data-ev-join]");
+  await page.locator('.ev:has-text("Club night") [data-ev-join]').click();
   await page.click("#ej-off");
-  await expect(page.locator(".ev [data-ev-join]")).toHaveText("I'm going");
+  await expect(page.locator('.ev:has-text("Club night") [data-ev-join]')).toHaveText("I'm going");
+  await expect(page.locator('.ev:has-text("Old one") [data-ev-join]')).toHaveText("I went");
 });
 
-test("events online: only admins add or change them; players sign up", async ({page}) => {
-  const today = new Date().toISOString().slice(0, 10), later = new Date(Date.now() + 9 * 864e5).toISOString().slice(0, 10);
-  const events = [{id: "e1", data: {name: "Winter GT", date: later, kind: "national", place: "Cape Town"}, created_at: "2026-09-01"},
-    {id: "e2", data: {name: "Club night", date: today, kind: "club"}, created_at: "2026-09-02"}];
-  await mockSupabase(page, {db: {events, armies: [{id: "a1", owner: "u1", faction: "ultramarines", name: "Ultras", scheme: {}, created_at: "2026-01-01"}],
+test("events online: your sign-up is saved to your account", async ({page}) => {
+  await withEvents(page, [{id: "winter-gt", name: "Winter GT", date: dayFrom(9), kind: "national", place: "Cape Town"}]);
+  await mockSupabase(page, {db: {armies: [{id: "a1", owner: "u1", faction: "ultramarines", name: "Ultras", scheme: {}, created_at: "2026-01-01"}],
     lists: [{id: "l1", owner: "u1", army_id: "a1", data: {name: "Strike force", units: []}}]}});
   await page.goto("/#/war/events");
-  await expect(page.locator(".ev")).toHaveCount(2);
-  await expect(page.locator("#ev-up .ev-h, section:has(#ev-up) .ev-h")).toHaveText(["Club night", "Winter GT"]);
-  await expect(page.locator("[data-ev-new], [data-ev-edit]")).toHaveCount(0);
   await page.locator('.ev:has-text("Winter GT") [data-ev-join]').click();
   await page.selectOption("#ej-list", "l1");
   await page.click("dialog[open] [type=submit]");
-  await expect(page.locator('.ev:has-text("Winter GT") .ev-list')).toContainText("You're going, taking Strike force");
-  expect(await page.evaluate(() => window.__upd.data.settings.eventLog)).toEqual({e1: {listId: "l1", notes: ""}});
-  // An admin (listed in event_admins) can add them.
-  await page.addInitScript(() => { window.__db.event_admins = [{user_id: "u1"}]; });
-  await page.reload();
-  await page.click(".war-actions [data-ev-new]");
-  await page.fill("#ev-name", "Doubles");
-  await page.click("dialog[open] [type=submit]");
-  await expect(page.locator(".ev")).toHaveCount(3);
-  expect((await page.evaluate(() => window.__db.events))[2].data).toMatchObject({name: "Doubles", kind: "club"});
+  await expect(page.locator(".ev .ev-list")).toContainText("You're going, taking Strike force");
+  expect(await page.evaluate(() => window.__upd.data.settings.eventLog)).toEqual({"winter-gt": {listId: "l1", notes: ""}});
 });
 
-test("events online: say so when the table isn't set up yet", async ({page}) => {
-  await mockSupabase(page, {db: {}});
-  await page.addInitScript(() => { window.__noEvents = true; });
-  await page.goto("/#/war/events");
-  await expect(page.locator(".banner")).toContainText("Events need a quick database update");
+test("events: with none added yet, say they'll show here", async ({page}) => {
+  await withEvents(page, []);
+  await seed(page);
+  await open(page, "#/war/events");
+  await expect(page.locator(".war-empty")).toContainText("Club and national events show here once they've been added.");
 });
 
 test("online, moving between War Ledger pages reads your data once, and a change is seen straight away", async ({page}) => {

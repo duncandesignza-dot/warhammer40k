@@ -75,6 +75,7 @@ js/data/factions.js   datasheets per faction: name n, role r, sizes ms, max copi
                       detachments dets [{n, dp, c, e:[[enhancement, pts, only?]]}]; battle sizes
 js/data/sheets/<faction>.js   datasheet profiles, loaded on demand (see "Datasheet profiles")
 js/data/presets.js, emblems.js, paints.js   colour presets, faction emblems, paint data
+js/data/events.js     War Ledger events (club and national), added by hand on request
 img/heroes/<faction>.webp   faction pictures on the new army pages (800×250); <faction>-2.webp etc. for more than one
 tools/build_factions.py   builds factions.js from BSData
 tools/build_sheets.py     builds js/data/sheets/*.js from BSData (reads the faction list from build_factions.py)
@@ -101,7 +102,7 @@ python3 tools/build_factions.py bsdata && python3 tools/build_sheets.py bsdata
 - **Page lifecycle:**
   - `route()` queues: one page loads at a time, and only the newest address is opened, so a slow page can't draw over the one you went to. `routeNow()` does the work.
   - A page slower than 250ms shows a bar along the top (`busy()`, `body.loading`, `aria-busy` on `#app`).
-  - Online, `cacheReads(store)` keeps the reads (`listArmies`, `listAllUnits`, `listLists`, `listGames`, `listTagged`, `listUnits`, `getArmy`, `summary`, `listKits`, `listEvents`, `isEventAdmin`) for a minute and shares ones in flight. Any store method that isn't a read clears it (before and after), as does coming back to the tab. Callers get copies.
+  - Online, `cacheReads(store)` keeps the reads (`listArmies`, `listAllUnits`, `listLists`, `listGames`, `listTagged`, `listUnits`, `getArmy`, `summary`, `listKits`) for a minute and shares ones in flight. Any store method that isn't a read clears it (before and after), as does coming back to the tab. Callers get copies.
   - Supabase requests give up after 20s (reads) or 60s (saves) with a plain message (`timedFetch` in store.js); datasheet files after 15s. Before this, one stalled request froze every page after it.
   - `view.seq` goes up on every route, so async work that outlives its page (not awaited by the view) can tell it has been left.
   - Listeners go through `onApp(handler)` (clicks on `#app`) and `onWin(type, handler, target)`. Both chain into `view.cleanup`.
@@ -163,7 +164,7 @@ python3 tools/build_factions.py bsdata && python3 tools/build_sheets.py bsdata
 - War tabs: Armoury (`#/war`), Army lists, Datasheets, Play, Battles, Events, To buy (with a count). Phones' bottom bar has Armoury, Lists, Play, Battles and To buy; Datasheets and Events are buttons on the Armoury.
 - **Armoury** (`viewWarDash`/`drawWarDash`): every unit you own by faction, with units, models, points, painting (read-only, from Livery's `painted`), how many lists use each unit and the faction's record. `#/war/collection` and `#/war/armies` redirect here.
 - **Army lists**: every army with its "Full army" card (`fullArmyCard`, opens `#/war/army/<id>`) then its lists. Army pages sit under Army lists; their More menu has "Make a list of the whole army".
-- Events are club or national events run by the site's admins, in the `events` table (features.sql section 10); only users listed in `event_admins` can add, edit or delete them (RLS). Make someone an admin with `insert into public.event_admins (user_id) values ('<id>');`. Players sign up ("I'm going", or "I went" after) with a list and notes, kept in `settings.eventLog` (`myEvents`/`saveMyEvent`); the old player-made `settings.events` are dropped. An event's result is the battles logged with your list on its date. Saved in the browser (no Supabase), you're the admin of your own events (`db.events`).
+- Events are club or national events listed by hand in `js/data/events.js` (`window.LEDGER_EVENTS`): the owner asks for one to be added, and it's added there and pushed. Players can't add or edit events. Each needs an `id` that never changes (sign-ups are kept against it), `name`, `date` and `kind` (`club`/`national`), plus optional `place`, `notes` and an https `link`. Players sign up ("I'm going", or "I went" after) with a list and notes, kept in `settings.eventLog` (`myEvents`/`saveMyEvent`); the old player-made `settings.events` are dropped. An event's result is the battles logged with your list on its date.
 - The list builder's Add units opens on "Your units"; Datasheets is the second tab.
 - **War doesn't edit painting.** Livery owns built/painted; the Armoury and Full army cards only show how much is painted. There's still no battle-ready tracking.
 - **Rules text stays out of the data.** Only numbers, profiles, and names of abilities, rules and keywords (the same choice as `build_factions.py`). Adding ability descriptions is possible but was deliberately not done.
