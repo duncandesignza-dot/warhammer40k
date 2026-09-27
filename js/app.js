@@ -536,6 +536,7 @@
         else if(parts[1] === "armies"){ history.replaceState(null, "", "#/war"); lastHash = location.hash; await viewWarDash(); }
         else if(parts[1] === "collection") await viewWarCollection();
         else if(parts[1] === "list" && parts[2] && parts[3] === "print") await viewWarListPrint(parts[2]);
+        else if(parts[1] === "list" && parts[2] && parts[3] === "play") await viewWarPlay(parts[2]);
         else if(parts[1] === "list" && parts[2]) await viewWarList(parts[2]);
         else if(parts[1] === "compare") await viewWarCompare(parts[2], parts[3]);
         else if(parts[1] === "lists") await viewWarLists();
@@ -2006,7 +2007,7 @@
           <div class="wh-id">${armyBadge(army, 56)}<div><p class="eyebrow"><a href="#/war/army/${esc(army.id)}">${esc(army.name)}</a> · ${esc(factionName(army.faction))}</p><h1>${esc(list.name)}</h1>
             <p class="sub">${esc([sizeName(list), detText(list), list.limit ? ptsText(list.limit) + " limit" : "No points limit", gs.length ? `${recText(rec)} record` : ""].filter(Boolean).join(" · "))}</p>
             <p class="lst-meta">${crTag(list)}${statusTag(list)}<span>${list.ptsAsOf ? `Points as of ${esc(dayText(list.ptsAsOf))}` : "Points date not set"}</span></p></div></div>
-          <div class="war-actions"><button type="button" class="primary" data-log="${esc(army.id)}" data-list="${esc(list.id)}">Log a battle</button><button type="button" data-import>Paste a list</button><button type="button" data-export>Export list</button><a class="btn" href="#/war/list/${esc(list.id)}/print">Print list</a><button type="button" data-details>Edit details</button></div>
+          <div class="war-actions"><button type="button" class="primary" data-log="${esc(army.id)}" data-list="${esc(list.id)}">Log a battle</button><button type="button" data-import>Paste a list</button><button type="button" data-export>Export list</button><a class="btn" href="#/war/list/${esc(list.id)}/play">Game day</a><a class="btn" href="#/war/list/${esc(list.id)}/print">Print list</a><button type="button" data-details>Edit details</button></div>
         </section>
         ${warTabs("lists")}
         <section class="war-stats" aria-label="List summary">
@@ -2654,6 +2655,102 @@
     };
     wrap.addEventListener("pointermove", show); wrap.addEventListener("pointerdown", show);
     wrap.addEventListener("pointerleave", () => { tip.hidden = true; });
+  }
+  /* ---------- game day ----------
+     The list at the table, on a phone: the round, Command Points and Victory Points for both sides, your units
+     (with their datasheets, and a tick for ones destroyed) and your notes on the opponent. It's kept in this
+     browser as you go, so a reload loses nothing; at the end, Log this battle opens with the score filled in. */
+  const PLAY_ROUNDS = 5;
+  async function viewWarPlay(id){
+    let D = await warData();
+    const list = D.lists.find(l => l.id === id), army = list && D.armies.find(a => a.id === list.armyId);
+    if(!list || !army){ app.innerHTML = `${warTabs("lists")}<div class="banner"><span class="dot warn"></span><span>That list couldn't be found. It may have been deleted.</span></div>`; return; }
+    view.name = "war-play"; document.title = `Game day · ${list.name} · War Ledger`;
+    const KEY = "ll-play-" + id, fresh = () => ({round: 1, cp: [0, 0], vp: Array.from({length: PLAY_ROUNDS}, () => [null, null]), dead: [], opp: "", mission: ""});
+    let st = fresh();
+    try { const saved = JSON.parse(localStorage.getItem(KEY) || "null"); if(saved && Array.isArray(saved.vp)) st = {...st, ...saved}; } catch(e){}
+    const keep = () => { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch(e){} };
+    const s = listState(list, D), rows = s.rows.filter(x => !x.gone);
+    const gearOf = x => x.u ? [x.u.ranged, x.u.melee].filter(Boolean).join(", ") : (x.e.gear || "");
+    const total = side => st.vp.reduce((a, r) => a + (+r[side] || 0), 0);
+    const scored = () => st.vp.some(r => r[0] != null || r[1] != null);
+    const stepper = (id, label, v, min, max) => `<div class="gd-step"><span class="gd-l" id="${id}-l">${label}</span>
+      <div class="gd-ctl" role="group" aria-labelledby="${id}-l"><button type="button" class="btn-sm" data-step="${id}" data-d="-1" aria-label="${label}: one less"${v <= min ? " disabled" : ""}>−</button>
+      <output id="${id}" aria-live="polite">${v}</output><button type="button" class="btn-sm" data-step="${id}" data-d="1" aria-label="${label}: one more"${v >= max ? " disabled" : ""}>+</button></div></div>`;
+    function draw(){
+      const note = st.opp && oppNotes()[st.opp];
+      app.innerHTML = `
+        <div class="crumbs"><a href="#/war">War Ledger</a> / <a href="#/war/lists">Army lists</a> / <a href="#/war/list/${esc(list.id)}">${esc(list.name)}</a> / Game day</div>
+        <section class="page-head war-head gd-head">
+          <div class="wh-id">${armyBadge(army, 48)}<div><p class="eyebrow">Game day</p><h1>${esc(list.name)}</h1><p class="sub">${esc([army.name, ptsText(s.points), detText(list)].filter(Boolean).join(" · "))}</p></div></div>
+        </section>
+        <section class="panel gd-game" aria-label="The game">
+          <div class="wgrid">
+            <label class="span2">Opponent's faction${factionSelect("gd-opp", st.opp, "Not sure / other")}</label>
+            <label>Mission<input id="gd-mission" maxlength="80" value="${esc(st.mission || "")}" placeholder="Optional"></label>
+          </div>
+          ${note ? `<p class="opp-note"><b>Your notes on ${esc(factionName(st.opp))}</b> ${esc(note)}</p>` : ""}
+          <div class="gd-steps">
+            ${stepper("gd-round", "Round", st.round, 1, PLAY_ROUNDS)}
+            ${stepper("gd-cp0", "Your CP", st.cp[0], 0, 99)}
+            ${stepper("gd-cp1", "Their CP", st.cp[1], 0, 99)}
+          </div>
+        </section>
+        <section class="panel gd-score" aria-labelledby="gd-sh"><h2 class="ph" id="gd-sh">Victory Points</h2>
+          <table class="gd-t"><thead><tr><th scope="col">Round</th><th scope="col">You</th><th scope="col">Them</th></tr></thead>
+          <tbody>${st.vp.map((r, i) => `<tr${i + 1 === st.round ? ` class="now"` : ""}><th scope="row">${i + 1}</th>
+            <td><input type="number" min="0" max="99" inputmode="numeric" data-vp="${i}:0" value="${r[0] ?? ""}" aria-label="Your points in round ${i + 1}"></td>
+            <td><input type="number" min="0" max="99" inputmode="numeric" data-vp="${i}:1" value="${r[1] ?? ""}" aria-label="Their points in round ${i + 1}"></td></tr>`).join("")}</tbody>
+          <tfoot><tr><th scope="row">Total</th><td id="gd-t0">${total(0)}</td><td id="gd-t1">${total(1)}</td></tr></tfoot></table>
+        </section>
+        <section class="panel gd-units" aria-labelledby="gd-uh"><h2 class="ph" id="gd-uh">Your units <small id="gd-left">${rows.length - st.dead.length} of ${rows.length} left</small></h2>
+          <ul class="gd-list">${rows.map(x => { const dead = st.dead.includes(x.k); return `<li class="${dead ? "dead" : ""}">
+            <details class="gd-u" data-k="${esc(x.k)}"><summary><span class="gd-n"><strong>${esc(x.name)}${x.warlord ? ` <span class="tag wl">Warlord</span>` : ""}</strong><small>${esc([plural(x.count, "model"), ptsText(x.points), gearOf(x)].filter(Boolean).join(" · "))}</small></span>
+              <label class="chk gd-dead"><input type="checkbox" data-dead="${esc(x.k)}"${dead ? " checked" : ""}><span>Destroyed</span></label></summary>
+              <div class="ds gd-ds"><p class="hint">Loading the datasheet…</p></div></details></li>`; }).join("")}</ul>
+        </section>
+        <div class="row-actions gd-end"><button type="button" class="primary" data-gd-log>End the game and log it</button><button type="button" class="btn-sm" data-gd-new>Start a new game</button></div>`;
+      $("gd-opp").addEventListener("change", e => { st.opp = e.target.value; keep(); draw(); });
+      $("gd-mission").addEventListener("input", e => { st.mission = e.target.value; keep(); });
+    }
+    draw();
+    // Datasheets load when a unit is first opened.
+    let find = null;
+    const onToggle = async e => {
+      const d = e.target; if(!d.matches || !d.matches("details.gd-u") || !d.open) return;
+      const x = rows.find(r => r.k === d.dataset.k), box = d.querySelector(".gd-ds"); if(!x || box.dataset.done) return;
+      find = find || await loadSheets(army.faction);
+      box.innerHTML = datasheetHtml(find(rowSheetName(x)), gearOf(x)); box.dataset.done = "1";
+    };
+    app.addEventListener("toggle", onToggle, true);
+    const onInput = e => {
+      const t = e.target;
+      if(t.dataset.vp){ const [i, side] = t.dataset.vp.split(":").map(Number); st.vp[i][side] = t.value === "" ? null : Math.max(0, Math.min(99, parseInt(t.value, 10) || 0)); keep(); $("gd-t0").textContent = total(0); $("gd-t1").textContent = total(1); }
+      if(t.dataset.dead){ st.dead = t.checked ? [...new Set([...st.dead, t.dataset.dead])] : st.dead.filter(k => k !== t.dataset.dead); keep();
+        t.closest("li").classList.toggle("dead", t.checked); $("gd-left").textContent = `${rows.length - st.dead.length} of ${rows.length} left`; }
+    };
+    app.addEventListener("input", onInput); app.addEventListener("change", onInput);
+    const before = view.cleanup;
+    view.cleanup = () => { app.removeEventListener("input", onInput); app.removeEventListener("change", onInput); app.removeEventListener("toggle", onToggle, true); if(before) before(); };
+    let newArmed = false;
+    onApp(e => {
+      const b = e.target.closest("button"); if(!b) return;
+      if(b.dataset.step){
+        const d = +b.dataset.d;
+        if(b.dataset.step === "gd-round") st.round = Math.min(PLAY_ROUNDS, Math.max(1, st.round + d));
+        else { const i = b.dataset.step === "gd-cp0" ? 0 : 1; st.cp[i] = Math.min(99, Math.max(0, st.cp[i] + d)); }
+        keep(); draw(); const again = app.querySelector(`[data-step="${b.dataset.step}"][data-d="${d}"]`); if(again && !again.disabled) again.focus();
+      }
+      else if(b.matches("[data-gd-new]")){
+        if(!newArmed){ newArmed = true; b.textContent = "Press again to clear this game"; setTimeout(() => { newArmed = false; if(b.isConnected) b.textContent = "Start a new game"; }, 4000); return; }
+        st = fresh(); keep(); newArmed = false; draw(); flash("New game started.");
+      }
+      else if(b.matches("[data-gd-log]")){
+        const us = total(0), them = total(1), has = scored();
+        openGame(D, {armyId: army.id, listId: list.id, opp: st.opp, mission: st.mission, ...(has ? {us, them, result: us > them ? "w" : us < them ? "l" : "d"} : {})},
+          () => { try { localStorage.removeItem(KEY); } catch(err){} location.hash = "#/war/battles"; });
+      }
+    });
   }
   /* ---------- a list to print ----------
      The list on one clean page for a tournament or to hand your opponent: units by role with their models,

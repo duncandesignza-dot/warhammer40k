@@ -752,3 +752,45 @@ test("a character leading a unit its datasheet doesn't list is flagged, and the 
   await page.click("dialog[open] [type=submit]");
   await expect(page.locator(".tc-list > li", {hasText: "can't usually lead"})).toHaveCount(0);
 });
+
+test("game day: round, CP and VP at the table, kept through a reload, then logged with the score filled in", async ({page}) => {
+  await seed(page);
+  await open(page, "#/war/list/l1");
+  await page.click('a:has-text("Game day")');
+  await expect(page).toHaveURL(/#\/war\/list\/l1\/play$/);
+  await page.selectOption("#gd-opp", "necrons");
+  await page.fill("#gd-mission", "Take and Hold");
+  await page.click('[aria-label="Round: one more"]');
+  await expect(page.locator("#gd-round")).toHaveText("2");
+  await page.click('[aria-label="Your CP: one more"]'); await page.click('[aria-label="Your CP: one more"]');
+  await expect(page.locator("#gd-cp0")).toHaveText("2");
+  await page.fill('[aria-label="Your points in round 1"]', "10");
+  await page.fill('[aria-label="Their points in round 1"]', "5");
+  await page.fill('[aria-label="Your points in round 2"]', "15");
+  await expect(page.locator("#gd-t0")).toHaveText("25");
+  await page.check('[data-dead="c"]');
+  await expect(page.locator("#gd-left")).toHaveText("3 of 4 left");
+  // Ticking it doesn't open the unit.
+  expect(await page.locator('.gd-u[data-k="c"]').evaluate(d => d.open)).toBe(false);
+  // A unit's datasheet opens from the list.
+  await page.click('.gd-u[data-k="b"] summary');
+  await expect(page.locator('.gd-u[data-k="b"] .gd-ds table').first()).toContainText("Intercessor");
+  // A reload keeps the game.
+  await page.reload();
+  await expect(page.locator("#gd-round")).toHaveText("2");
+  await expect(page.locator("#gd-t0")).toHaveText("25");
+  await expect(page.locator('[data-dead="c"]')).toBeChecked();
+  // Log it: army, list, opponent, mission, score and result are filled in.
+  await page.click("[data-gd-log]");
+  await expect(page.locator("#w-gl")).toHaveValue("l1");
+  await expect(page.locator("#w-go")).toHaveValue("necrons");
+  await expect(page.locator("#w-gm")).toHaveValue("Take and Hold");
+  await expect(page.locator("#w-gu")).toHaveValue("25");
+  await expect(page.locator("#w-gt")).toHaveValue("5");
+  await expect(page.locator("[name=w-gr][value=w]")).toBeChecked();
+  await page.click("dialog[open] [type=submit]");
+  await expect(page).toHaveURL(/#\/war\/battles$/);
+  const d = await saved(page);
+  expect(d.games.find(g => g.us === 25)).toMatchObject({listId: "l1", opp: "necrons", them: 5, result: "w"});
+  expect(await page.evaluate(() => localStorage.getItem("ll-play-l1"))).toBeNull();
+});
