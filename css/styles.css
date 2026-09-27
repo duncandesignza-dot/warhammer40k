@@ -2170,3 +2170,7 @@ a.cm-card:hover,a.cm-card:focus-visible{border-color:var(--brand-line)}
   body:has(.lp-dock) .site-foot{padding-bottom:120px}
 }
 @media (min-width:900px) and (prefers-reduced-motion:reduce){.lp-dock{transition:none}}
+/* Links to pages the tabs already have: only shown on a phone, where the tabs give way to the bottom bar
+   (which has no room for them). */
+.phone-only{display:none}
+@media (max-width:640px){body.has-botnav .phone-only{display:inline-flex}}

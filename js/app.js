@@ -1071,7 +1071,7 @@
     app.innerHTML = `
       ${profileHead({war: true,
         stats: [[facs.length, facs.length === 1 ? "Faction" : "Factions"], [num(mine.length), mine.length === 1 ? "Unit" : "Units"], [num(all.points), "Points"], [`${pct(paintedAll, all.models)}%`, "Painted"]],
-        actions: `<button type="button" class="btn btn-sm primary" data-coll-add>+ Add unit</button><a class="btn btn-sm" href="#/war/new">+ New army</a><button type="button" class="btn btn-sm" data-import-army>Import an army</button><a class="btn btn-sm" href="#/war/datasheets">Datasheets</a><a class="btn btn-sm" href="#/war/events">Events</a>${settingsBtn}`})}
+        actions: `<button type="button" class="btn btn-sm primary" data-coll-add>+ Add unit</button><a class="btn btn-sm" href="#/war/new">+ New army</a><button type="button" class="btn btn-sm" data-import-army>Import an army</button><a class="btn btn-sm phone-only" href="#/war/datasheets">Datasheets</a><a class="btn btn-sm phone-only" href="#/war/events">Events</a>${settingsBtn}`})}
       ${warTabs("")}
       ${missingBanner(D)}
       <div id="wd-tag"></div>
