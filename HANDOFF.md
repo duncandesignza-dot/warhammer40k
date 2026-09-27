@@ -124,7 +124,7 @@ python3 tools/build_factions.py bsdata && python3 tools/build_sheets.py bsdata
 - **Routing:** hash routes in `route()`.
   - Livery: `#/livery`, `#/livery/{ledgers,collection,activity,paints,new}`, `#/army/<id>` (the ledger), `#/army/<id>/{colours,guide,unit/<uid>}`, `#/new/<faction>`.
   - War: `#/war` (the Armies tab), `#/war/{lists,datasheets,play,battles,events,buy,points,new,collection}`, `#/war/datasheets/<faction>`, `#/war/armies` (redirects to `#/war`), `#/war/list/<id>/{print,play}`, `#/war/new/<faction>`, `#/war/army/<id>`, `#/war/list/<id>`, `#/war/compare/<a>/<b>`.
-  - Shared: `#/settings`, `#/community`, `#/community/shared` (Shared armies; `#/shared` redirects there), `#/player/<id>` (a player's profile; old `#/painter/<id>` links still work), and `#/` (landing). `#/shame` (the removed pile of shame) and `#/profile` redirect to `#/livery`.
+  - Shared: `#/settings`, `#/community`, `#/community/shared` (Shared armies; `#/shared` redirects there), `#/player/<id>` (a player's profile; old `#/painter/<id>` links still work), and `#/` (landing). `#/profile` redirects to `#/livery`.
 - **Page lifecycle:**
   - `route()` queues: one page loads at a time, and only the newest address is opened, so a slow page can't draw over the one you went to. `routeNow()` does the work.
   - A page slower than 250ms shows a bar along the top (`busy()`, `body.loading`, `aria-busy` on `#app`).
@@ -246,7 +246,7 @@ python3 tools/build_factions.py bsdata && python3 tools/build_sheets.py bsdata
 - **Supabase:**
   - `setup.sql` has a policy "units: army is yours (update)" (a unit can't be moved into someone else's army). If the project was set up before it was added, run just that policy in the SQL editor.
   - Army lists and battles need `supabase/features.sql` (`warMissing` / `code: "nowar"` when missing).
-  - Comments, likes, `army_follows` and `games.opp_user` are also in features.sql. **Follow is per army** (`army_follows`: army_id, user_id); the older `follows` table (people) is no longer used, and features.sql copies its rows into `army_follows`. The people you can tag as a battle opponent are the owners of armies you follow. **Run features.sql again** to create `army_follows`; until then Follow buttons stay hidden. The `kits` table (the removed pile of shame) is no longer used.
+  - Comments, likes, `army_follows` and `games.opp_user` are also in features.sql. **Follow is per army** (`army_follows`: army_id, user_id); the older `follows` table (people) is no longer used, and features.sql copies its rows into `army_follows`. The people you can tag as a battle opponent are the owners of armies you follow. **Run features.sql again** to create `army_follows`; until then Follow buttons stay hidden.
 - **Store changes:** keep `cleanUnit` / `cleanList` in step with any new field, or it's silently dropped on save. That already happened once with list-entry `gear`.
 
 ## Ideas that came up but aren't done

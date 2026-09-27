@@ -156,13 +156,6 @@ test("Help sits just left of Settings on each ledger's overview", async ({page})
   }
 });
 
-test("Pile of shame has gone: its old link goes to the Livery Ledger", async ({page}) => {
-  await seed(page);
-  await open(page, "#/shame");
-  await expect(page).toHaveURL(/#\/livery$/);
-  await expect(page.locator('a[href="#/shame"]')).toHaveCount(0);
-});
-
 test("getting started: a checklist for someone new, ticking off as they go, and it can be hidden", async ({page}) => {
   await seed(page, `db.units = []; db.lists = []; db.games = []; db.armies = db.armies.slice(0, 1);`);
   await open(page, "#/war");

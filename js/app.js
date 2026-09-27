@@ -578,8 +578,8 @@
     const raw = location.hash.replace(/^#\/?/, "") || "", anchor = raw.includes("#") ? raw.slice(raw.indexOf("#") + 1) : "";
     const parts = raw.split("#")[0].split("/").filter(Boolean);
     // War Ledger pages are red, Livery Ledger's own pages green; shared pages keep the last one used.
-    // Old links to the profile page and the pile of shame (now gone) open Livery Ledger's overview.
-    if(parts[0] === "profile" || parts[0] === "shame"){ history.replaceState(null, "", "#/livery"); lastHash = location.hash; parts.splice(0, parts.length, "livery"); }
+    // Old links to the profile page open Livery Ledger's overview.
+    if(parts[0] === "profile"){ history.replaceState(null, "", "#/livery"); lastHash = location.hash; parts.splice(0, parts.length, "livery"); }
     setMode(parts[0] === "war" ? "war" : ["livery", "army", "new"].includes(parts[0]) ? "livery" : savedMode());
     // Community belongs to both tools: its page is gold, and neither Livery nor War is lit in the switch.
     if(["community", "shared", "player", "painter"].includes(parts[0])) document.documentElement.dataset.page = "community"; else delete document.documentElement.dataset.page;
