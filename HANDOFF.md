@@ -123,7 +123,7 @@ python3 tools/build_factions.py bsdata && python3 tools/build_sheets.py bsdata
 - **Routing:** hash routes in `route()`.
   - Livery: `#/livery`, `#/livery/{ledgers,collection,activity,paints,new}`, `#/army/<id>` (the ledger), `#/army/<id>/{colours,guide,unit/<uid>}`, `#/new/<faction>`.
   - War: `#/war` (the Armies tab), `#/war/{lists,datasheets,play,battles,events,buy,points,new,collection}`, `#/war/datasheets/<faction>`, `#/war/armies` (redirects to `#/war`), `#/war/list/<id>/{print,play}`, `#/war/new/<faction>`, `#/war/army/<id>`, `#/war/list/<id>`, `#/war/compare/<a>/<b>`.
-  - Shared: `#/shame`, `#/settings`, `#/shared`, `#/painter/<id>`, and `#/` (landing).
+  - Shared: `#/shame`, `#/settings`, `#/community`, `#/community/shared` (Shared armies; `#/shared` redirects there), `#/painter/<id>`, and `#/` (landing).
 - **Page lifecycle:**
   - `route()` queues: one page loads at a time, and only the newest address is opened, so a slow page can't draw over the one you went to. `routeNow()` does the work.
   - A page slower than 250ms shows a bar along the top (`busy()`, `body.loading`, `aria-busy` on `#app`).
@@ -176,6 +176,7 @@ python3 tools/build_factions.py bsdata && python3 tools/build_sheets.py bsdata
 - **Community** (`#/community`, `viewCommunity`, icon `LOGO_COMMUNITY` / `img/community.svg`: the Livery and War shield in gold with two figures): in the header (icon only below 1100px, and in the account menu; hidden from the header below 480px) for logged-in players. For now: events coming up, a link to Shared armies, and Spotlights and Painting events marked Coming soon.
   - Its name in the header, switch and menus is **Community Ledger** (just "Community" in the header below 480px). The club section on the homepage shows the Eastern Cape Warlords logo (`img/ecw-logo.webp`, 480×480, transparent).
   - On desktops (900px and up) a copy of the homepage switch docks at the bottom of the screen (`#lp-dock`, shown by an IntersectionObserver on the hero switch, `landingDock`) once the top one has scrolled away. Switching from it goes to the top of the new homepage.
+  - Shared armies and painter profiles are part of Community Ledger: gold, with its tabs (`COMM_TABS`: Overview, Shared armies) and, on phones, its own bottom bar (`BOTNAV.community`: Overview, Shared, Events, Livery, War). Shared armies isn't in the account menu any more.
   - The homepage switch has a third choice, Community (`viewLanding({comm: true})`): gold, "Run by the Eastern Cape Warlords", what Community offers, the club section with upcoming events, and every Livery and War feature in two lists. It doesn't change the saved tool. Keep those feature lists (and the "little things" cards on the Livery and War homepages) up to date when features are added.
   - The background picker (`.bgpick`) is moved into the top bar beside the profile menu (or the log in buttons) each time `setTop()` redraws it.
   - On the Community page `html[data-page="community"]` turns the accents gold (the `--brand` variables), neither side of the Livery/War switch is lit, and the header logo shows the two figures over "Livery Ledger". The saved mode (`ll-mode`) is left as it was.

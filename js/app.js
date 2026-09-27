@@ -280,7 +280,6 @@
         ${(war ? WAR_TABS : LIV_TABS).map(([k, l]) => `<a role="menuitem" href="#/${war ? "war" : "livery"}${k ? "/" + k : ""}">${esc(l)}</a>`).join("")}
         <a role="menuitem" href="#/shame">Pile of shame</a>
         <a role="menuitem" href="#/community">Community Ledger</a>
-        <a role="menuitem" href="#/shared">Shared armies</a>
         <a role="menuitem" href="#/settings">Settings</a>
         ${installable() ? `<button type="button" role="menuitem" data-install>Install app</button>` : ""}
         <hr>
@@ -583,7 +582,7 @@
     if(parts[0] === "profile"){ history.replaceState(null, "", "#/livery"); lastHash = location.hash; parts.splice(0, parts.length, "livery"); }
     setMode(parts[0] === "war" ? "war" : ["livery", "army", "new"].includes(parts[0]) ? "livery" : savedMode());
     // Community belongs to both tools: its page is gold, and neither Livery nor War is lit in the switch.
-    if(parts[0] === "community") document.documentElement.dataset.page = "community"; else delete document.documentElement.dataset.page;
+    if(["community", "shared", "painter"].includes(parts[0])) document.documentElement.dataset.page = "community"; else delete document.documentElement.dataset.page;
     document.querySelectorAll("dialog.wdlg[open]").forEach(d => d.close());
     setTop(); setBotNav(parts);
     try {
@@ -623,13 +622,14 @@
         if(store.kind === "supabase" && !store.session){ await viewLanding(); setTimeout(() => openAuth("in", "Log in to change your settings."), 0); }
         else await viewSettings();
       }
-      else if(parts[0] === "community"){
-        if(store.kind === "supabase" && !store.session){ await viewLanding(); setTimeout(() => openAuth("in", "Log in to see the community."), 0); }
-        else viewCommunity();
-      }
-      else if(parts[0] === "shared"){
-        if(store.kind === "supabase" && !store.session){ await viewLanding(); setTimeout(() => openAuth("in", "Log in to browse shared armies."), 0); }
-        else await viewShared();
+      // Community Ledger: its overview and Shared armies (the old #/shared address opens it there).
+      else if(parts[0] === "community" || parts[0] === "shared"){
+        const shared = parts[0] === "shared" || parts[1] === "shared";
+        if(parts[0] === "shared"){ history.replaceState(null, "", "#/community/shared"); lastHash = location.hash; }
+        if(store.kind === "supabase" && !store.session){ await viewLanding(); setTimeout(() => openAuth("in", shared ? "Log in to browse shared armies." : "Log in to see the community."), 0); }
+        else if(shared) await viewShared();
+        else if(!parts[1]) viewCommunity();
+        else viewNotFound();
       }
       else if(parts[0] === "livery"){
         // Livery Ledger: your profile, ledgers, collection and painting activity; logged out, the homepage with the log in form open.
@@ -726,7 +726,9 @@
   };
   const BOTNAV = {
     livery: {label: "Livery Ledger", items: [["", "Overview", "home"], ["ledgers", "Ledgers", "book"], ["collection", "Collection", "list"], ["paints", "Paints", "drop"], ["activity", "Activity", "chart"]]},
-    war: {label: "War Ledger", items: [["", "Armoury", "shield"], ["lists", "Lists", "clip"], ["play", "Play", "dice"], ["battles", "Battles", "swords"], ["buy", "To buy", "cart"]]}
+    war: {label: "War Ledger", items: [["", "Armoury", "shield"], ["lists", "Lists", "clip"], ["play", "Play", "dice"], ["battles", "Battles", "swords"], ["buy", "To buy", "cart"]]},
+    // Community Ledger has two sections of its own; the rest go to the events page and the other two tools.
+    community: {label: "Community Ledger", items: [["", "Overview", "home"], ["shared", "Shared", "grid"], ["events", "Events", "dice", "#/war/events"], ["livery", "Livery", "drop", "#/livery"], ["war", "War", "swords", "#/war"]]}
   };
   // Which section a page belongs to, so its tab is lit (a ledger counts as Ledgers, an army list as Lists).
   function navSection(parts){
@@ -743,10 +745,14 @@
     document.body.classList.toggle("has-botnav", show);
     nav.hidden = !show;
     if(!show) return;
-    const mode = isWar() ? "war" : "livery", cfg = BOTNAV[mode], on = navSection(parts);
+    const comm = document.documentElement.dataset.page === "community";
+    const mode = comm ? "community" : isWar() ? "war" : "livery", cfg = BOTNAV[mode], on = comm ? (parts[0] === "community" ? parts[1] || "" : "shared") : navSection(parts);
     nav.setAttribute("aria-label", cfg.label + " sections");
-    nav.innerHTML = cfg.items.map(([k, l, ic]) => `<a href="#/${mode}${k ? "/" + k : ""}"${k === on ? ` aria-current="page"` : ""}><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${NAV_ICON[ic]}</svg><span>${l}</span></a>`).join("");
+    nav.innerHTML = cfg.items.map(([k, l, ic, href]) => `<a href="${href || `#/${mode}${k ? "/" + k : ""}`}"${!href && k === on ? ` aria-current="page"` : ""}><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${NAV_ICON[ic]}</svg><span>${l}</span></a>`).join("");
   }
+  // Community Ledger's sections.
+  const COMM_TABS = [["", "Overview"], ["shared", "Shared armies"]];
+  const commTabs = on => `<nav class="war-tabs" aria-label="Community Ledger">${COMM_TABS.map(([k, l]) => `<a href="#/community${k ? "/" + k : ""}"${k === on ? ` aria-current="page"` : ""}>${l}</a>`).join("")}</nav>`;
   // Armies is the overview: your armies are what you own, and lists are where you try out units you don't.
   const WAR_TABS = [["", "Armoury"], ["lists", "Army lists"], ["datasheets", "Datasheets"], ["play", "Play"], ["battles", "Battles"], ["events", "Events"], ["buy", "To buy"]];
   // How many units your lists want that you don't own, for the To buy tab (worked out whenever War data loads).
@@ -1569,7 +1575,7 @@
     const link = location.origin + location.pathname + "#/army/" + army.id;
     const d = modal("Share this army", store.canShare ? `
       <label class="switch"><input type="checkbox" id="wsh-on" ${army.public ? "checked" : ""}><span class="track" aria-hidden="true"><i></i></span><span>Share this army</span></label>
-      <p class="hint">Anyone with the link can view it, and logged-in players can find it on the <a href="#/shared">Shared armies</a> page. They'll see your units, colours, points, painting progress and battle record, and your display name. Your army lists and battle reports stay private. Turn this off any time and the link stops working.</p>
+      <p class="hint">Anyone with the link can view it, and logged-in players can find it on the <a href="#/community/shared">Shared armies</a> page. They'll see your units, colours, points, painting progress and battle record, and your display name. Your army lists and battle reports stay private. Turn this off any time and the link stops working.</p>
       <div class="copyrow" id="wsh-row" ${army.public ? "" : "hidden"}><input id="wsh-link" readonly value="${esc(link)}" aria-label="Share link"><button type="button" class="primary" id="wsh-copy">Copy link</button></div>
       <div class="msg" id="wsh-msg" role="status"></div>`
       : `<p class="hint">Sharing needs the online database. Add your Supabase details in <code>js/config.js</code> and sign in to share armies.</p>`);
@@ -4589,7 +4595,7 @@ Redemptor Dreadnought (210 points)</pre>
 
       <section class="lp-cta panel">
         <div><h2>Your army deserves a plan</h2><p class="sub">Free, and ready in under a minute.</p></div>
-        <div class="lp-cta-btns">${me ? `<a class="btn lg" href="#/shared">Browse shared armies</a>` : ""}${cta}</div>
+        <div class="lp-cta-btns">${me ? `<a class="btn lg" href="#/community/shared">Browse shared armies</a>` : ""}${cta}</div>
       </section>
     `;
     // The War Ledger homepage: the same shell, with War Ledger's own features.
@@ -4753,7 +4759,7 @@ Redemptor Dreadnought (210 points)</pre>
 
       <section class="lp-cta panel">
         <div><h2>Take command of your collection</h2><p class="sub">Free, and ready in under a minute.</p></div>
-        <div class="lp-cta-btns">${me ? `<a class="btn lg" href="#/shared">Browse shared armies</a>` : ""}${cta}</div>
+        <div class="lp-cta-btns">${me ? `<a class="btn lg" href="#/community/shared">Browse shared armies</a>` : ""}${cta}</div>
       </section>
     `;
 
@@ -4815,7 +4821,7 @@ Redemptor Dreadnought (210 points)</pre>
 
       <section class="lp-cta panel">
         <div><h2>Join the table</h2><p class="sub">Free, and ready in under a minute.</p></div>
-        <div class="lp-cta-btns">${me ? `<a class="btn lg" href="#/shared">Browse shared armies</a>` : ""}${cta}</div>
+        <div class="lp-cta-btns">${me ? `<a class="btn lg" href="#/community/shared">Browse shared armies</a>` : ""}${cta}</div>
       </section>
     `;
 
@@ -5032,25 +5038,27 @@ Redemptor Dreadnought (210 points)</pre>
         <h1>Community</h1>
         <p class="sub">What's happening around the tables: events coming up and armies other painters have shared. Spotlights and painting events are on the way.</p>
       </section>
+      ${commTabs("")}
       <section class="war-sec" aria-labelledby="cm-ev"><div class="sec-h"><h2 id="cm-ev">Events coming up</h2><a href="#/war/events">All events</a></div>
         ${evs.length ? `<ul class="cm-evs">${evs.map(e => `<li><a href="#/war/events"><span class="tag ev-kind ${esc(e.kind)}">${EVENT_KIND[e.kind]}</span><span class="lb-name">${esc(e.name)}<small>${esc([dayText(e.date), e.place].filter(Boolean).join(" · "))}</small></span>${e.mine ? `<span class="cm-going">You're going</span>` : ""}</a></li>`).join("")}</ul>`
           : `<p class="hint">No events coming up yet. Club and national events show here once they're added.</p>`}</section>
       <div class="cm-grid">
-        <a class="panel cm-card" href="#/shared"><h2>Shared armies</h2><p class="sub">Browse ledgers other painters have shared, follow them and leave a like or a comment.</p><span class="cm-go">Browse shared armies</span></a>
+        <a class="panel cm-card" href="#/community/shared"><h2>Shared armies</h2><p class="sub">Browse ledgers other painters have shared, follow them and leave a like or a comment.</p><span class="cm-go">Browse shared armies</span></a>
         <section class="panel cm-card later" aria-labelledby="cm-sp"><h2 id="cm-sp">Spotlights</h2><p class="sub">Painted armies and painters picked out from the community.</p><span class="tag">Coming soon</span></section>
         <section class="panel cm-card later" aria-labelledby="cm-pe"><h2 id="cm-pe">Painting events</h2><p class="sub">Painting challenges to take part in, with everyone's progress and finished models.</p><span class="tag">Coming soon</span></section>
       </div>`;
   }
   async function viewShared(){
     view.name = "shared";
-    document.title = `Shared armies · ${toolName()}`;
+    document.title = "Shared armies · Community Ledger";
     const mine = store.session ? store.session.user.id : null;
     app.innerHTML = `
       <section class="page-head">
-        <p class="eyebrow">Community</p>
+        <p class="eyebrow">Community Ledger</p>
         <h1>Shared armies</h1>
         <p class="sub">Ledgers other painters have chosen to share. Open one to see their colours, units and progress. To share one of yours, open the ledger and press <strong>Share</strong>.</p>
       </section>
+      ${commTabs("shared")}
       <div class="sh-tools">
         <input type="search" id="sh-q" placeholder="Search armies, factions or painters" aria-label="Search shared armies">
         <select id="sh-f" aria-label="Faction"><option value="">All factions</option></select>
@@ -5191,7 +5199,7 @@ Redemptor Dreadnought (210 points)</pre>
       if(newest) document.title = `${o.you ? "Your profile" : o.name} · ${toolName()}`;
       const keep = PROF;
       app.innerHTML = `
-        <div class="crumbs"><a href="#/shared">Shared armies</a> / ${esc(o.you ? "You" : o.name)}</div>
+        <div class="crumbs"><a href="#/community/shared">Shared armies</a> / ${esc(o.you ? "You" : o.name)}</div>
         <section class="painter-head">
           ${avatarHtml(o, "xl")}
           <div><p class="eyebrow">Painter</p><h1>${esc(o.you ? `${o.name} (you)` : o.name)}</h1>
@@ -5991,7 +5999,7 @@ Redemptor Dreadnought (210 points)</pre>
     try { prefs = {...prefs, ...JSON.parse(localStorage.getItem(PREF_KEY) || "{}")}; } catch(e){}
 
     app.innerHTML = `
-      <div class="crumbs">${canWrite ? `<a href="#/livery">Livery Ledger</a> / <a href="#/livery/ledgers">Ledgers</a>` : store.session ? `<a href="#/shared">Shared armies</a>` : `<a href="#/">Livery Ledger</a>`} / ${esc(army.name)}</div>
+      <div class="crumbs">${canWrite ? `<a href="#/livery">Livery Ledger</a> / <a href="#/livery/ledgers">Ledgers</a>` : store.session ? `<a href="#/community/shared">Shared armies</a>` : `<a href="#/">Livery Ledger</a>`} / ${esc(army.name)}</div>
       <section class="page-head war-head liv-head">
         <div class="wh-id">${armyBadge(army, 64)}<div>
           ${!canWrite ? (army.owner && store.canShare ? `<a class="owner-link" href="#/painter/${esc(army.owner)}">${ownerLine(army, "big")}</a>` : ownerLine(army, "big")) : ""}
@@ -6205,7 +6213,7 @@ Redemptor Dreadnought (210 points)</pre>
           <h2 id="sh-h">Share this ledger</h2>
           ${store.canShare ? `
           <label class="switch"><input type="checkbox" id="sh-on" ${army.public ? "checked" : ""}><span class="track" aria-hidden="true"><i></i></span><span>Share this ledger</span></label>
-          <p class="hint">Anyone with the link can view it, and logged-in painters can find it on the <a href="#/shared">Shared armies</a> page. They'll see your units, colours, photos, points and progress, and your display name. They can't change anything, and they don't need an account. Turn this off at any time to stop sharing.</p>
+          <p class="hint">Anyone with the link can view it, and logged-in painters can find it on the <a href="#/community/shared">Shared armies</a> page. They'll see your units, colours, photos, points and progress, and your display name. They can't change anything, and they don't need an account. Turn this off at any time to stop sharing.</p>
           <div class="copyrow" id="sh-row" ${army.public ? "" : "hidden"}><input id="sh-link" readonly value="${esc(location.origin + location.pathname + "#/army/" + army.id)}" aria-label="Share link"><button type="button" class="primary" id="sh-copy">Copy link</button></div>`
           : `<p class="hint">Sharing needs the online database. Add your Supabase details in <code>js/config.js</code> and sign in to share ledgers.</p>`}
           <div class="msg" id="sh-msg" role="status"></div>
