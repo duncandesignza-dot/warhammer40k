@@ -2799,9 +2799,10 @@
     const D = await warData();
     let prefs = {};
     try { prefs = JSON.parse(localStorage.getItem("ll-ds-prefs") || "{}") || {}; } catch(e){}
-    fid = fid || (FBY[prefs.f] ? prefs.f : "") || (D.armies[0] || {}).faction || "space-marines";
+    // No faction until you choose one (or open a faction's address): the page explains itself first.
+    fid = fid || "";
     let q = "", role = "", legends = false, sort = ["name", "low", "high"].includes(prefs.sort) ? prefs.sort : "name";
-    view.name = "war-datasheets"; document.title = `${factionName(fid)} datasheets · War Ledger`;
+    view.name = "war-datasheets"; document.title = fid ? `${factionName(fid)} datasheets · War Ledger` : "Datasheets · War Ledger";
     const roleOf = sh => ROLE_ORDER.includes(sh.r) ? sh.r : "Other";
     const sizes = sh => sh.ms && sh.ms[1] > sh.ms[0] ? `${sh.ms[0]}–${sh.ms[1]} models` : plural(minModels(sh), "model");
     const from = sh => sheetPts(sh, minModels(sh));
@@ -2811,7 +2812,7 @@
       </section>
       ${warTabs("datasheets")}
       <div class="war-filters ds-filters">
-        ${factionSelect("dsp-f", fid, "").replace("<select ", `<select aria-label="Faction" class="ds-f" `)}
+        ${factionSelect("dsp-f", fid, "Choose a faction").replace("<select ", `<select aria-label="Faction" class="ds-f" `)}
         <input type="search" id="dsp-q" placeholder="Search datasheets" aria-label="Search datasheets">
         <select id="dsp-r" aria-label="Role"><option value="">All roles</option></select>
         <select id="dsp-s" aria-label="Sort"><option value="name"${sort === "name" ? " selected" : ""}>Name</option><option value="low"${sort === "low" ? " selected" : ""}>Points (fewest first)</option><option value="high"${sort === "high" ? " selected" : ""}>Points (most first)</option></select>
@@ -2819,8 +2820,15 @@
       </div>
       <p class="hint" id="dsp-n" aria-live="polite"></p>
       <div id="dsp-out"></div>`;
+    // Before a faction is chosen the other filters wait, and a panel says what the page is for.
+    function ready(){ ["dsp-q", "dsp-r", "dsp-s", "dsp-l"].forEach(id => $(id).disabled = !fid); }
     function fillRoles(){ $("dsp-r").innerHTML = `<option value="">All roles</option>${ROLE_ORDER.filter(r => sheetsOf(fid).some(sh => roleOf(sh) === r)).map(r => `<option${r === role ? " selected" : ""}>${esc(r)}</option>`).join("")}`; }
     function draw(){
+      if(!fid){
+        $("dsp-n").textContent = "";
+        $("dsp-out").innerHTML = `<section class="panel war-empty"><h2>Browse any faction's datasheets</h2><p class="sub">Choose a faction above to see every datasheet it has, with its points and unit sizes. Open one for its full profile and weapons, and add it to one of your army lists to try it before you buy it.</p></section>`;
+        return;
+      }
       const all = sheetsOf(fid).filter(sh => (legends || !sh.t) && (!role || roleOf(sh) === role) && (!q || sh.n.toLowerCase().includes(q)));
       const by = {name: (a, b) => a.n.localeCompare(b.n), low: (a, b) => (from(a) ?? 1e9) - (from(b) ?? 1e9) || a.n.localeCompare(b.n), high: (a, b) => (from(b) ?? -1) - (from(a) ?? -1) || a.n.localeCompare(b.n)}[sort];
       $("dsp-n").textContent = `${plural(all.length, "datasheet")}${q || role ? " match" : ""}`;
@@ -2850,8 +2858,8 @@
         } catch(err){ console.error(err); flash("Couldn't add it: " + errText(err)); }
       });
     }
-    fillRoles(); draw();
-    $("dsp-f").addEventListener("change", e => { fid = e.target.value; role = ""; try { localStorage.setItem("ll-ds-prefs", JSON.stringify({f: fid, sort})); } catch(err){} history.replaceState(null, "", "#/war/datasheets/" + fid); lastHash = location.hash; document.title = `${factionName(fid)} datasheets · War Ledger`; fillRoles(); draw(); });
+    fillRoles(); ready(); draw();
+    $("dsp-f").addEventListener("change", e => { fid = e.target.value; ready(); role = ""; try { localStorage.setItem("ll-ds-prefs", JSON.stringify({f: fid, sort})); } catch(err){} history.replaceState(null, "", "#/war/datasheets" + (fid ? "/" + fid : "")); lastHash = location.hash; document.title = fid ? `${factionName(fid)} datasheets · War Ledger` : "Datasheets · War Ledger"; fillRoles(); draw(); });
     $("dsp-q").addEventListener("input", e => { q = e.target.value.trim().toLowerCase(); draw(); });
     $("dsp-r").addEventListener("change", e => { role = e.target.value; draw(); });
     $("dsp-s").addEventListener("change", e => { sort = e.target.value; try { localStorage.setItem("ll-ds-prefs", JSON.stringify({f: fid, sort})); } catch(err){} draw(); });

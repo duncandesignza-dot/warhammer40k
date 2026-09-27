@@ -816,8 +816,13 @@ test("game day: round, CP and VP at the table, kept through a reload, then logge
 test("datasheets: browse a faction, open one and add it to a list as a unit you don't own", async ({page}) => {
   await seed(page);
   await open(page, "#/war/datasheets");
-  // Your first army's faction to start with.
-  await expect(page.locator("#dsp-f")).toHaveValue("ultramarines");
+  // Nothing chosen to start with: the page says what it's for, and the other filters wait.
+  await expect(page.locator("#dsp-f")).toHaveValue("");
+  await expect(page.locator(".war-empty")).toContainText("Choose a faction above");
+  await expect(page.locator(".war-empty button, .war-empty a")).toHaveCount(0);
+  await expect(page.locator("#dsp-q")).toBeDisabled();
+  await page.selectOption("#dsp-f", "ultramarines");
+  await expect(page.locator("#dsp-q")).toBeEnabled();
   await page.fill("#dsp-q", "gladiator");
   await expect(page.locator(".dsp-open")).toHaveCount(3);
   await page.selectOption("#dsp-s", "high");
@@ -830,11 +835,13 @@ test("datasheets: browse a faction, open one and add it to a list as a unit you 
   await expect(page.locator(".toast")).toContainText("Added Gladiator Reaper to Club night");
   const l = (await saved(page)).lists.find(x => x.id === "l1");
   expect(l.units[l.units.length - 1]).toMatchObject({n: "Gladiator Reaper", sheet: "Gladiator Reaper", count: 1});
-  // Another faction, remembered next time.
+  // Another faction: its address can be shared, but opening Datasheets afresh starts with nothing chosen again.
   await page.selectOption("#dsp-f", "necrons");
   await expect(page).toHaveURL(/#\/war\/datasheets\/necrons$/);
-  await open(page, "#/war/datasheets");
+  await open(page, "#/war/datasheets/necrons");
   await expect(page.locator("#dsp-f")).toHaveValue("necrons");
+  await open(page, "#/war/datasheets");
+  await expect(page.locator("#dsp-f")).toHaveValue("");
 });
 
 // Events come from js/data/events.js; these tests serve their own.
