@@ -200,7 +200,20 @@
     settings = {...settings, ...patch};
     try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch(e){}
     document.body.classList.toggle("no-points", settings.hidePoints);
-    if(store.kind === "supabase" && store.session) await store.updateProfile({settings});
+    if(store.kind === "supabase" && store.session) await store.putSettings(settings);
+  }
+  // Online, after logging in: the settings saved with your account (in their own table) replace the ones in this browser.
+  async function pullSettings(){
+    if(store.kind !== "supabase" || !store.session || !store.getSettings) return;
+    try {
+      const acc = await store.getSettings();
+      if(!acc || typeof acc !== "object") return;
+      let local = {}; try { local = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}"); } catch(e){}
+      settings = {hidePoints: false, ...local, ...acc};
+      settings.hidePoints = settings.hidePoints === true;
+      try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch(e){}
+      document.body.classList.toggle("no-points", settings.hidePoints);
+    } catch(e){ console.warn("Couldn't load your settings", e); }
   }
   // Your notes on each faction you play against, kept with the settings so they follow you.
   const oppNotes = () => (settings.oppNotes && typeof settings.oppNotes === "object") ? settings.oppNotes : {};
@@ -2677,7 +2690,7 @@
     if(friendsCache) return friendsCache;
     const social = await store.communityState([]);
     if(!social || !social.following || !social.following.size) return [];
-    const {armies} = await store.listShared(), names = {}, me = store.session && store.session.user.id;
+    const {armies} = await store.listSharedIds([...social.following]), names = {}, me = store.session && store.session.user.id;
     armies.forEach(a => { if(social.following.has(a.id) && a.owner && a.owner !== me && !names[a.owner]) names[a.owner] = (a.scheme && a.scheme.by) || "A player"; });
     return (friendsCache = Object.entries(names).map(([id, name]) => ({id, name})).sort((a, b) => a.name.localeCompare(b.name)));
   }
@@ -5147,7 +5160,13 @@ Redemptor Dreadnought (210 points)</pre>
     if(!$("sh-list")) return;   // left the page while loading
     const {armies, sum} = data;
     let social = null, show = "all";
-    try { social = await store.communityState(armies.map(a => a.id)); } catch(err){ console.warn("Likes and follows unavailable", err); }
+    // Armies you follow that aren't among the most recently updated ones are loaded too, so Following shows them all.
+    try {
+      const first = await store.communityState([]), have = new Set(armies.map(a => a.id));
+      const missing = first && first.following ? [...first.following].filter(id => !have.has(id)) : [];
+      if(missing.length){ const more = await store.listSharedIds(missing); armies.push(...more.armies); Object.assign(sum, more.sum); }
+      social = await store.communityState(armies.map(a => a.id));
+    } catch(err){ console.warn("Likes and follows unavailable", err); }
     if(!social) console.info("Likes and follows need the one-time setup in supabase/features.sql.");
     if(social){ $("sh-show").querySelector('[data-show="following"]').hidden = !social.following; $("sh-sort").querySelector('[value="liked"]').hidden = false; }
     const present = [...new Set(armies.map(a => a.faction))].filter(id => FBY[id]).sort((a, b) => FBY[a].name.localeCompare(FBY[b].name));
@@ -7979,7 +7998,7 @@ Redemptor Dreadnought (210 points)</pre>
       if(changed && !first && was && (!session || session.user.id !== was.user.id)) forgetLocalSettings();   // logged out, or someone else logged in
       store.setSession(session); first = false;
       loadSettings(); setTop();
-      if(changed) setTimeout(route, 0);
+      if(changed) setTimeout(() => (session ? pullSettings() : Promise.resolve()).then(route), 0);
       if(changed && session) store.syncShared().catch(e => console.warn("Couldn't update the name on shared ledgers", e));
       // Opened the link in a password reset email: they're signed in, now ask for the new password.
       if(event === "PASSWORD_RECOVERY") setTimeout(() => openAuth("reset"), 60);

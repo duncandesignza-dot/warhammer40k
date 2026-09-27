@@ -145,3 +145,73 @@ alter table public.games add column if not exists opp_user uuid references auth.
 create index if not exists games_opp_user_idx on public.games(opp_user) where opp_user is not null;
 drop policy if exists "See battles you were tagged in" on public.games;
 create policy "See battles you were tagged in" on public.games for select to authenticated using (opp_user = auth.uid());
+
+-- 10. Your settings (projects, opponent notes, event sign-ups, paint levels…)
+--     Kept in their own table rather than on the login, which Supabase copies into every sign-in token.
+--     The site moves any settings saved on the login here the first time.
+create table if not exists public.user_settings (
+  owner uuid primary key default auth.uid() references auth.users(id) on delete cascade,
+  data jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+alter table public.user_settings enable row level security;
+drop policy if exists "Your own settings" on public.user_settings;
+create policy "Your own settings" on public.user_settings for all to authenticated using (owner = auth.uid()) with check (owner = auth.uid());
+
+-- 11. Names and pictures come from the account, not the browser
+--     A comment's name and picture, and a shared army's "by" and "byPic", are filled in by the database from
+--     the account (display name, else name, else the part of the email before @), so nobody can post as
+--     someone else.
+create or replace function public.player_name(uid uuid)
+returns text language sql stable security definer set search_path = public, auth as $$
+  select left(coalesce(nullif(trim(u.raw_user_meta_data->>'display_name'), ''), nullif(trim(u.raw_user_meta_data->>'name'), ''),
+    nullif(trim(u.raw_user_meta_data->>'full_name'), ''), split_part(u.email, '@', 1), ''), 40) from auth.users u where u.id = uid
+$$;
+create or replace function public.player_pic(uid uuid)
+returns text language sql stable security definer set search_path = public, auth as $$
+  select left(coalesce(u.raw_user_meta_data->>'avatar_url', ''), 600) from auth.users u where u.id = uid
+$$;
+revoke all on function public.player_name(uuid) from public, anon, authenticated;
+revoke all on function public.player_pic(uuid) from public, anon, authenticated;
+create or replace function public.comment_author() returns trigger language plpgsql security definer set search_path = public, auth as $$
+begin
+  new.by_name := coalesce(public.player_name(new.owner), '');
+  new.by_pic := coalesce(public.player_pic(new.owner), '');
+  return new;
+end $$;
+drop trigger if exists comment_author on public.comments;
+create trigger comment_author before insert or update on public.comments for each row execute function public.comment_author();
+create or replace function public.army_author() returns trigger language plpgsql security definer set search_path = public, auth as $$
+begin
+  new.scheme := coalesce(new.scheme, '{}'::jsonb)
+    || jsonb_build_object('by', coalesce(public.player_name(new.owner), ''), 'byPic', coalesce(public.player_pic(new.owner), ''));
+  return new;
+end $$;
+drop trigger if exists army_author on public.armies;
+create trigger army_author before insert or update on public.armies for each row execute function public.army_author();
+
+-- 12. Tagging an opponent: only a player whose army you follow, or who tagged you in one of their battles
+create or replace function public.check_opp_user() returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.opp_user is null or (tg_op = 'UPDATE' and new.opp_user is not distinct from old.opp_user) then return new; end if;
+  if exists (select 1 from public.army_follows f join public.armies a on a.id = f.army_id where f.user_id = new.owner and a.owner = new.opp_user)
+     or exists (select 1 from public.games g where g.owner = new.opp_user and g.opp_user = new.owner) then
+    return new;
+  end if;
+  raise exception 'You can only tag players whose armies you follow.';
+end $$;
+drop trigger if exists check_opp_user on public.games;
+create trigger check_opp_user before insert or update on public.games for each row execute function public.check_opp_user();
+
+-- 13. Likes on an army that isn't shared are only seen by its owner (and whoever gave them)
+drop policy if exists "Logged-in painters see likes" on public.likes;
+drop policy if exists "See likes on shared armies" on public.likes;
+create policy "See likes on shared armies" on public.likes for select to authenticated
+  using (user_id = auth.uid() or exists (select 1 from public.armies a where a.id = army_id and (a.public or a.owner = auth.uid())));
+
+-- 14. Like counts, counted in the database (a plain list of likes stops at 1,000 rows)
+create or replace function public.like_counts(ids uuid[])
+returns table(army_id uuid, n bigint) language sql stable security invoker set search_path = public as $$
+  select l.army_id, count(*) from public.likes l where l.army_id = any(ids) group by l.army_id
+$$;
+grant execute on function public.like_counts(uuid[]) to authenticated;

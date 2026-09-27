@@ -508,7 +508,7 @@
     // by_pic is only shown when it's a picture from this site's own storage.
     const toComment = r => ({id: r.id, armyId: r.army_id, owner: r.owner, body: String(r.body || ""), createdAt: r.created_at,
       byName: String(r.by_name || "").slice(0, 40), byPic: typeof r.by_pic === "string" && PIC_BASE && r.by_pic.startsWith(PIC_BASE) && !/["'<>\s]/.test(r.by_pic) ? r.by_pic : ""});
-    let paintsTable = null;   // null: not checked yet; false: owned_paints isn't set up, so paints stay on the account
+    let paintsTable = null, settingsTable = null;   // null: not checked yet; false: owned_paints isn't set up, so paints stay on the account
     // The name shown on your shared ledgers and comments: the same one your profile shows.
     const myName = () => { const u = session && session.user, m = (u && u.user_metadata) || {}; return String(m.display_name || m.name || m.full_name || String((u && u.email) || "").split("@")[0] || "").trim().slice(0, 40); };
     const myPic = () => String(((session && session.user.user_metadata) || {}).avatar_url || "");
@@ -517,7 +517,7 @@
       kind: "supabase", client: sb, canShare: true,
       get session(){ return session; },
       get canWrite(){ return !!session; },
-      setSession(s){ if(!s || !session || s.user.id !== session.user.id) paintsTable = null; session = s; },
+      setSession(s){ if(!s || !session || s.user.id !== session.user.id) paintsTable = settingsTable = null; session = s; },
       // Nothing to say when signed in: saving online is the normal case.
       note(){ return session ? null : {cls:"", text:"Viewing only. Sign in to create and edit ledgers."}; },
       /* Paints you own live in the owned_paints table (one row each). Lists saved on the account
@@ -548,6 +548,30 @@
         if(data && data.user) session = {...session, user: data.user};
         return paints;
       },
+      /* Your settings live in the user_settings table. Settings saved on the login before the table existed are
+         moved over the first time; without the table (features.sql not run again yet) they stay on the login. */
+      async getSettings(){
+        if(!session) return null;
+        const old = (session.user.user_metadata || {}).settings;
+        const res = await sb.from("user_settings").select("data").eq("owner", session.user.id).maybeSingle();
+        if(res.error){ if(tableMissing(res.error)){ settingsTable = false; return old && typeof old === "object" ? old : null; } throw res.error; }
+        settingsTable = true;
+        const have = res.data && res.data.data && typeof res.data.data === "object" ? res.data.data : null;
+        if(!old || typeof old !== "object") return have;
+        const merged = {...old, ...(have || {})};
+        try { await this.putSettings(merged); await this.updateProfile({settings: null}); } catch(e){ console.warn("Couldn't move settings", e); }
+        return merged;
+      },
+      async putSettings(data){
+        need();
+        if(settingsTable !== false){
+          const res = await sb.from("user_settings").upsert({owner: session.user.id, data, updated_at: new Date().toISOString()}, {onConflict: "owner"});
+          if(!res.error){ settingsTable = true; return; }
+          if(!tableMissing(res.error)) throw res.error;
+          settingsTable = false;
+        }
+        await this.updateProfile({settings: data});
+      },
       async getLibrary(){
         if(!session) return [];
         const {data, error} = await sb.from(R).select("id,data").eq("owner", session.user.id);
@@ -574,13 +598,25 @@
       /* Likes and follows. null means the tables haven't been set up yet (supabase/features.sql). */
       async communityState(armyIds){
         if(!session) return null;
-        const lk = armyIds.length ? await sb.from("likes").select("army_id,user_id").in("army_id", armyIds) : {data: [], error: null};
+        // Your own likes, then everyone's counted in the database (a plain list of likes stops at 1,000 rows).
+        const lk = armyIds.length ? await sb.from("likes").select("army_id,user_id").in("army_id", armyIds).eq("user_id", session.user.id) : {data: [], error: null};
         if(lk.error){ if(tableMissing(lk.error)) return null; throw lk.error; }
+        let counts = null;
+        if(armyIds.length && typeof sb.rpc === "function"){
+          const c = await sb.rpc("like_counts", {ids: armyIds});
+          if(!c.error) counts = c.data || [];
+          else if(!tableMissing(c.error) && !/function|PGRST202/i.test(`${c.error.code} ${c.error.message}`)) throw c.error;
+        }
+        // Without the like_counts function (features.sql not run again yet): count the rows, as before.
+        const all = counts ? null : armyIds.length ? await sb.from("likes").select("army_id,user_id").in("army_id", armyIds) : {data: []};
+        if(all && all.error) throw all.error;
         // Armies you follow; following is null until the army_follows table is set up.
         const fl = await sb.from("army_follows").select("army_id").eq("user_id", session.user.id);
         if(fl.error && !tableMissing(fl.error)) throw fl.error;
         const likes = {}, liked = new Set();
-        (lk.data || []).forEach(r => { likes[r.army_id] = (likes[r.army_id] || 0) + 1; if(r.user_id === session.user.id) liked.add(r.army_id); });
+        (lk.data || []).forEach(r => { if(r.user_id === session.user.id) liked.add(r.army_id); });
+        if(counts) counts.forEach(r => { likes[r.army_id] = +r.n || 0; });
+        else (all.data || []).forEach(r => { likes[r.army_id] = (likes[r.army_id] || 0) + 1; if(r.user_id === session.user.id) liked.add(r.army_id); });
         return {likes, liked, following: fl.error ? null : new Set((fl.data || []).map(r => r.army_id))};
       },
       async setLike(armyId, on){
@@ -594,6 +630,15 @@
         if(error && !/duplicate/i.test(error.message || "")) throw error;
       },
       // Every ledger with sharing on, newest first, with painting totals (for logged-in players).
+      // Shared ledgers by id (the armies you follow, however long ago they were updated).
+      async listSharedIds(ids){
+        need();
+        ids = [...new Set(ids)].slice(0, 300);
+        const armies = ids.length ? (mustOk(await sb.from(A).select("*").eq("public", true).in("id", ids)) || []).map(toArmy) : [];
+        const got = armies.map(a => a.id);
+        const sum = got.length ? totals(mustOk(await sb.from(U).select(SUM_COLS).in("army_id", got)) || []) : {};
+        return {armies, sum};
+      },
       async listShared(){
         need();
         const armies = (mustOk(await sb.from(A).select("*").eq("public", true).order("updated_at", {ascending: false}).limit(150)) || []).map(toArmy);
