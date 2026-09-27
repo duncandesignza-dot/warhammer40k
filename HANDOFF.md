@@ -139,6 +139,11 @@ python3 tools/build_factions.py bsdata && python3 tools/build_sheets.py bsdata
 - **Livery:**
   - `liveryData()` returns armies and a summary. Only owned units count; War-only armies with no owned units are hidden.
   - `ownedUnits(armyId)`, `unitOwned(u)`, `paintStatus`, `viewLedger` (the big ledger page), `viewSetup` (colours).
+  - Overview: **Before your events** (`drawEventPaint`, `paintJob(list, units)`, `perDay`): for each upcoming event you're going to, the models left to paint in your list, days to go and models a day. The War event card shows the same line. **Up next** (`drawUpNext`, `nextStageOf`, `paintShare`): starred units and ones at least half done, with the next stage.
+  - Collection (`#/livery/collection`): Select, then set a stage, All painted, Star or Unstar across units in any ledger (`wireRosterBatch`, `rosterSel`). The ledger page has its own batch bar.
+  - Paints: tap an owned paint to mark it low, then empty (`settings.paintLow`, `paintLevels`/`setPaintLevel`); low and empty paints head the To buy list, and "Bought more" clears it.
+  - Unit photos: "Before and after" (`openBeforeAfter`, a wipe slider; before is the first extra photo, after the main one, and with 3+ photos you can pick) and, for a painted unit with a photo, "Share image" (`makeShareImage`: a 1080×1350 JPEG with the photo, name, army and models painted; Share where the browser can, otherwise Download). Photos from Supabase are drawn with `crossOrigin` and a `?share=1` address so the service worker's copy doesn't block it.
+- **Community** (`#/community`, `viewCommunity`): in the header (icon only below 1100px, and in the account menu; hidden from the header below 480px) for logged-in players. For now: events coming up, a link to Shared armies, and Spotlights and Painting events marked Coming soon.
 
 ## Data model (what's saved)
 
