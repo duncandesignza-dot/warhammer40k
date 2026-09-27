@@ -41,7 +41,7 @@ Cloudflare needed `"previews": {}` in `wrangler.jsonc` for the Workers Builds ch
 
 ## Adding an event (when the owner asks)
 
-Players can't add events: the owner asks for one, and it's added by hand to `js/data/events.js`. They show on War Ledger's Events page, on Play on the day, on Community, and in Livery's "Before your events".
+Players can't add events: the owner asks for one, and it's added by hand to `js/data/events.js`. They show on War Ledger's Events page, on Battles (Play a game) on the day, on Community, and in Livery's "Before your events".
 
 **What the owner gives you:**
 - its name and date
@@ -210,7 +210,7 @@ python3 tools/build_factions.py bsdata && python3 tools/build_sheets.py bsdata
 ## Product decisions to keep
 
 - **An army is what you own**, in both tools (the same units). **A list is for testing**: units from your army plus datasheets you don't own, marked "Not owned", with "You own 3 of 4 units · 160 pts not owned" at the top.
-- War tabs: Overview (`#/war`), Armoury (`#/war/armoury`), Army lists, Datasheets, Play, Battles, Events, To buy (with a count). Phones' bottom bar has Overview, Armoury, Lists, Play, Battles and To buy (the bar sizes its columns from `--bn-n`); Datasheets and Events are buttons on the Overview, shown only on phones (`.phone-only`), since the tabs have them elsewhere.
+- War tabs: Overview (`#/war`), Armoury (`#/war/armoury`), Army lists, Datasheets, Battles, Events, To buy (with a count). Battles starts with **Play a game** (`playHtml`: today's event, games in progress, and a list picker that opens Game day at `#/war/list/<id>/play`); `#/war/play` redirects to Battles. Phones' bottom bar has Overview, Armoury, Lists, Battles and To buy (the bar sizes its columns from `--bn-n`); Datasheets and Events are buttons on the Overview, shown only on phones (`.phone-only`), since the tabs have them elsewhere.
 - **Overview** (`viewWarDash()`/`drawWarDash(D, q, false)` + `warOverview`): the profile header (armies, points, lists, record; an Armoury button with the unit count, New army, Import, Help, Settings), getting started, force composition, your armies, the latest three lists, the last three battles with Log a battle, events coming up and what your lists want to buy. No Add unit here.
 - **Armoury** (`viewWarDash("armoury")`, `#/war/armoury`): every unit you own by faction, with units, models, points, painting (read-only, from Livery's `painted`), how many lists use each unit and the faction's record, plus + Add unit. `#/war/collection` and `#/war/armies` redirect here.
 - **Army lists**: every army with its "Full army" card (`fullArmyCard`, opens `#/war/army/<id>`) then its lists. Army pages sit under Army lists; their More menu has "Make a list of the whole army".

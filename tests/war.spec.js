@@ -886,8 +886,8 @@ test("events: sign up with a list, see its points checked, play it on the day an
   await expect(page.locator(".ev")).toHaveCount(1);
   await page.selectOption("#ev-show", "club");
   await expect(page.locator(".ev .ev-h")).toHaveText(["Winter GT", "Old one"]);
-  // It's on Play too, as today's event, and your sign-up is kept with your settings.
-  await open(page, "#/war/play");
+  // It's on Battles too, as today's event, and your sign-up is kept with your settings.
+  await open(page, "#/war/battles");
   await expect(page.locator('section:has(#pp-today) .pp-rows li')).toContainText("Club night");
   expect(JSON.parse(await page.evaluate(() => localStorage.getItem("ll-settings"))).eventLog).toEqual({"club-night": {listId: "l1", notes: "Table 4"}});
   // Not going after all.
@@ -937,10 +937,13 @@ test("online, moving between War Ledger pages reads your data once, and a change
   expect((await reads()).units).toBeGreaterThan(first.units);
 });
 
-test("play: pick a list, and carry on a game in progress", async ({page}) => {
+test("play is on Battles: pick a list, and carry on a game in progress", async ({page}) => {
   await seed(page);
   await page.evaluate(() => localStorage.setItem("ll-play-l1", JSON.stringify({round: 3, cp: [1, 1], vp: [[10, 5], [5, 5], [null, null], [null, null], [null, null]], dead: []})));
   await open(page, "#/war/play");
+  await expect(page).toHaveURL(/#\/war\/battles$/);
+  await expect(page.locator('.war-tabs a[href="#/war/play"]')).toHaveCount(0);
+  await expect(page.locator("#pp-go-btn")).toHaveAttribute("href", "#/war/list/l1/play");
   const going = page.locator("section:has(#pp-go) li");
   await expect(going).toContainText("Round 3 · 15–10");
   await going.getByRole("link", {name: "Carry on"}).click();
