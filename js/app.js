@@ -262,7 +262,7 @@
       nav.innerHTML = `<button type="button" class="btn-sm ghost" data-auth-open="in">Log in</button><button type="button" class="btn-sm primary" data-auth-open="up">Sign up</button>`;
       return;
     }
-    const comm = `<a class="top-comm" href="#/community" title="Community"${(location.hash || "").startsWith("#/community") ? ` aria-current="page"` : ""}><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3 19c.6-3.3 3-5 6-5s5.4 1.7 6 5"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14.2c2.6-.2 4.5 1.3 5 4.3"/></svg><span>Community</span></a>`;
+    const comm = `<a class="top-comm" href="#/community" title="Community"${(location.hash || "").startsWith("#/community") ? ` aria-current="page"` : ""}><span class="tc-ico">${LOGO_COMMUNITY}</span><span class="tc-l">Community</span></a>`;
     nav.innerHTML = comm + sw + `<div class="acct">
       <button type="button" class="acct-btn" id="b-acct" aria-haspopup="menu" aria-expanded="false" aria-controls="acct-menu" aria-label="Account menu for ${esc(a.name)}">${avatarHtml(a)}<span class="acct-name">${esc(a.name)}</span>${CARET}</button>
       <div class="acct-menu" id="acct-menu" role="menu" hidden>
@@ -4116,6 +4116,8 @@
      ============================================================ */
   const LOGO_DROP = `<svg viewBox="0 0 64 64" width="34" height="34" aria-hidden="true"><path d="M32 3.5 55 10.5V29c0 14.6-9.6 25.5-23 31.5C18.6 54.5 9 43.6 9 29V10.5Z" fill="#3ddc84"/><path d="M32 17.5s-9 10.4-9 17.2a9 9 0 0 0 18 0c0-6.8-9-17.2-9-17.2Z" fill="#f2f6f3" stroke="#06080a" stroke-width="3" stroke-linejoin="round"/></svg>`;
   const LOGO_SWORDS = `<svg viewBox="0 0 64 64" width="34" height="34" aria-hidden="true"><path d="M32 3.5 55 10.5V29c0 14.6-9.6 25.5-23 31.5C18.6 54.5 9 43.6 9 29V10.5Z" fill="#ec5a5f"/><g stroke-linecap="round" stroke-linejoin="round"><g stroke="#06080a"><path d="M22 17.5 38 39M42 17.5 26 39" stroke-width="7"/><path d="M33.5 42.5 42.5 35.5M30.5 42.5 21.5 35.5" stroke-width="6"/></g><path d="M22 17.5 38 39M42 17.5 26 39" stroke="#f2f6f3" stroke-width="3.4"/><path d="M33.5 42.5 42.5 35.5M30.5 42.5 21.5 35.5" stroke="#cdd5d1" stroke-width="2.6"/></g></svg>`;
+  // Community: the same shield, in gold (it belongs to both tools), with two painters.
+  const LOGO_COMMUNITY = `<svg viewBox="0 0 64 64" width="34" height="34" aria-hidden="true"><path d="M32 3.5 55 10.5V29c0 14.6-9.6 25.5-23 31.5C18.6 54.5 9 43.6 9 29V10.5Z" fill="#f5b83d"/><g transform="translate(32 33) scale(.82) translate(-32.5 -34.5)" stroke="#06080a" stroke-width="3.4" stroke-linejoin="round"><circle cx="40" cy="22.5" r="5" fill="#cdd5d1"/><path d="M31 42.5c0-6.2 4-10.2 9-10.2s9 4 9 10.2Z" fill="#cdd5d1"/><circle cx="27" cy="25" r="6.2" fill="#f2f6f3"/><path d="M16 46.5c0-7.4 4.8-12 11-12s11 4.6 11 12Z" fill="#f2f6f3"/></g></svg>`;
   // A feature's picture: img/shots/<name>.webp when it's been added, otherwise a drawing made from the app's own parts.
   const shot = (name, alt, art) => `<figure class="shot" data-shot="${name}"><div class="shot-art" aria-hidden="true">${art}</div><img src="img/shots/${name}.webp" alt="${esc(alt)}" loading="lazy" decoding="async"></figure>`;
   const paintName = l => String(l || "").replace(/^Citadel\s+/, "").replace(/\s*\([^)]*\)\s*$/, "");

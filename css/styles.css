@@ -2023,12 +2023,16 @@ body.loading::before{content:"";position:fixed;top:0;left:0;right:0;height:3px;z
 .un-next{display:flex;flex-direction:column;align-items:flex-end;font-size:.86rem;font-weight:600;color:var(--brand);white-space:nowrap}
 .un-next small{font-family:var(--mono);font-size:.6rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:700}
 /* Community: in the header for logged-in players, and its page. */
-.top-comm{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:0 14px;border:1px solid var(--line-strong);border-radius:99px;background:var(--surface-2);color:var(--muted);font-size:.86rem;font-weight:700;text-decoration:none;transition:color .2s,border-color .2s,background .2s}
-.top-comm:hover,.top-comm[aria-current]{color:var(--ink);border-color:var(--brand-line)}
-.top-comm[aria-current]{background:rgba(var(--brand-rgb),.12)}
-@media (min-width:900px){.top-comm{min-height:54px;padding:0 18px;border-radius:16px;background:rgba(13,17,20,.72);font-family:var(--display);font-size:.95rem;font-weight:800}}
+.top-comm{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:0 14px 0 8px;border:1px solid var(--line-strong);border-radius:99px;background:var(--surface-2);color:var(--muted);font-size:.86rem;font-weight:700;text-decoration:none;transition:color .2s,border-color .2s,background .2s,box-shadow .2s}
+/* Its shield is grey until you point at it or you're on the page, like the Livery and War ones. */
+.tc-ico{display:grid;place-items:center;flex:none;opacity:.55;filter:grayscale(.7);transition:opacity .2s,filter .2s}
+.tc-ico svg{width:24px;height:24px}
+.top-comm:hover .tc-ico,.top-comm[aria-current] .tc-ico{opacity:1;filter:none}
+.top-comm:hover{color:var(--ink);background:rgba(255,255,255,.05)}
+.top-comm[aria-current]{color:var(--ink);background:rgba(245,184,61,.12);border-color:rgba(245,184,61,.5);box-shadow:0 8px 24px -12px rgba(245,184,61,.7)}
+@media (min-width:900px){.top-comm{min-height:54px;padding:0 18px 0 10px;gap:10px;border-radius:16px;background:rgba(13,17,20,.72);font-family:var(--display);font-size:.95rem;font-weight:800}.tc-ico svg{width:30px;height:30px}}
+@media (max-width:1099px){.top-comm{width:40px;padding:0;justify-content:center}.top-comm .tc-l{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}.top-comm .tc-ico{opacity:1;filter:none}}
 @media (min-width:900px) and (max-width:1099px){.top-comm{width:54px}}
-@media (max-width:1099px){.top-comm{width:40px;padding:0;justify-content:center}.top-comm span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}}
 /* On a phone there isn't room in the header: Community is in the account menu. */
 @media (max-width:480px){.top-comm{display:none}}
 .cm-evs{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px}
