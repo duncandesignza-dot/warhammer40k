@@ -255,15 +255,15 @@
   }
   const clearOfflineData = () => { try { navigator.serviceWorker && navigator.serviceWorker.controller && navigator.serviceWorker.controller.postMessage({type: "clear-data"}); } catch(e){} };
   function setTop(){
-    const nav = $("topnav"), a = store.kind === "supabase" ? acct() : null, war = isWar();
-    const sw = `<div class="mode-switch" role="group" aria-label="Switch between Livery Ledger and War Ledger"><a href="#/livery"${war ? "" : ` aria-current="true"`}><span class="ms-ico">${LOGO_DROP}</span><span class="ms-text"><span class="ms-long">Livery<span class="ms-full" aria-hidden="true"> Ledger</span></span><span class="ms-sub" aria-hidden="true">Paint your army</span></span><span class="ms-short" aria-hidden="true">L</span><span class="sr-only"> Ledger: painting</span></a><a href="#/war"${war ? ` aria-current="true"` : ""}><span class="ms-ico">${LOGO_SWORDS}</span><span class="ms-text"><span class="ms-long">War<span class="ms-full" aria-hidden="true"> Ledger</span></span><span class="ms-sub" aria-hidden="true">Command your army</span></span><span class="ms-short" aria-hidden="true">W</span><span class="sr-only"> Ledger: your fighting force</span></a></div>`;
+    const nav = $("topnav"), a = store.kind === "supabase" ? acct() : null, war = isWar(), comm = document.documentElement.dataset.page === "community";
+    const sw = `<div class="mode-switch" role="group" aria-label="Switch between Livery Ledger and War Ledger"><a href="#/livery"${war || comm ? "" : ` aria-current="true"`}><span class="ms-ico">${LOGO_DROP}</span><span class="ms-text"><span class="ms-long">Livery<span class="ms-full" aria-hidden="true"> Ledger</span></span><span class="ms-sub" aria-hidden="true">Paint your army</span></span><span class="ms-short" aria-hidden="true">L</span><span class="sr-only"> Ledger: painting</span></a><a href="#/war"${war && !comm ? ` aria-current="true"` : ""}><span class="ms-ico">${LOGO_SWORDS}</span><span class="ms-text"><span class="ms-long">War<span class="ms-full" aria-hidden="true"> Ledger</span></span><span class="ms-sub" aria-hidden="true">Command your army</span></span><span class="ms-short" aria-hidden="true">W</span><span class="sr-only"> Ledger: your fighting force</span></a></div>`;
     if(store.kind !== "supabase"){ nav.innerHTML = sw; return; }
     if(!a){
       nav.innerHTML = `<button type="button" class="btn-sm ghost" data-auth-open="in">Log in</button><button type="button" class="btn-sm primary" data-auth-open="up">Sign up</button>`;
       return;
     }
-    const comm = `<a class="top-comm" href="#/community" title="Community"${(location.hash || "").startsWith("#/community") ? ` aria-current="page"` : ""}><span class="tc-ico">${LOGO_COMMUNITY}</span><span class="tc-l">Community</span></a>`;
-    nav.innerHTML = comm + sw + `<div class="acct">
+    const commLink = `<a class="top-comm" href="#/community" title="Community"${comm ? ` aria-current="page"` : ""}><span class="tc-ico">${LOGO_COMMUNITY}</span><span class="tc-l">Community</span></a>`;
+    nav.innerHTML = commLink + sw + `<div class="acct">
       <button type="button" class="acct-btn" id="b-acct" aria-haspopup="menu" aria-expanded="false" aria-controls="acct-menu" aria-label="Account menu for ${esc(a.name)}">${avatarHtml(a)}<span class="acct-name">${esc(a.name)}</span>${CARET}</button>
       <div class="acct-menu" id="acct-menu" role="menu" hidden>
         <div class="acct-head">${avatarHtml(a, "lg")}<span><strong>${esc(a.name)}</strong><small>${esc(a.email)}</small></span></div>
@@ -573,6 +573,8 @@
     // Old links to the profile page now open Livery Ledger's overview.
     if(parts[0] === "profile"){ history.replaceState(null, "", "#/livery"); lastHash = location.hash; parts.splice(0, parts.length, "livery"); }
     setMode(parts[0] === "war" ? "war" : ["livery", "army", "new"].includes(parts[0]) ? "livery" : savedMode());
+    // Community belongs to both tools: its page is gold, and neither Livery nor War is lit in the switch.
+    if(parts[0] === "community") document.documentElement.dataset.page = "community"; else delete document.documentElement.dataset.page;
     document.querySelectorAll("dialog.wdlg[open]").forEach(d => d.close());
     setTop(); setBotNav(parts);
     try {

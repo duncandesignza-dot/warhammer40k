@@ -174,6 +174,7 @@ python3 tools/build_factions.py bsdata && python3 tools/build_sheets.py bsdata
   - **Scheme lab** (unit detail → Scheme lab; `openLab` in `viewLedger`): two or three schemes side by side with pictures, suggestions (darker trim, metallic trim, a spot colour, lighter armour, swap armour and secondary; paints found with `PU.nearestHex`, yours first), and Use this scheme saves the colours and paints to that unit only.
   - **Painting journal** (unit detail; `journalHtml`, `addJournal`, `delJournal`): `unit.journal` = `[{id, d, t, p}]` (store.js `cleanJournal`), p being one of the unit's gallery photos. Adding a note with a photo adds the photo to the gallery first.
 - **Community** (`#/community`, `viewCommunity`, icon `LOGO_COMMUNITY` / `img/community.svg`: the Livery and War shield in gold with two figures): in the header (icon only below 1100px, and in the account menu; hidden from the header below 480px) for logged-in players. For now: events coming up, a link to Shared armies, and Spotlights and Painting events marked Coming soon.
+  - On the Community page `html[data-page="community"]` turns the accents gold (the `--brand` variables), neither side of the Livery/War switch is lit, and the header logo shows the two figures over "Livery Ledger". The saved mode (`ll-mode`) is left as it was.
 
 ## Data model (what's saved)
 

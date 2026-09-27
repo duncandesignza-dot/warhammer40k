@@ -1281,10 +1281,23 @@ html[data-mode="war"]{
 }
 :root{--mark-dark:#0b2418}
 html[data-mode="war"]{--mark-dark:#2a0709}
+/* Community: gold, the colour of its shield. */
+html[data-page="community"]{
+  --brand:#f5b83d; --brand-2:#ffd36b; --brand-ink:#1c1402;
+  --brand-rgb:245,184,61; --brand-2-rgb:255,211,107; --brand-hi:#ffcf6e; --brand-deep:#c28a1c;
+  --focus:#ffd98a; --mark-dark:#2a1f05;
+}
+/* Club and national tags would both be gold here: club goes plain. */
+html[data-page="community"] .ev-kind.club{color:var(--ink);background:rgba(255,255,255,.06);border-color:var(--line-strong)}
 .brand-mark .mk-war,.bw-war{display:none}
 html[data-mode="war"] .brand-mark .mk-war{display:inline}
 html[data-mode="war"] .brand-mark .mk-livery,html[data-mode="war"] .bw-livery{display:none}
 html[data-mode="war"] .bw-war{display:inline}
+/* On the Community page the logo carries its two figures, under the site's name. */
+.brand-mark .mk-comm{display:none}
+html[data-page="community"] .brand-mark .mk-comm{display:inline}
+html[data-page="community"] .brand-mark .mk-livery,html[data-page="community"] .brand-mark .mk-war,html[data-page="community"] .bw-war{display:none}
+html[data-page="community"] .bw-livery{display:inline}
 
 /* ---------- Livery / War switch in the top bar ---------- */
 .mode-switch{display:inline-flex;padding:3px;gap:2px;border:1px solid var(--line-strong);border-radius:99px;background:var(--surface-2)}
