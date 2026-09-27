@@ -648,9 +648,11 @@ test("the shopping list gathers units you don't own from every list, and buying 
   await seed(page, `db.lists.push({id: "l2", armyId: "a1", name: "Big game", limit: 3000, detachments: [], status: "draft", units: [
     {n: "Gladiator Lancer", sheet: "Gladiator Lancer", role: "Vehicle", count: 1, points: 160, k: "x"}, {n: "Gladiator Lancer", sheet: "Gladiator Lancer", role: "Vehicle", count: 1, points: 160, k: "y"},
     {n: "Hellblaster Squad", sheet: "Hellblaster Squad", role: "Infantry", count: 5, points: 115, k: "z"}], createdAt: "2026-09-02", updatedAt: "2026-09-02"});`);
+  // To buy is a tab, with how many units your lists want.
   await open(page, "#/war/lists");
-  await expect(page.locator('a[href="#/war/buy"]')).toContainText("3");
-  await open(page, "#/war/buy");
+  await expect(page.locator('.war-tabs a[href="#/war/buy"]')).toHaveText("To buy 3");
+  await page.click('.war-tabs a[href="#/war/buy"]');
+  await expect(page.locator('.war-tabs a[aria-current="page"]')).toHaveText("To buy 3");
   // Most wanted first: the Lancer is in both lists, and Big game wants two.
   const rows = page.locator(".buy-rows li");
   await expect(rows).toHaveCount(2);
@@ -793,4 +795,65 @@ test("game day: round, CP and VP at the table, kept through a reload, then logge
   const d = await saved(page);
   expect(d.games.find(g => g.us === 25)).toMatchObject({listId: "l1", opp: "necrons", them: 5, result: "w"});
   expect(await page.evaluate(() => localStorage.getItem("ll-play-l1"))).toBeNull();
+});
+
+test("datasheets: browse a faction, open one and add it to a list as a unit you don't own", async ({page}) => {
+  await seed(page);
+  await open(page, "#/war/datasheets");
+  // Your first army's faction to start with.
+  await expect(page.locator("#dsp-f")).toHaveValue("ultramarines");
+  await page.fill("#dsp-q", "gladiator");
+  await expect(page.locator(".dsp-open")).toHaveCount(3);
+  await page.selectOption("#dsp-s", "high");
+  const names = await page.locator(".dsp-open .lb-name").evaluateAll(els => els.map(e => e.firstChild.textContent.trim()));
+  expect(names[0]).toBe("Gladiator Lancer");
+  await page.click('[data-dsp="Gladiator Reaper"]');
+  await expect(page.locator("#ds-body table").first()).toContainText("Gladiator Reaper");
+  await page.selectOption("#dsp-list", "l1");
+  await page.click("dialog[open] [type=submit]");
+  await expect(page.locator(".toast")).toContainText("Added Gladiator Reaper to Club night");
+  const l = (await saved(page)).lists.find(x => x.id === "l1");
+  expect(l.units[l.units.length - 1]).toMatchObject({n: "Gladiator Reaper", sheet: "Gladiator Reaper", count: 1});
+  // Another faction, remembered next time.
+  await page.selectOption("#dsp-f", "necrons");
+  await expect(page).toHaveURL(/#\/war\/datasheets\/necrons$/);
+  await open(page, "#/war/datasheets");
+  await expect(page.locator("#dsp-f")).toHaveValue("necrons");
+});
+
+test("events: add one with a list, see its points checked, play it on the day and see the result after", async ({page}) => {
+  await seed(page, `db.units.find(u => u.id === "u4").points = 180;`);
+  await open(page, "#/war/events");
+  await page.click(".war-actions [data-ev-new]");
+  await page.fill("#ev-name", "Club night");
+  const today = await page.inputValue("#ev-date");
+  await page.fill("#ev-place", "The Games Room");
+  await page.selectOption("#ev-list", "l1");
+  await page.click("dialog[open] [type=submit]");
+  const ev = page.locator(".ev").first();
+  await expect(ev.locator(".ev-h")).toHaveText("Club night");
+  await expect(ev).toContainText("Today · The Games Room");
+  await expect(ev.locator(".ev-warn")).toContainText("The latest points change this list");
+  await expect(ev.locator('a:has-text("Game day")')).toHaveAttribute("href", "#/war/list/l1/play");
+  // Log a battle from it: the date and list are filled in, and the result shows.
+  await ev.locator("[data-ev-log]").click();
+  await expect(page.locator("#w-gl")).toHaveValue("l1");
+  await expect(page.locator("#w-gd")).toHaveValue(today);
+  await page.click("dialog[open] [type=submit]");
+  await expect(page.locator(".ev .ev-res")).toContainText("Result: 1–0 over 1 game");
+  // It's on Play too, as today's event, and kept with your settings.
+  await open(page, "#/war/play");
+  await expect(page.locator('section:has(#pp-today) .pp-rows li')).toContainText("Club night");
+  expect(JSON.parse(await page.evaluate(() => localStorage.getItem("ll-settings"))).events[0]).toMatchObject({name: "Club night", listId: "l1", date: today});
+});
+
+test("play: pick a list, and carry on a game in progress", async ({page}) => {
+  await seed(page);
+  await page.evaluate(() => localStorage.setItem("ll-play-l1", JSON.stringify({round: 3, cp: [1, 1], vp: [[10, 5], [5, 5], [null, null], [null, null], [null, null]], dead: []})));
+  await open(page, "#/war/play");
+  const going = page.locator("section:has(#pp-go) li");
+  await expect(going).toContainText("Round 3 · 15–10");
+  await going.getByRole("link", {name: "Carry on"}).click();
+  await expect(page).toHaveURL(/#\/war\/list\/l1\/play$/);
+  await expect(page.locator("#gd-round")).toHaveText("3");
 });

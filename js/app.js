@@ -205,6 +205,9 @@
   // Your notes on each faction you play against, kept with the settings so they follow you.
   const oppNotes = () => (settings.oppNotes && typeof settings.oppNotes === "object") ? settings.oppNotes : {};
   const saveOppNote = (fid, text) => { const n = {...oppNotes()}; text = String(text || "").trim().slice(0, 600); if(text) n[fid] = text; else delete n[fid]; return saveSettings({oppNotes: n}); };
+  // Events (tournaments, game nights), kept with the settings too: {id, name, date, place, listId, notes}.
+  const warEvents = () => (Array.isArray(settings.events) ? settings.events : []).filter(e => e && e.id && /^\d{4}-\d{2}-\d{2}$/.test(e.date || ""));
+  const saveEvents = evs => saveSettings({events: evs.slice(-200)});
   // "Sam Smith" → SS, "Sam" → SA; "?" with no name.
   const initialsOf = name => { const bits = String(name || "").split(/[\s._-]+/).filter(Boolean); return bits.length ? (bits[0][0] + (bits.length > 1 ? bits[bits.length - 1][0] : bits[0].slice(1, 2))).toUpperCase() : "?"; };
   function acct(){
@@ -543,6 +546,9 @@
         else if(parts[1] === "battles") await viewWarBattles();
         else if(parts[1] === "buy") await viewWarBuy();
         else if(parts[1] === "points") await viewWarPoints();
+        else if(parts[1] === "datasheets") await viewWarDatasheets(FBY[parts[2]] ? parts[2] : "");
+        else if(parts[1] === "events") await viewWarEvents();
+        else if(parts[1] === "play") await viewWarPlayPick();
         else if(!parts[1]) await viewWarDash();
         else viewNotFound();
       } else
@@ -652,15 +658,17 @@
     shield: '<path d="M12 3 20 6v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/>',
     grid: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
     clip: '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 3h6v3H9zM9 11h6M9 15h6"/>',
-    swords: '<path d="m4 4 11 11M20 4 9 15M7 14l-3 3 3 3 3-3M17 14l3 3-3 3-3-3"/>'
+    swords: '<path d="m4 4 11 11M20 4 9 15M7 14l-3 3 3 3 3-3M17 14l3 3-3 3-3-3"/>',
+    cart: '<path d="M3 4h2l2.4 11h10.2L20 8H6.2"/><circle cx="9" cy="19" r="1.4"/><circle cx="17" cy="19" r="1.4"/>',
+    dice: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8.5 8.5h.01M15.5 8.5h.01M12 12h.01M8.5 15.5h.01M15.5 15.5h.01" stroke-width="3"/>'
   };
   const BOTNAV = {
     livery: {label: "Livery Ledger", items: [["", "Overview", "home"], ["ledgers", "Ledgers", "book"], ["collection", "Collection", "list"], ["paints", "Paints", "drop"], ["activity", "Activity", "chart"]]},
-    war: {label: "War Ledger", items: [["", "Armies", "shield"], ["lists", "Lists", "clip"], ["battles", "Battles", "swords"]]}
+    war: {label: "War Ledger", items: [["", "Armies", "shield"], ["lists", "Lists", "clip"], ["play", "Play", "dice"], ["battles", "Battles", "swords"], ["buy", "To buy", "cart"]]}
   };
   // Which section a page belongs to, so its tab is lit (a ledger counts as Ledgers, an army list as Lists).
   function navSection(parts){
-    if(parts[0] === "war") return ({army: "", armies: "", new: "", collection: "", list: "lists", compare: "lists", buy: "lists", points: "lists"})[parts[1]] ?? (BOTNAV.war.items.some(i => i[0] === parts[1]) ? parts[1] || "" : "");
+    if(parts[0] === "war") return ({army: "", armies: "", new: "", collection: "", list: "lists", compare: "lists", points: "lists", datasheets: "", events: "battles"})[parts[1]] ?? (BOTNAV.war.items.some(i => i[0] === parts[1]) ? parts[1] || "" : "");
     if(parts[0] === "army" || parts[0] === "new") return "ledgers";
     if(parts[0] === "livery") return parts[1] === "new" ? "ledgers" : parts[1] || "";
     return null;
@@ -678,8 +686,10 @@
     nav.innerHTML = cfg.items.map(([k, l, ic]) => `<a href="#/${mode}${k ? "/" + k : ""}"${k === on ? ` aria-current="page"` : ""}><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${NAV_ICON[ic]}</svg><span>${l}</span></a>`).join("");
   }
   // Armies is the overview: your armies are what you own, and lists are where you try out units you don't.
-  const WAR_TABS = [["", "Armies"], ["lists", "Army lists"], ["battles", "Battles"]];
-  const warTabs = on => { on = on === "armies" ? "" : on; return `<nav class="war-tabs" aria-label="War Ledger">${WAR_TABS.map(([k, l]) => `<a href="#/war${k ? "/" + k : ""}"${k === on ? ` aria-current="page"` : ""}>${l}</a>`).join("")}</nav>`; };
+  const WAR_TABS = [["", "Armies"], ["lists", "Army lists"], ["datasheets", "Datasheets"], ["play", "Play"], ["battles", "Battles"], ["events", "Events"], ["buy", "To buy"]];
+  // How many units your lists want that you don't own, for the To buy tab (worked out whenever War data loads).
+  let buyCount = 0;
+  const warTabs = on => { on = on === "armies" ? "" : on; return `<nav class="war-tabs" aria-label="War Ledger">${WAR_TABS.map(([k, l]) => `<a href="#/war${k ? "/" + k : ""}"${k === on ? ` aria-current="page"` : ""}>${l}${k === "buy" && buyCount ? ` <span class="count">${buyCount}</span>` : ""}</a>`).join("")}</nav>`; };
   const missingBanner = D => D.warMissing ? `<div class="banner"><span class="dot warn"></span><span>Army lists and battle reports need a quick database update. Run <strong>supabase/features.sql</strong> in Supabase to turn them on.</span></div>` : "";
 
   let flashTimer = 0;
@@ -791,6 +801,7 @@
     const D = {armies: own.filter(a => !isPool(a)), pools: own.filter(isPool), units, lists, games, warMissing};
     D.byArmy = id => D.units.filter(u => u.armyId === id);   // reads the current units, so edits show straight away
     if(await movePlanned(D)) return warData();
+    buyCount = shoppingRows(D).reduce((a, r) => a + r.want, 0);
     return D;
   }
   /* An army is what you own; a list can also hold units you don't own. Units that used to be "planned" in an army
@@ -903,7 +914,7 @@
     app.innerHTML = `
       ${profileHead({war: true,
         stats: [[D.armies.length, D.armies.length === 1 ? "Army" : "Armies"], [num(all.models), "Models"], [num(all.points), "Points"], [D.lists.length, D.lists.length === 1 ? "List" : "Lists"]],
-        actions: D.armies.length ? `<a class="btn btn-sm" href="#/war/collection">${LIST_ICON}Your collection<span class="count">${num(mine.length)}</span></a>${settingsBtn}` : ""})}
+        actions: `${D.armies.length ? `<a class="btn btn-sm" href="#/war/collection">${LIST_ICON}Your collection<span class="count">${num(mine.length)}</span></a>` : ""}<a class="btn btn-sm" href="#/war/datasheets">Datasheets</a><a class="btn btn-sm" href="#/war/events">Events</a>${D.armies.length ? settingsBtn : ""}`})}
       ${warTabs("")}
       ${missingBanner(D)}
       <div id="wd-tag"></div>
@@ -1776,7 +1787,7 @@
     app.innerHTML = `
       <section class="page-head war-head">
         <div><p class="eyebrow">War Ledger</p><h1>Army lists</h1><p class="sub">A list is a force to try out: units from your army, plus any you don't own yet. It's what you take to a particular game, and a Crusade force is the Order of Battle you grow over a campaign.</p></div>
-        <div class="war-actions">${D.warMissing ? "" : `${D.armies.length ? `<button type="button" class="primary" data-new-list="">+ New list</button><button type="button" data-new-list="" data-kind="crusade">+ New Crusade force</button>` : ""}<button type="button"${D.armies.length ? "" : ` class="primary"`} data-import-army>Import a list</button><a class="btn" href="#/war/points">Points check</a>${shoppingRows(D).length ? `<a class="btn" href="#/war/buy">Shopping list <span class="count">${shoppingRows(D).reduce((a, r) => a + r.want, 0)}</span></a>` : ""}`}</div>
+        <div class="war-actions">${D.warMissing ? "" : `${D.armies.length ? `<button type="button" class="primary" data-new-list="">+ New list</button><button type="button" data-new-list="" data-kind="crusade">+ New Crusade force</button>` : ""}<button type="button"${D.armies.length ? "" : ` class="primary"`} data-import-army>Import a list</button><a class="btn" href="#/war/points">Points check</a>`}</div>
       </section>
       ${warTabs("lists")}
       ${missingBanner(D)}
@@ -2022,7 +2033,7 @@
             <div class="lb-total${over ? " over" : ""}"><h2 class="ph" id="lb-in-h">In this list</h2><span class="lb-sum"><b>${num(s.points)}</b>${list.limit ? ` / ${num(list.limit)}` : ""} pts${list.limit ? ` · ${over ? `${num(s.points - list.limit)} over` : `${num(list.limit - s.points)} left`}` : ""}</span>
               ${list.limit ? `<div class="wbar" aria-hidden="true"><i style="width:${Math.min(100, pctOf(s.points, list.limit))}%"></i></div>` : ""}<button type="button" class="btn-sm lb-jump" data-jump-add>+ Add units</button></div>
             ${s.rows.length && !s.gone.length || s.notOwned.length ? `<p class="lb-own" aria-live="polite">${s.notOwned.length
-              ? `You own ${s.rows.length - s.gone.length - s.notOwned.length} of ${plural(s.rows.length - s.gone.length, "unit")} · <b>${ptsText(s.notOwnedPts)}</b> not owned <button type="button" class="btn-sm" data-own-all>Mark all as owned</button><a href="#/war/buy">Shopping list</a>`
+              ? `You own ${s.rows.length - s.gone.length - s.notOwned.length} of ${plural(s.rows.length - s.gone.length, "unit")} · <b>${ptsText(s.notOwnedPts)}</b> not owned <button type="button" class="btn-sm" data-own-all>Mark all as owned</button><a href="#/war/buy">To buy</a>`
               : `You own every unit in this list.`}</p>` : ""}
             ${configRow()}
             ${s.rows.length ? byRole(s.rows.filter(x => !x.gone)).map(([role, rows]) => `<h3 class="lb-role">${esc(role)} <small>${ptsText(rows.reduce((a, x) => a + x.points, 0))}</small></h3>
@@ -2656,6 +2667,163 @@
     wrap.addEventListener("pointermove", show); wrap.addEventListener("pointerdown", show);
     wrap.addEventListener("pointerleave", () => { tip.hidden = true; });
   }
+  /* ---------- datasheets ----------
+     Every datasheet of a faction, without making a list first: search, filter by role, sort by points, open one
+     to see its profiles, and add it to one of your lists as a unit you don't own yet. */
+  async function viewWarDatasheets(fid){
+    const D = await warData();
+    let prefs = {};
+    try { prefs = JSON.parse(localStorage.getItem("ll-ds-prefs") || "{}") || {}; } catch(e){}
+    fid = fid || (FBY[prefs.f] ? prefs.f : "") || (D.armies[0] || {}).faction || "space-marines";
+    let q = "", role = "", legends = false, sort = ["name", "low", "high"].includes(prefs.sort) ? prefs.sort : "name";
+    view.name = "war-datasheets"; document.title = `${factionName(fid)} datasheets · War Ledger`;
+    const roleOf = sh => ROLE_ORDER.includes(sh.r) ? sh.r : "Other";
+    const sizes = sh => sh.ms && sh.ms[1] > sh.ms[0] ? `${sh.ms[0]}–${sh.ms[1]} models` : plural(minModels(sh), "model");
+    const from = sh => sheetPts(sh, minModels(sh));
+    app.innerHTML = `
+      <section class="page-head war-head">
+        <div><p class="eyebrow">War Ledger</p><h1>Datasheets</h1><p class="sub">Every datasheet for a faction, with its points and profiles. Add one to a list to try it before you buy it.</p></div>
+      </section>
+      ${warTabs("datasheets")}
+      <div class="war-filters ds-filters">
+        ${factionSelect("dsp-f", fid, "").replace("<select ", `<select aria-label="Faction" class="ds-f" `)}
+        <input type="search" id="dsp-q" placeholder="Search datasheets" aria-label="Search datasheets">
+        <select id="dsp-r" aria-label="Role"><option value="">All roles</option></select>
+        <select id="dsp-s" aria-label="Sort"><option value="name"${sort === "name" ? " selected" : ""}>Name</option><option value="low"${sort === "low" ? " selected" : ""}>Points (fewest first)</option><option value="high"${sort === "high" ? " selected" : ""}>Points (most first)</option></select>
+        <label class="chk"><input type="checkbox" id="dsp-l"><span>Legends</span></label>
+      </div>
+      <p class="hint" id="dsp-n" aria-live="polite"></p>
+      <div id="dsp-out"></div>`;
+    function fillRoles(){ $("dsp-r").innerHTML = `<option value="">All roles</option>${ROLE_ORDER.filter(r => sheetsOf(fid).some(sh => roleOf(sh) === r)).map(r => `<option${r === role ? " selected" : ""}>${esc(r)}</option>`).join("")}`; }
+    function draw(){
+      const all = sheetsOf(fid).filter(sh => (legends || !sh.t) && (!role || roleOf(sh) === role) && (!q || sh.n.toLowerCase().includes(q)));
+      const by = {name: (a, b) => a.n.localeCompare(b.n), low: (a, b) => (from(a) ?? 1e9) - (from(b) ?? 1e9) || a.n.localeCompare(b.n), high: (a, b) => (from(b) ?? -1) - (from(a) ?? -1) || a.n.localeCompare(b.n)}[sort];
+      $("dsp-n").textContent = `${plural(all.length, "datasheet")}${q || role ? " match" : ""}`;
+      $("dsp-out").innerHTML = all.length ? (sort === "name" ? ROLE_ORDER.map(r => [r, all.filter(sh => roleOf(sh) === r)]).filter(g => g[1].length) : [["", all]]).map(([r, shs]) => `
+        ${r ? `<h2 class="lb-role">${esc(r)}</h2>` : ""}<ul class="dsp-rows">${shs.slice().sort(by).map(sh => `<li>
+          <button type="button" class="dsp-open" data-dsp="${esc(sh.n)}"><span class="lb-name">${esc(sh.n)}${sh.t ? ` <span class="tag">${esc(sh.t)}</span>` : ""}<small>${esc([sort === "name" ? "" : roleOf(sh), sizes(sh)].filter(Boolean).join(" · "))}</small></span>
+          <span class="lb-pts">${from(sh) != null ? `${num(from(sh))}` : "–"}</span></button></li>`).join("")}</ul>`).join("")
+        : `<p class="hint">No datasheets match.</p>`;
+    }
+    function openSheet(name){
+      const sh = sheetByName(fid, name); if(!sh) return;
+      const lists = D.lists.filter(l => l.status !== "archived" && D.armies.some(a => a.id === l.armyId && fitsFaction(a.faction, sh.n)));
+      const d = modal(esc(sh.n), `
+        <p class="sub ds-sub">${esc([roleOf(sh), sh.t, sizes(sh), from(sh) != null ? `from ${ptsText(from(sh))}` : ""].filter(Boolean).join(" · "))}</p>
+        ${lists.length ? `<div class="row-actions"><label class="dsp-add"><span class="sr-only">Add to</span><select id="dsp-list">${lists.map(l => `<option value="${esc(l.id)}">${esc(l.name)} (${esc((D.armies.find(a => a.id === l.armyId) || {}).name || "")})</option>`).join("")}</select></label><button type="submit" class="primary">Add to this list</button></div>`
+          : `<p class="hint">Make an army list for ${esc(factionName(fid))} to try this unit in one.</p>`}
+        <div id="ds-body" class="ds" aria-live="polite"><p class="hint">Loading the datasheet…</p></div>`, "wide");
+      loadSheets(fid).then(find => { const b = $("ds-body"); if(b) b.innerHTML = datasheetHtml(find(sh.n), ""); });
+      d.querySelector("form").addEventListener("submit", async ev => {
+        ev.preventDefault();
+        const l = lists.find(x => x.id === $("dsp-list").value); if(!l) return;
+        const count = minModels(sh);
+        try {
+          const units = l.units.concat({n: sh.n, sheet: sh.n, role: roleOf(sh), count, points: sheetPts(sh, count) ?? 0, k: entryKey()});
+          await store.saveList({...l, units}, l.id);
+          l.units = units; d.close(); flash(`Added ${sh.n} to ${l.name}, as a unit you don't own yet.`);
+        } catch(err){ console.error(err); flash("Couldn't add it: " + errText(err)); }
+      });
+    }
+    fillRoles(); draw();
+    $("dsp-f").addEventListener("change", e => { fid = e.target.value; role = ""; try { localStorage.setItem("ll-ds-prefs", JSON.stringify({f: fid, sort})); } catch(err){} history.replaceState(null, "", "#/war/datasheets/" + fid); lastHash = location.hash; document.title = `${factionName(fid)} datasheets · War Ledger`; fillRoles(); draw(); });
+    $("dsp-q").addEventListener("input", e => { q = e.target.value.trim().toLowerCase(); draw(); });
+    $("dsp-r").addEventListener("change", e => { role = e.target.value; draw(); });
+    $("dsp-s").addEventListener("change", e => { sort = e.target.value; try { localStorage.setItem("ll-ds-prefs", JSON.stringify({f: fid, sort})); } catch(err){} draw(); });
+    $("dsp-l").addEventListener("change", e => { legends = e.target.checked; draw(); });
+    onApp(e => { const b = e.target.closest("[data-dsp]"); if(b) openSheet(b.dataset.dsp); });
+  }
+  /* ---------- events ----------
+     Tournaments and game nights: when and where, the list you're taking (with its points checked against the
+     latest datasheets), a way into Game day on the day, and afterwards the battles you logged with that list that day. */
+  async function viewWarEvents(){
+    let D = await warData();
+    view.name = "war-events"; document.title = "Events · War Ledger";
+    const today = isoDay(new Date());
+    const daysTo = d => Math.round((new Date(d + "T00:00:00") - new Date(today + "T00:00:00")) / DAY_MS);
+    function card(ev){
+      const l = ev.listId && D.lists.find(x => x.id === ev.listId), a = l && D.armies.find(x => x.id === l.armyId);
+      const n = daysTo(ev.date), past = n < 0, gs = l ? D.games.filter(g => g.listId === l.id && g.date === ev.date) : [];
+      const s = l && listState(l, D), ch = l && a ? latestChanges(l, s, a.faction) : null, over = l && l.limit && s.points > l.limit;
+      const when = n === 0 ? "Today" : n === 1 ? "Tomorrow" : n > 1 ? `In ${n} days` : `${-n === 1 ? "Yesterday" : `${-n} days ago`}`;
+      return `<section class="panel ev${n === 0 ? " today" : ""}" aria-labelledby="ev-${esc(ev.id)}">
+        <div class="ev-top"><div><h2 class="ev-h" id="ev-${esc(ev.id)}">${esc(ev.name)}</h2>
+          <small>${esc([dayText(ev.date), when, ev.place].filter(Boolean).join(" · "))}</small></div>
+          <button type="button" class="btn-sm" data-ev-edit="${esc(ev.id)}" aria-label="Edit ${esc(ev.name)}">Edit</button></div>
+        ${l ? `<p class="ev-list">Taking <a href="#/war/list/${esc(l.id)}">${esc(l.name)}</a> <small>${esc([a ? a.name : "", ptsText(s.points) + (l.limit ? ` of ${num(l.limit)}` : "")].filter(Boolean).join(" · "))}</small></p>` : `<p class="hint">No list chosen yet.</p>`}
+        ${!past && ch && ch.items.length ? `<p class="ev-warn">The latest points change this list (${num(s.points)} → ${num(ch.next)} pts). <a href="#/war/points">Points check</a></p>` : ""}
+        ${!past && over ? `<p class="ev-warn">${ptsText(s.points - l.limit)} over its limit.</p>` : ""}
+        ${ev.notes ? `<p class="ev-notes">${esc(ev.notes)}</p>` : ""}
+        ${past || n === 0 ? `<p class="ev-res">${gs.length ? `Result: <b>${recText(recordOf(gs))}</b> over ${plural(gs.length, "game")}` : "No battles logged for it yet."}</p>` : ""}
+        <div class="row-actions">${l && n >= 0 ? `<a class="btn btn-sm${n === 0 ? " primary" : ""}" href="#/war/list/${esc(l.id)}/play">Game day</a>` : ""}${l && n <= 0 ? `<button type="button" class="btn-sm" data-ev-log="${esc(ev.id)}">Log a battle</button>` : ""}</div>
+      </section>`;
+    }
+    function draw(){
+      const evs = warEvents(), up = evs.filter(e => e.date >= today).sort((a, b) => a.date.localeCompare(b.date)), past = evs.filter(e => e.date < today).sort((a, b) => b.date.localeCompare(a.date));
+      app.innerHTML = `
+        <section class="page-head war-head">
+          <div><p class="eyebrow">War Ledger</p><h1>Events</h1><p class="sub">Tournaments and game nights: when, where and which list you're taking, then how it went.</p></div>
+          <div class="war-actions"><button type="button" class="primary" data-ev-new>+ New event</button></div>
+        </section>
+        ${warTabs("events")}
+        ${evs.length ? `${up.length ? `<section class="war-sec" aria-labelledby="ev-up"><div class="sec-h"><h2 id="ev-up">Coming up</h2></div><div class="ev-list-grid">${up.map(card).join("")}</div></section>` : ""}
+          ${past.length ? `<section class="war-sec" aria-labelledby="ev-past"><div class="sec-h"><h2 id="ev-past">Past events</h2></div><div class="ev-list-grid">${past.map(card).join("")}</div></section>` : ""}`
+          : `<section class="panel war-empty"><h2>No events yet</h2><p class="sub">Add your next tournament or game night, choose the list you're taking, and War Ledger checks its points and takes you to Game day on the day.</p><button type="button" class="primary" data-ev-new>+ New event</button></section>`}`;
+    }
+    function edit(ev){
+      const lists = D.lists.filter(l => l.status !== "archived" || (ev && l.id === ev.listId));
+      const d = modal(ev ? "Edit event" : "New event", `
+        <div class="wgrid">
+          <label class="span2">Name<input id="ev-name" maxlength="80" value="${esc(ev ? ev.name : "")}" placeholder="e.g. Club night or Winter GT"></label>
+          <label>Date<input id="ev-date" type="date" value="${esc(ev ? ev.date : today)}"></label>
+          <label class="span3"><span>Where <span class="opt">(optional)</span></span><input id="ev-place" maxlength="80" value="${esc(ev ? ev.place || "" : "")}"></label>
+          <label class="span3">List you're taking<select id="ev-list"><option value="">Not chosen yet</option>${lists.map(l => `<option value="${esc(l.id)}"${ev && ev.listId === l.id ? " selected" : ""}>${esc(l.name)} (${esc((D.armies.find(a => a.id === l.armyId) || {}).name || "")})</option>`).join("")}</select></label>
+        </div>
+        <label>Notes<textarea id="ev-notes" rows="3" maxlength="600" placeholder="Missions, time, what to bring">${esc(ev ? ev.notes || "" : "")}</textarea></label>
+        <div class="row-actions"><button type="submit" class="primary">${ev ? "Save event" : "Add event"}</button>${ev ? `<button type="button" class="danger" id="ev-del">Delete</button>` : ""}<span class="msg" id="ev-msg" role="status"></span></div>`);
+      d.querySelector("form").addEventListener("submit", async e => {
+        e.preventDefault();
+        const name = $("ev-name").value.trim(), date = $("ev-date").value;
+        if(!name){ $("ev-msg").textContent = "Give the event a name."; $("ev-name").focus(); return; }
+        if(!/^\d{4}-\d{2}-\d{2}$/.test(date)){ $("ev-msg").textContent = "Choose a date."; $("ev-date").focus(); return; }
+        const row = {id: ev ? ev.id : entryKey(), name, date, place: $("ev-place").value.trim(), listId: $("ev-list").value, notes: $("ev-notes").value.trim()};
+        try { await saveEvents(ev ? warEvents().map(x => x.id === ev.id ? row : x) : warEvents().concat(row)); d.close(); flash(ev ? "Event saved." : `Added ${name}.`); draw(); }
+        catch(err){ console.error(err); $("ev-msg").textContent = "Couldn't save: " + errText(err); }
+      });
+      if(ev) armButton($("ev-del"), "Press again to delete", async () => { await saveEvents(warEvents().filter(x => x.id !== ev.id)); d.close(); flash("Event deleted."); draw(); });
+      $("ev-name").focus();
+    }
+    draw();
+    onApp(e => {
+      const b = e.target.closest("button"); if(!b) return;
+      if(b.matches("[data-ev-new]")) edit(null);
+      else if(b.dataset.evEdit) edit(warEvents().find(x => x.id === b.dataset.evEdit));
+      else if(b.dataset.evLog){
+        const ev = warEvents().find(x => x.id === b.dataset.evLog), l = ev && D.lists.find(x => x.id === ev.listId); if(!l) return;
+        openGame(D, {armyId: l.armyId, listId: l.id, date: ev.date, mission: ""}, async () => { D = await warData(); draw(); });
+      }
+    });
+  }
+  /* ---------- play: pick a list for Game day ---------- */
+  async function viewWarPlayPick(){
+    const D = await warData();
+    view.name = "war-play-pick"; document.title = "Play · War Ledger";
+    const saved = id => { try { const st = JSON.parse(localStorage.getItem("ll-play-" + id) || "null"); return st && Array.isArray(st.vp) ? st : null; } catch(e){ return null; } };
+    const lists = D.lists.filter(l => l.status !== "archived" && D.armies.some(a => a.id === l.armyId));
+    const going = lists.map(l => [l, saved(l.id)]).filter(x => x[1]);
+    const today = isoDay(new Date()), todays = warEvents().filter(e => e.date === today && e.listId && lists.some(l => l.id === e.listId));
+    const vpOf = (st, side) => st.vp.reduce((a, r) => a + (+r[side] || 0), 0);
+    const row = (l, extra, resume) => { const a = D.armies.find(x => x.id === l.armyId), s = listState(l, D); return `<li>${armyBadge(a, 34)}<span class="lb-name">${esc(l.name)}<small>${esc([a.name, ptsText(s.points), extra].filter(Boolean).join(" · "))}</small></span><a class="btn btn-sm primary" href="#/war/list/${esc(l.id)}/play">${resume ? "Carry on" : "Play"}</a></li>`; };
+    app.innerHTML = `
+      <section class="page-head war-head">
+        <div><p class="eyebrow">War Ledger</p><h1>Play</h1><p class="sub">Which list are you playing? Game day keeps the round, Command Points and score, with your datasheets to hand.</p></div>
+      </section>
+      ${warTabs("play")}
+      ${todays.length ? `<section class="war-sec" aria-labelledby="pp-today"><div class="sec-h"><h2 id="pp-today">Today's event</h2></div><ul class="pp-rows">${todays.map(e => row(D.lists.find(l => l.id === e.listId), e.name)).join("")}</ul></section>` : ""}
+      ${going.length ? `<section class="war-sec" aria-labelledby="pp-go"><div class="sec-h"><h2 id="pp-go">Games in progress</h2></div><ul class="pp-rows">${going.map(([l, st]) => row(l, `Round ${st.round} · ${vpOf(st, 0)}–${vpOf(st, 1)}`, true)).join("")}</ul></section>` : ""}
+      ${lists.length ? D.armies.map(a => [a, lists.filter(l => l.armyId === a.id)]).filter(g => g[1].length).map(([a, ls]) => `<section class="war-sec" aria-labelledby="pp-${esc(a.id)}"><div class="sec-h"><h2 id="pp-${esc(a.id)}">${esc(a.name)}</h2></div><ul class="pp-rows">${ls.map(l => row(l)).join("")}</ul></section>`).join("")
+        : `<section class="panel war-empty"><h2>No lists to play yet</h2><p class="sub">Build an army list first, then play it here.</p><a class="btn primary" href="#/war/lists">Your army lists</a></section>`}`;
+  }
   /* ---------- game day ----------
      The list at the table, on a phone: the round, Command Points and Victory Points for both sides, your units
      (with their datasheets, and a tick for ones destroyed) and your notes on the opponent. It's kept in this
@@ -2816,17 +2984,16 @@
     return [...rows.values()].sort((x, y) => y.lists.length - x.lists.length || y.points - x.points || x.name.localeCompare(y.name));
   }
   async function viewWarBuy(){
-    view.name = "war-buy"; document.title = "Shopping list · War Ledger";
+    view.name = "war-buy"; document.title = "To buy · War Ledger";
     let D = await warData();
     function draw(){
       const rows = shoppingRows(D), total = rows.reduce((a, r) => a + r.points * r.want, 0), models = rows.reduce((a, r) => a + r.count * r.want, 0);
       const byArmy = D.armies.map(a => [a, rows.filter(r => r.army.id === a.id)]).filter(g => g[1].length);
       app.innerHTML = `
-        <div class="crumbs"><a href="#/war">War Ledger</a> / <a href="#/war/lists">Army lists</a> / Shopping list</div>
         <section class="page-head war-head">
-          <div><p class="eyebrow">War Ledger</p><h1>Shopping list</h1><p class="sub">${rows.length ? `${plural(rows.reduce((a, r) => a + r.want, 0), "unit")} you don't own yet, from your army lists · ${plural(models, "model")} · ${ptsText(total)}` : "Units your lists use that you don't own yet show here."}</p></div>
+          <div><p class="eyebrow">War Ledger</p><h1>To buy</h1><p class="sub">${rows.length ? `${plural(rows.reduce((a, r) => a + r.want, 0), "unit")} you don't own yet, from your army lists · ${plural(models, "model")} · ${ptsText(total)}` : "Units your lists use that you don't own yet show here."}</p></div>
         </section>
-        ${warTabs("lists")}
+        ${warTabs("buy")}
         ${rows.length ? byArmy.map(([a, rs]) => `<section class="war-sec buy-sec" aria-labelledby="buy-${esc(a.id)}">
           <div class="sec-h"><div class="buy-h">${armyBadge(a, 34)}<h2 id="buy-${esc(a.id)}">${esc(a.name)}</h2></div><small>${ptsText(rs.reduce((x, r) => x + r.points * r.want, 0))}</small></div>
           <ul class="buy-rows">${rs.map(r => `<li>
