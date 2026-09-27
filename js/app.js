@@ -205,9 +205,10 @@
   // Your notes on each faction you play against, kept with the settings so they follow you.
   const oppNotes = () => (settings.oppNotes && typeof settings.oppNotes === "object") ? settings.oppNotes : {};
   const saveOppNote = (fid, text) => { const n = {...oppNotes()}; text = String(text || "").trim().slice(0, 600); if(text) n[fid] = text; else delete n[fid]; return saveSettings({oppNotes: n}); };
-  // Events (tournaments, game nights), kept with the settings too: {id, name, date, place, listId, notes}.
-  const warEvents = () => (Array.isArray(settings.events) ? settings.events : []).filter(e => e && e.id && /^\d{4}-\d{2}-\d{2}$/.test(e.date || ""));
-  const saveEvents = evs => saveSettings({events: evs.slice(-200)});
+  // The events you've signed up for, {eventId: {listId, notes}}, kept with the settings too. (Events themselves come
+  // from the site's admins; the ones players used to add for themselves are dropped.)
+  const myEvents = () => (settings.eventLog && typeof settings.eventLog === "object") ? settings.eventLog : {};
+  const saveMyEvent = (id, v) => { const n = {...myEvents()}; if(v) n[id] = v; else delete n[id]; return saveSettings({eventLog: n, events: undefined}); };
   // "Sam Smith" → SS, "Sam" → SA; "?" with no name.
   const initialsOf = name => { const bits = String(name || "").split(/[\s._-]+/).filter(Boolean); return bits.length ? (bits[0][0] + (bits.length > 1 ? bits[bits.length - 1][0] : bits[0].slice(1, 2))).toUpperCase() : "?"; };
   function acct(){
@@ -499,14 +500,52 @@
       d.querySelector('[data-leave="save"]').focus();
     });
   }
+  /* Online, every page used to fetch all your armies, units, lists and battles again, so moving between pages
+     waited on Supabase every time. Now what's been read is kept for a minute (and shared by pages loading at
+     the same time); anything that saves clears it, as does coming back to the tab. Each caller gets its own copy. */
+  function cacheReads(st){
+    const READS = ["listArmies", "listAllUnits", "listLists", "listGames", "listTagged", "listUnits", "getArmy", "summary", "listKits", "listEvents", "isEventAdmin"];
+    const LOOKS = /^(list|get|summary|note|photoUrl|inlinePhoto|communityState|is)/;   // other reads, not kept
+    let memo = new Map();
+    const clear = () => { memo = new Map(); };
+    const copy = v => v == null ? v : structuredClone(v);
+    for(const k of Object.keys(st)){
+      const d = Object.getOwnPropertyDescriptor(st, k); if(!d || typeof d.value !== "function") continue;
+      const fn = d.value;
+      if(READS.includes(k)) st[k] = function(...args){
+        const key = k + JSON.stringify(args), hit = memo.get(key);
+        if(hit && Date.now() - hit.at < 60000) return hit.p.then(copy);
+        const map = memo, entry = {at: Date.now(), p: fn.apply(this, args)};
+        map.set(key, entry);
+        entry.p.catch(() => { if(map.get(key) === entry) map.delete(key); });
+        return entry.p.then(copy);
+      };
+      // A save clears what's kept before and after, so a read made while it was saving isn't kept either.
+      else if(!LOOKS.test(k)) st[k] = function(...args){
+        clear(); const r = fn.apply(this, args);
+        if(r && typeof r.then === "function") return r.finally(clear);
+        clear(); return r;
+      };
+    }
+    document.addEventListener("visibilitychange", () => { if(!document.hidden) clear(); });
+  }
   let lastHash = location.hash, routing = false;
   // One page loads at a time. A page still loading finishes first; then only the newest address is opened,
   // so a slow page can't draw over the one you went to, or hang its listeners on it.
   let routeQueue = Promise.resolve(), routeWanted = 0;
   function route(){
-    const n = ++routeWanted;
+    const n = ++routeWanted, done = () => { if(n === routeWanted) busy(false); };
+    busy(true);
     routeQueue = routeQueue.catch(() => {}).then(() => n === routeWanted ? routeNow() : null);
+    routeQueue.then(done, done);
     return routeQueue;
+  }
+  // A page that takes a moment to load shows a bar along the top, so a slow connection doesn't look like a frozen page.
+  let busyTimer = 0;
+  function busy(on){
+    clearTimeout(busyTimer);
+    if(on) busyTimer = setTimeout(() => { document.body.classList.add("loading"); app.setAttribute("aria-busy", "true"); }, 250);
+    else { document.body.classList.remove("loading"); app.removeAttribute("aria-busy"); }
   }
   async function routeNow(){
     if(/access_token=|error_description=/.test(location.hash)){ history.replaceState(null, "", location.pathname + location.search + "#/"); lastHash = location.hash; }
@@ -1052,7 +1091,9 @@
       if((window.LEDGER_SHEETS || {})[id]) return res();
       const sc = document.createElement("script");
       sc.src = `js/data/sheets/${id}.js`; sc.async = true;
-      sc.onload = () => res(); sc.onerror = () => { delete sheetLoads[id]; res(); };
+      // A file that never arrives doesn't hold the page up: after 15 seconds it goes without (and tries again next time).
+      const fail = () => { delete sheetLoads[id]; res(); }, t = setTimeout(fail, 15000);
+      sc.onload = () => { clearTimeout(t); res(); }; sc.onerror = () => { clearTimeout(t); fail(); };
       document.head.appendChild(sc);
     }));
     const ids = [fid, (FBY[fid] || {}).parent, ...allyFactions(fid).map(f => f.id)].filter(Boolean);
@@ -2733,73 +2774,115 @@
     onApp(e => { const b = e.target.closest("[data-dsp]"); if(b) openSheet(b.dataset.dsp); });
   }
   /* ---------- events ----------
-     Tournaments and game nights: when and where, the list you're taking (with its points checked against the
-     latest datasheets), a way into Game day on the day, and afterwards the battles you logged with that list that day. */
+     Club and national events, added by the site's admins. You sign up with the list you're taking (its points
+     checked against the latest datasheets), Game day opens from it on the day, and afterwards it shows the
+     battles you logged with that list that day. Admins also see + New event and Edit. */
+  const EVENT_KIND = {club: "Club", national: "National"};
+  // The events, each with your sign-up ({listId, notes}) when you have one. missing: the table isn't set up yet.
+  async function eventData(){
+    const [evs, admin] = await Promise.all([store.listEvents(), store.isEventAdmin().catch(() => false)]);
+    if(evs === null) return {missing: true, admin: false, evs: []};
+    const mine = myEvents();
+    return {admin, evs: evs.map(e => ({...e, mine: mine[e.id] || null}))};
+  }
   async function viewWarEvents(){
-    let D = await warData();
+    let [D, E] = await Promise.all([warData(), eventData()]), show = "";
     view.name = "war-events"; document.title = "Events · War Ledger";
     const today = isoDay(new Date());
     const daysTo = d => Math.round((new Date(d + "T00:00:00") - new Date(today + "T00:00:00")) / DAY_MS);
     function card(ev){
-      const l = ev.listId && D.lists.find(x => x.id === ev.listId), a = l && D.armies.find(x => x.id === l.armyId);
+      const m = ev.mine, l = m && m.listId && D.lists.find(x => x.id === m.listId), a = l && D.armies.find(x => x.id === l.armyId);
       const n = daysTo(ev.date), past = n < 0, gs = l ? D.games.filter(g => g.listId === l.id && g.date === ev.date) : [];
       const s = l && listState(l, D), ch = l && a ? latestChanges(l, s, a.faction) : null, over = l && l.limit && s.points > l.limit;
       const when = n === 0 ? "Today" : n === 1 ? "Tomorrow" : n > 1 ? `In ${n} days` : `${-n === 1 ? "Yesterday" : `${-n} days ago`}`;
-      return `<section class="panel ev${n === 0 ? " today" : ""}" aria-labelledby="ev-${esc(ev.id)}">
+      return `<section class="panel ev${n === 0 ? " today" : ""}${m ? " going" : ""}" aria-labelledby="ev-${esc(ev.id)}">
         <div class="ev-top"><div><h2 class="ev-h" id="ev-${esc(ev.id)}">${esc(ev.name)}</h2>
-          <small>${esc([dayText(ev.date), when, ev.place].filter(Boolean).join(" · "))}</small></div>
-          <button type="button" class="btn-sm" data-ev-edit="${esc(ev.id)}" aria-label="Edit ${esc(ev.name)}">Edit</button></div>
-        ${l ? `<p class="ev-list">Taking <a href="#/war/list/${esc(l.id)}">${esc(l.name)}</a> <small>${esc([a ? a.name : "", ptsText(s.points) + (l.limit ? ` of ${num(l.limit)}` : "")].filter(Boolean).join(" · "))}</small></p>` : `<p class="hint">No list chosen yet.</p>`}
-        ${!past && ch && ch.items.length ? `<p class="ev-warn">The latest points change this list (${num(s.points)} → ${num(ch.next)} pts). <a href="#/war/points">Points check</a></p>` : ""}
-        ${!past && over ? `<p class="ev-warn">${ptsText(s.points - l.limit)} over its limit.</p>` : ""}
+          <small><span class="tag ev-kind ${esc(ev.kind)}">${EVENT_KIND[ev.kind]}</span> ${esc([dayText(ev.date), when, ev.place].filter(Boolean).join(" · "))}</small></div>
+          ${E.admin ? `<button type="button" class="btn-sm" data-ev-edit="${esc(ev.id)}" aria-label="Edit ${esc(ev.name)}">Edit</button>` : ""}</div>
         ${ev.notes ? `<p class="ev-notes">${esc(ev.notes)}</p>` : ""}
-        ${past || n === 0 ? `<p class="ev-res">${gs.length ? `Result: <b>${recText(recordOf(gs))}</b> over ${plural(gs.length, "game")}` : "No battles logged for it yet."}</p>` : ""}
-        <div class="row-actions">${l && n >= 0 ? `<a class="btn btn-sm${n === 0 ? " primary" : ""}" href="#/war/list/${esc(l.id)}/play">Game day</a>` : ""}${l && n <= 0 ? `<button type="button" class="btn-sm" data-ev-log="${esc(ev.id)}">Log a battle</button>` : ""}</div>
+        ${ev.link ? `<p class="ev-link"><a href="${esc(ev.link)}" target="_blank" rel="noopener">Event details<span class="sr-only"> for ${esc(ev.name)} (opens in a new tab)</span> ↗</a></p>` : ""}
+        ${m ? `<div class="ev-mine">
+          <p class="ev-list">${past ? "You went" : "You're going"}${l ? `, taking <a href="#/war/list/${esc(l.id)}">${esc(l.name)}</a> <small>${esc([a ? a.name : "", ptsText(s.points) + (l.limit ? ` of ${num(l.limit)}` : "")].filter(Boolean).join(" · "))}</small>` : ". No list chosen yet."}</p>
+          ${!past && ch && ch.items.length ? `<p class="ev-warn">The latest points change this list (${num(s.points)} → ${num(ch.next)} pts). <a href="#/war/points">Points check</a></p>` : ""}
+          ${!past && over ? `<p class="ev-warn">${ptsText(s.points - l.limit)} over its limit.</p>` : ""}
+          ${m.notes ? `<p class="ev-notes">${esc(m.notes)}</p>` : ""}
+          ${l && (past || n === 0) ? `<p class="ev-res">${gs.length ? `Result: <b>${recText(recordOf(gs))}</b> over ${plural(gs.length, "game")}` : "No battles logged for it yet."}</p>` : ""}
+        </div>` : ""}
+        <div class="row-actions">${m ? `${l && n >= 0 ? `<a class="btn btn-sm${n === 0 ? " primary" : ""}" href="#/war/list/${esc(l.id)}/play">Game day</a>` : ""}${l && n <= 0 ? `<button type="button" class="btn-sm" data-ev-log="${esc(ev.id)}">Log a battle</button>` : ""}<button type="button" class="btn-sm" data-ev-join="${esc(ev.id)}">Change</button>`
+          : `<button type="button" class="btn-sm primary" data-ev-join="${esc(ev.id)}">${past ? "I went" : "I'm going"}</button>`}</div>
       </section>`;
     }
     function draw(){
-      const evs = warEvents(), up = evs.filter(e => e.date >= today).sort((a, b) => a.date.localeCompare(b.date)), past = evs.filter(e => e.date < today).sort((a, b) => b.date.localeCompare(a.date));
+      const evs = E.evs.filter(e => !show || (show === "mine" ? e.mine : e.kind === show));
+      const up = evs.filter(e => e.date >= today).sort((a, b) => a.date.localeCompare(b.date)), past = evs.filter(e => e.date < today).sort((a, b) => b.date.localeCompare(a.date));
       app.innerHTML = `
         <section class="page-head war-head">
-          <div><p class="eyebrow">War Ledger</p><h1>Events</h1><p class="sub">Tournaments and game nights: when, where and which list you're taking, then how it went.</p></div>
-          <div class="war-actions"><button type="button" class="primary" data-ev-new>+ New event</button></div>
+          <div><p class="eyebrow">War Ledger</p><h1>Events</h1><p class="sub">Club and national events. Say you're going, choose the list you're taking, then log how it went.</p></div>
+          ${E.admin ? `<div class="war-actions"><button type="button" class="primary" data-ev-new>+ New event</button></div>` : ""}
         </section>
         ${warTabs("events")}
-        ${evs.length ? `${up.length ? `<section class="war-sec" aria-labelledby="ev-up"><div class="sec-h"><h2 id="ev-up">Coming up</h2></div><div class="ev-list-grid">${up.map(card).join("")}</div></section>` : ""}
-          ${past.length ? `<section class="war-sec" aria-labelledby="ev-past"><div class="sec-h"><h2 id="ev-past">Past events</h2></div><div class="ev-list-grid">${past.map(card).join("")}</div></section>` : ""}`
-          : `<section class="panel war-empty"><h2>No events yet</h2><p class="sub">Add your next tournament or game night, choose the list you're taking, and War Ledger checks its points and takes you to Game day on the day.</p><button type="button" class="primary" data-ev-new>+ New event</button></section>`}`;
+        ${E.missing ? `<div class="banner"><span class="dot warn"></span><span>Events need a quick database update. Run <strong>supabase/features.sql</strong> in Supabase to turn them on.</span></div>` : ""}
+        ${E.evs.length ? `<div class="war-filters"><select id="ev-show" aria-label="Show"><option value="">All events</option><option value="club"${show === "club" ? " selected" : ""}>Club events</option><option value="national"${show === "national" ? " selected" : ""}>National events</option><option value="mine"${show === "mine" ? " selected" : ""}>Events you're going to</option></select></div>` : ""}
+        ${up.length ? `<section class="war-sec" aria-labelledby="ev-up"><div class="sec-h"><h2 id="ev-up">Coming up</h2></div><div class="ev-list-grid">${up.map(card).join("")}</div></section>` : ""}
+        ${past.length ? `<section class="war-sec" aria-labelledby="ev-past"><div class="sec-h"><h2 id="ev-past">Past events</h2></div><div class="ev-list-grid">${past.map(card).join("")}</div></section>` : ""}
+        ${!E.evs.length && !E.missing ? `<section class="panel war-empty"><h2>No events yet</h2><p class="sub">${E.admin ? "Add a club or national event and players can sign up for it with their list." : "Club and national events show here once they've been added. Then say you're going and choose your list."}</p>${E.admin ? `<button type="button" class="primary" data-ev-new>+ New event</button>` : ""}</section>`
+          : E.evs.length && !evs.length ? `<p class="hint">No events match.</p>` : ""}`;
+      const sel = $("ev-show"); if(sel) sel.addEventListener("change", () => { show = sel.value; draw(); $("ev-show").focus(); });
     }
+    const reload = async () => { E = await eventData(); draw(); };
+    // Admins: add or change an event.
     function edit(ev){
-      const lists = D.lists.filter(l => l.status !== "archived" || (ev && l.id === ev.listId));
       const d = modal(ev ? "Edit event" : "New event", `
         <div class="wgrid">
           <label class="span2">Name<input id="ev-name" maxlength="80" value="${esc(ev ? ev.name : "")}" placeholder="e.g. Club night or Winter GT"></label>
           <label>Date<input id="ev-date" type="date" value="${esc(ev ? ev.date : today)}"></label>
-          <label class="span3"><span>Where <span class="opt">(optional)</span></span><input id="ev-place" maxlength="80" value="${esc(ev ? ev.place || "" : "")}"></label>
-          <label class="span3">List you're taking<select id="ev-list"><option value="">Not chosen yet</option>${lists.map(l => `<option value="${esc(l.id)}"${ev && ev.listId === l.id ? " selected" : ""}>${esc(l.name)} (${esc((D.armies.find(a => a.id === l.armyId) || {}).name || "")})</option>`).join("")}</select></label>
+          <label>Type<select id="ev-kind">${Object.entries(EVENT_KIND).map(([k, v]) => `<option value="${k}"${ev && ev.kind === k ? " selected" : ""}>${v}</option>`).join("")}</select></label>
+          <label class="span2"><span>Where <span class="opt">(optional)</span></span><input id="ev-place" maxlength="80" value="${esc(ev ? ev.place || "" : "")}"></label>
+          <label class="span3"><span>Link to the event page <span class="opt">(optional)</span></span><input id="ev-link" type="url" maxlength="300" placeholder="https://" value="${esc(ev ? ev.link || "" : "")}"></label>
         </div>
-        <label>Notes<textarea id="ev-notes" rows="3" maxlength="600" placeholder="Missions, time, what to bring">${esc(ev ? ev.notes || "" : "")}</textarea></label>
+        <label>Details<textarea id="ev-notes" rows="3" maxlength="600" placeholder="Points limit, missions, times, what to bring">${esc(ev ? ev.notes || "" : "")}</textarea></label>
         <div class="row-actions"><button type="submit" class="primary">${ev ? "Save event" : "Add event"}</button>${ev ? `<button type="button" class="danger" id="ev-del">Delete</button>` : ""}<span class="msg" id="ev-msg" role="status"></span></div>`);
       d.querySelector("form").addEventListener("submit", async e => {
         e.preventDefault();
-        const name = $("ev-name").value.trim(), date = $("ev-date").value;
+        const name = $("ev-name").value.trim(), date = $("ev-date").value, link = $("ev-link").value.trim();
         if(!name){ $("ev-msg").textContent = "Give the event a name."; $("ev-name").focus(); return; }
         if(!/^\d{4}-\d{2}-\d{2}$/.test(date)){ $("ev-msg").textContent = "Choose a date."; $("ev-date").focus(); return; }
-        const row = {id: ev ? ev.id : entryKey(), name, date, place: $("ev-place").value.trim(), listId: $("ev-list").value, notes: $("ev-notes").value.trim()};
-        try { await saveEvents(ev ? warEvents().map(x => x.id === ev.id ? row : x) : warEvents().concat(row)); d.close(); flash(ev ? "Event saved." : `Added ${name}.`); draw(); }
+        if(link && !/^https:\/\/\S+$/.test(link)){ $("ev-msg").textContent = "The link needs to start with https://"; $("ev-link").focus(); return; }
+        try { await store.saveEvent({name, date, kind: $("ev-kind").value, place: $("ev-place").value.trim(), link, notes: $("ev-notes").value.trim()}, ev ? ev.id : null); d.close(); flash(ev ? "Event saved." : `Added ${name}.`); await reload(); }
         catch(err){ console.error(err); $("ev-msg").textContent = "Couldn't save: " + errText(err); }
       });
-      if(ev) armButton($("ev-del"), "Press again to delete", async () => { await saveEvents(warEvents().filter(x => x.id !== ev.id)); d.close(); flash("Event deleted."); draw(); });
+      if(ev) armButton($("ev-del"), "Press again to delete", async () => {
+        try { await store.removeEvent(ev.id); d.close(); flash("Event deleted."); await reload(); }
+        catch(err){ console.error(err); $("ev-msg").textContent = "Couldn't delete it: " + errText(err); }
+      });
       $("ev-name").focus();
+    }
+    // Everyone: sign up for an event with a list, change it, or say you're not going after all.
+    function join(ev){
+      const lists = D.lists.filter(l => l.status !== "archived" || (ev.mine && l.id === ev.mine.listId)), past = ev.date < today;
+      const d = modal(esc(ev.name), `
+        <p class="sub">${esc([EVENT_KIND[ev.kind] + " event", dayText(ev.date), ev.place].filter(Boolean).join(" · "))}</p>
+        <label>List you're taking<select id="ej-list"><option value="">Not chosen yet</option>${lists.map(l => `<option value="${esc(l.id)}"${ev.mine && ev.mine.listId === l.id ? " selected" : ""}>${esc(l.name)} (${esc((D.armies.find(a => a.id === l.armyId) || {}).name || "")})</option>`).join("")}</select></label>
+        <label><span>Your notes <span class="opt">(optional)</span></span><textarea id="ej-notes" rows="3" maxlength="600" placeholder="Travel, table number, who you're playing">${esc(ev.mine ? ev.mine.notes || "" : "")}</textarea></label>
+        <div class="row-actions"><button type="submit" class="primary">${ev.mine ? "Save" : past ? "I went" : "I'm going"}</button>${ev.mine ? `<button type="button" id="ej-off">${past ? "I didn't go" : "Not going"}</button>` : ""}<span class="msg" id="ej-msg" role="status"></span></div>`);
+      const put = async v => {
+        try { await saveMyEvent(ev.id, v); d.close(); flash(v ? (past ? `Added ${ev.name} to your events.` : `You're going to ${ev.name}.`) : `Took ${ev.name} off your events.`); await reload(); }
+        catch(err){ console.error(err); $("ej-msg").textContent = "Couldn't save: " + errText(err); }
+      };
+      d.querySelector("form").addEventListener("submit", e => { e.preventDefault(); put({listId: $("ej-list").value, notes: $("ej-notes").value.trim().slice(0, 600)}); });
+      if(ev.mine) $("ej-off").addEventListener("click", () => put(null));
+      $("ej-list").focus();
     }
     draw();
     onApp(e => {
       const b = e.target.closest("button"); if(!b) return;
+      const ev = id => E.evs.find(x => x.id === id);
       if(b.matches("[data-ev-new]")) edit(null);
-      else if(b.dataset.evEdit) edit(warEvents().find(x => x.id === b.dataset.evEdit));
+      else if(b.dataset.evEdit && E.admin) edit(ev(b.dataset.evEdit));
+      else if(b.dataset.evJoin && ev(b.dataset.evJoin)) join(ev(b.dataset.evJoin));
       else if(b.dataset.evLog){
-        const ev = warEvents().find(x => x.id === b.dataset.evLog), l = ev && D.lists.find(x => x.id === ev.listId); if(!l) return;
-        openGame(D, {armyId: l.armyId, listId: l.id, date: ev.date, mission: ""}, async () => { D = await warData(); draw(); });
+        const x = ev(b.dataset.evLog), l = x && x.mine && D.lists.find(y => y.id === x.mine.listId); if(!l) return;
+        openGame(D, {armyId: l.armyId, listId: l.id, date: x.date, mission: ""}, async () => { D = await warData(); draw(); });
       }
     });
   }
@@ -2810,7 +2893,8 @@
     const saved = id => { try { const st = JSON.parse(localStorage.getItem("ll-play-" + id) || "null"); return st && Array.isArray(st.vp) ? st : null; } catch(e){ return null; } };
     const lists = D.lists.filter(l => l.status !== "archived" && D.armies.some(a => a.id === l.armyId));
     const going = lists.map(l => [l, saved(l.id)]).filter(x => x[1]);
-    const today = isoDay(new Date()), todays = warEvents().filter(e => e.date === today && e.listId && lists.some(l => l.id === e.listId));
+    const today = isoDay(new Date()), evs = await eventData().then(E => E.evs, () => []);
+    const todays = evs.filter(e => e.date === today && e.mine && lists.some(l => l.id === e.mine.listId));
     const vpOf = (st, side) => st.vp.reduce((a, r) => a + (+r[side] || 0), 0);
     const row = (l, extra, resume) => { const a = D.armies.find(x => x.id === l.armyId), s = listState(l, D); return `<li>${armyBadge(a, 34)}<span class="lb-name">${esc(l.name)}<small>${esc([a.name, ptsText(s.points), extra].filter(Boolean).join(" · "))}</small></span><a class="btn btn-sm primary" href="#/war/list/${esc(l.id)}/play">${resume ? "Carry on" : "Play"}</a></li>`; };
     app.innerHTML = `
@@ -2818,7 +2902,7 @@
         <div><p class="eyebrow">War Ledger</p><h1>Play</h1><p class="sub">Which list are you playing? Game day keeps the round, Command Points and score, with your datasheets to hand.</p></div>
       </section>
       ${warTabs("play")}
-      ${todays.length ? `<section class="war-sec" aria-labelledby="pp-today"><div class="sec-h"><h2 id="pp-today">Today's event</h2></div><ul class="pp-rows">${todays.map(e => row(D.lists.find(l => l.id === e.listId), e.name)).join("")}</ul></section>` : ""}
+      ${todays.length ? `<section class="war-sec" aria-labelledby="pp-today"><div class="sec-h"><h2 id="pp-today">Today's event</h2></div><ul class="pp-rows">${todays.map(e => row(D.lists.find(l => l.id === e.mine.listId), e.name)).join("")}</ul></section>` : ""}
       ${going.length ? `<section class="war-sec" aria-labelledby="pp-go"><div class="sec-h"><h2 id="pp-go">Games in progress</h2></div><ul class="pp-rows">${going.map(([l, st]) => row(l, `Round ${st.round} · ${vpOf(st, 0)}–${vpOf(st, 1)}`, true)).join("")}</ul></section>` : ""}
       ${lists.length ? D.armies.map(a => [a, lists.filter(l => l.armyId === a.id)]).filter(g => g[1].length).map(([a, ls]) => `<section class="war-sec" aria-labelledby="pp-${esc(a.id)}"><div class="sec-h"><h2 id="pp-${esc(a.id)}">${esc(a.name)}</h2></div><ul class="pp-rows">${ls.map(l => row(l)).join("")}</ul></section>`).join("")
         : `<section class="panel war-empty"><h2>No lists to play yet</h2><p class="sub">Build an army list first, then play it here.</p><a class="btn primary" href="#/war/lists">Your army lists</a></section>`}`;
@@ -6983,6 +7067,7 @@ Redemptor Dreadnought (210 points)</pre>
     return {code: q.get("error_code") || "", text: q.get("error_description") || ""};
   })();
   store = S.create();
+  if(store.kind === "supabase") cacheReads(store);
   window.addEventListener("hashchange", route);
   drawTimer();
   // A timer started or stopped in another tab.

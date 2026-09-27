@@ -143,3 +143,29 @@ alter table public.games add column if not exists opp_user uuid references auth.
 create index if not exists games_opp_user_idx on public.games(opp_user) where opp_user is not null;
 drop policy if exists "See battles you were tagged in" on public.games;
 create policy "See battles you were tagged in" on public.games for select to authenticated using (opp_user = auth.uid());
+
+-- 10. War Ledger: club and national events
+--    The site's admins add the events; everyone logged in can see them and sign up with a list (kept in their
+--    own settings). To make someone an admin, add their user id (Authentication -> Users) here:
+--      insert into public.event_admins (user_id) values ('<their user id>');
+create table if not exists public.event_admins (
+  user_id uuid primary key references auth.users(id) on delete cascade
+);
+alter table public.event_admins enable row level security;
+drop policy if exists "See if you're an events admin" on public.event_admins;
+create policy "See if you're an events admin" on public.event_admins for select to authenticated using (user_id = auth.uid());
+
+create table if not exists public.events (
+  id uuid primary key default gen_random_uuid(),
+  created_by uuid default auth.uid() references auth.users(id) on delete set null,
+  data jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+alter table public.events enable row level security;
+drop policy if exists "Everyone logged in sees events" on public.events;
+create policy "Everyone logged in sees events" on public.events for select to authenticated using (true);
+drop policy if exists "Admins run events" on public.events;
+create policy "Admins run events" on public.events for all to authenticated
+  using (exists (select 1 from public.event_admins x where x.user_id = auth.uid()))
+  with check (exists (select 1 from public.event_admins x where x.user_id = auth.uid()));
