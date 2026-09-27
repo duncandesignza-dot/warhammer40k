@@ -1171,27 +1171,6 @@ small.swaps{display:block;color:var(--brand-2);font-size:.74rem;margin-top:2px}
 /* Hide points (setting) */
 body.no-points .card-top .pts,body.no-points .stat-pts,body.no-points .ro-pts,body.no-points .ld-row>span:nth-child(4){display:none}
 
-/* Pile of shame */
-.shame-head{display:flex;justify-content:space-between;align-items:flex-end;gap:16px 24px;flex-wrap:wrap}
-.shame-head .sub{margin-top:8px}
-.shame-add{padding:18px 20px;margin-bottom:18px;display:flex;flex-direction:column;gap:12px}
-.shame-add h2{margin:0;font-size:1rem;font-weight:700}
-.kit-grid{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1.3fr) 110px 130px 160px;gap:10px}
-.shame-add .msg{margin:0}
-.kits{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
-.kit{padding:14px 16px;display:flex;flex-direction:column;gap:12px}
-.kit-top{display:flex;gap:12px;align-items:center}
-.kit-top>div{flex:1;min-width:0}
-.kit-top h3{margin:0;font-family:var(--display);font-size:1rem;font-weight:700;text-transform:none;letter-spacing:normal;color:var(--ink);overflow-wrap:anywhere}
-.kits{align-items:start}
-.kit-top small{color:var(--muted);font-size:.8rem}
-.kit-box{width:40px;height:40px;border-radius:10px;flex:none;border:1.5px dashed var(--line-strong)}
-.kit-rm{align-self:flex-start;min-width:26px;height:26px;padding:0 8px;border-radius:99px;background:transparent;font-size:.85rem;color:var(--muted)}
-.kit-rm.armed{color:var(--bad);border-color:var(--bad)}
-.kit-foot{display:flex;justify-content:space-between;align-items:center;gap:10px}
-.kit-age{font-family:var(--mono);font-size:.7rem;color:var(--muted)}
-.kit-start{display:flex;flex-direction:column;gap:10px;padding-top:10px;border-top:1px solid var(--line)}
-@media (max-width:900px){.kit-grid{grid-template-columns:1fr 1fr}.kit-grid .kit-name{grid-column:1/-1}}
 
 /* Likes and follows */
 .shcard{padding:0;gap:0}
@@ -1806,17 +1785,16 @@ body.has-timer .site-foot{padding-bottom:80px}
 @media print{.ptimer{display:none}}
 @media (max-width:640px){.fab.fab-off{opacity:0;transform:translateY(12px);pointer-events:none;visibility:hidden}}
 @media (max-width:640px) and (prefers-reduced-motion:no-preference){.fab{transition:opacity .2s,transform .2s,visibility .2s}}
-/* Painter profiles and comments */
+/* Player profiles and comments */
 .shcard .sh-owner{display:block;padding:16px 18px 0;text-decoration:none;color:inherit;border-radius:var(--r-lg) var(--r-lg) 0 0}
 .shcard .sh-owner .owner-line{padding-bottom:12px;border-bottom:1px solid var(--line)}
 .shcard .sh-owner:hover strong{text-decoration:underline}
 .shcard .sh-owner+.sh-open{padding-top:14px;border-radius:0}
 .owner-link{display:inline-block;text-decoration:none;color:inherit}
 .owner-link:hover strong{text-decoration:underline}
-.painter-head{display:flex;align-items:center;gap:20px;margin:6px 0 24px;flex-wrap:wrap}
-.painter-head h1{margin:2px 0 4px;font-size:clamp(1.6rem,4vw,2.4rem);overflow-wrap:anywhere}
-.painter-head>div{flex:1;min-width:220px}
-.painter-acts{padding:0;border:0;margin-top:10px}
+.player-head{display:flex;align-items:center;gap:20px;margin:6px 0 24px;flex-wrap:wrap}
+.player-head h1{margin:2px 0 4px;font-size:clamp(1.6rem,4vw,2.4rem);overflow-wrap:anywhere}
+.player-head>div{flex:1;min-width:220px}
 .comments{padding:18px;margin-top:22px}
 .comments .ph small{color:var(--muted)}
 .cm-list{list-style:none;padding:0;margin:0 0 14px;display:flex;flex-direction:column;gap:12px}

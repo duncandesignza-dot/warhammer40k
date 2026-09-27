@@ -96,7 +96,7 @@ async function mockSupabase(page, {db = {}, signedIn = true, noWar = false} = {}
   await page.route("**/js/config.js", r => r.fulfill({contentType: "text/javascript", body: "window.LEDGER_CONFIG={SUPABASE_URL:'https://example.supabase.co',SUPABASE_ANON_KEY:'test'}"}));
   await page.route(/supabase-js/, r => r.fulfill({contentType: "text/javascript", body: `(${supabaseMock})();`}));
   await page.addInitScript(({db, signedIn, noWar}) => {
-    window.__db = {armies: [], units: [], likes: [], follows: [], lists: [], games: [], kits: [], recipes: [], ...db};
+    window.__db = {armies: [], units: [], likes: [], army_follows: [], lists: [], games: [], recipes: [], ...db};
     window.__startSession = signedIn; window.__noWar = noWar;
   }, {db, signedIn, noWar});
 }

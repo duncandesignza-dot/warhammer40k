@@ -570,39 +570,26 @@
         if(!session) return {};
         return totals(mustOk(await sb.from(U).select(SUM_COLS).eq("owner", session.user.id)) || []);
       },
-      /* Pile of shame kits. null means the kits table hasn't been set up (supabase/features.sql). */
-      async listKits(){
-        if(!session) return [];
-        const {data, error} = await sb.from("kits").select("id,data").eq("owner", session.user.id);
-        if(error){ if(tableMissing(error)) return null; throw error; }
-        return (data || []).map(r => ({...(r.data || {}), id: r.id}));
-      },
-      async putKits(list){
-        need();
-        const uid = session.user.id, now = new Date().toISOString();
-        if(list.length) mustOk(await sb.from("kits").upsert(list.map(({id, ...data}) => ({owner: uid, id, data, updated_at: now})), {onConflict: "owner,id"}));
-        const keep = list.map(k => `"${String(k.id).replace(/"/g, "")}"`).join(",");
-        mustOk(list.length ? await sb.from("kits").delete().eq("owner", uid).not("id", "in", `(${keep})`) : await sb.from("kits").delete().eq("owner", uid));
-      },
       /* Likes and follows. null means the tables haven't been set up yet (supabase/features.sql). */
       async communityState(armyIds){
         if(!session) return null;
         const lk = armyIds.length ? await sb.from("likes").select("army_id,user_id").in("army_id", armyIds) : {data: [], error: null};
         if(lk.error){ if(tableMissing(lk.error)) return null; throw lk.error; }
-        const fl = await sb.from("follows").select("followee").eq("follower", session.user.id);
-        if(fl.error){ if(tableMissing(fl.error)) return null; throw fl.error; }
+        // Armies you follow; following is null until the army_follows table is set up.
+        const fl = await sb.from("army_follows").select("army_id").eq("user_id", session.user.id);
+        if(fl.error && !tableMissing(fl.error)) throw fl.error;
         const likes = {}, liked = new Set();
         (lk.data || []).forEach(r => { likes[r.army_id] = (likes[r.army_id] || 0) + 1; if(r.user_id === session.user.id) liked.add(r.army_id); });
-        return {likes, liked, following: new Set((fl.data || []).map(r => r.followee))};
+        return {likes, liked, following: fl.error ? null : new Set((fl.data || []).map(r => r.army_id))};
       },
       async setLike(armyId, on){
         need();
         const {error} = on ? await sb.from("likes").insert({army_id: armyId, user_id: session.user.id}) : await sb.from("likes").delete().eq("army_id", armyId).eq("user_id", session.user.id);
         if(error && !/duplicate/i.test(error.message || "")) throw error;
       },
-      async setFollow(userId, on){
+      async setFollow(armyId, on){
         need();
-        const {error} = on ? await sb.from("follows").insert({follower: session.user.id, followee: userId}) : await sb.from("follows").delete().eq("follower", session.user.id).eq("followee", userId);
+        const {error} = on ? await sb.from("army_follows").insert({army_id: armyId, user_id: session.user.id}) : await sb.from("army_follows").delete().eq("army_id", armyId).eq("user_id", session.user.id);
         if(error && !/duplicate/i.test(error.message || "")) throw error;
       },
       // Every ledger with sharing on, newest first, with painting totals. Readable without logging in.
