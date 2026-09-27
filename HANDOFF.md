@@ -157,10 +157,12 @@ python3 tools/build_factions.py bsdata && python3 tools/build_sheets.py bsdata
 ## Product decisions to keep
 
 - **An army is what you own**, in both tools (the same units). **A list is for testing**: units from your army plus datasheets you don't own, marked "Not owned", with "You own 3 of 4 units · 160 pts not owned" at the top.
-- War tabs: Armies (the overview, `#/war`), Army lists, Datasheets, Play, Battles, Events, To buy (with a count). Phones' bottom bar has Armies, Lists, Play, Battles and To buy; Datasheets and Events are buttons on the Armies page. The collection page still exists (header button) but isn't a tab.
+- War tabs: Armoury (`#/war`), Army lists, Datasheets, Play, Battles, Events, To buy (with a count). Phones' bottom bar has Armoury, Lists, Play, Battles and To buy; Datasheets and Events are buttons on the Armoury.
+- **Armoury** (`viewWarDash`/`drawWarDash`): every unit you own by faction, with units, models, points, painting (read-only, from Livery's `painted`), how many lists use each unit and the faction's record. `#/war/collection` and `#/war/armies` redirect here.
+- **Army lists**: every army with its "Full army" card (`fullArmyCard`, opens `#/war/army/<id>`) then its lists. Army pages sit under Army lists; their More menu has "Make a list of the whole army".
 - Events are kept in `settings.events` (`warEvents`/`saveEvents`); an event's result is the battles logged with its list on its date.
 - The list builder's Add units opens on "Your units"; Datasheets is the second tab.
-- **War has no built/painted/battle-ready tracking.** It was removed on purpose so people can test armies they don't own. The fields are still stored and Livery owns them.
+- **War doesn't edit painting.** Livery owns built/painted; the Armoury and Full army cards only show how much is painted. There's still no battle-ready tracking.
 - **Rules text stays out of the data.** Only numbers, profiles, and names of abilities, rules and keywords (the same choice as `build_factions.py`). Adding ability descriptions is possible but was deliberately not done.
 - **Faction rules:**
   - Allies only Imperial Agents / Imperial Knights for Imperium armies, Chaos Daemons / Chaos Knights for Chaos armies, and none for Xenos.

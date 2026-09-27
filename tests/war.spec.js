@@ -18,49 +18,65 @@ test("muster an army and add units from a pasted list", async ({page}) => {
   expect(d.units.map(u => [u.name, u.count]).sort()).toEqual([["Captain", 1], ["Intercessor Squad", 10], ["Redemptor Dreadnought", 1]]);
 });
 
-test("a unit can live in the collection without an army, and lists can use it", async ({page}) => {
+test("a unit can live in the armoury without an army, and lists can use it", async ({page}) => {
   await seed(page);
-  await open(page, "#/war/collection");
-  await page.click("[data-coll-add]");
+  await open(page, "#/war");
+  await page.click(".ph-actions [data-coll-add]");
   await page.selectOption("#w-cf", "ultramarines");
   await page.selectOption("#w-ca", "");
   await page.click("dialog[open] [type=submit]");
   await page.selectOption("#w-sheet", {label: await page.$eval("#w-sheet", s => [...s.options].find(o => o.textContent.startsWith("Lieutenant")).textContent)});
   await page.click("dialog[open] [type=submit]");
-  await expect(page.locator('.wc-group:has(h3:text-is("Not in an army"))')).toContainText("Lieutenant");
+  await expect(page.locator('.ar-fac:has(h2:text-is("Ultramarines")) tr:has-text("Lieutenant")')).toContainText("Not in an army");
   await open(page, "#/war/list/l1");
   await page.click('[data-add-tab="coll"]');
   await expect(page.locator('.lb-coll li:has-text("Lieutenant")')).toContainText("Not in an army");
 });
 
-test("the collection works like the roster: a summary, quick filters and grouping", async ({page}) => {
+test("the armoury lists your units by faction, with points, painting and how often your lists use them", async ({page}) => {
   await seed(page, `db.units.push({id: "u9", armyId: "a1", name: "Gladiator Lancer", datasheet: "Gladiator Lancer", role: "Vehicle", count: 1, points: 160, painted: 0, stages: [], fav: true});`);
-  await open(page, "#/war/collection");
-  // The totals sit under the title, as on the roster, and nothing about painting shows.
-  await expect(page.locator(".page-head .sub")).toHaveText("7 units · 39 models · 1,070 pts".replace(/ pts/, "\u00a0pts"));
-  await expect(page.locator(".wc-group thead").first()).toHaveText(/Unit\s*Role\s*Models\s*Points/);
-  await expect(page.locator("main")).not.toContainText(/battle ready|Painted/i);
-  const heads = () => page.locator(".wc-group h3").allInnerTexts();
-  expect(await heads()).toEqual(["Ultramarines 2nd Company", "Hive Fleet Leviathan"]);
-  const rows = () => page.locator(".wc-group tbody tr").count();
-  expect(await rows()).toBe(7);
-  // Quick filters: all or starred.
-  expect(await page.locator("[data-cf]").allInnerTexts()).toEqual(["All", "Starred"]);
-  await page.click('[data-cf="fav"]');
-  expect(await page.locator(".wc-group tbody [data-unit]").allInnerTexts()).toEqual(["Gladiator Lancer"]);
-  await expect(page.locator(".page-head .sub")).toContainText("showing 1");
-  await page.click('[data-cf="all"]');
-  // Group by army or role; the choice is remembered.
-  expect(await page.locator("#wc-g option").allInnerTexts()).toEqual(["Army", "Role"]);
-  await page.selectOption("#wc-g", "role");
-  expect(await heads()).toEqual(["Character", "Battleline", "Infantry", "Vehicle"]);
   await open(page, "#/war");
+  await expect(page.locator("h1")).toHaveText("Armoury");
+  await expect(page.locator('.war-tabs a[aria-current="page"]')).toHaveText("Armoury");
+  await expect(page.locator(".profile-head .stats")).toContainText("2Factions");
+  await expect(page.locator(".profile-head .stats")).toContainText("21%Painted");
+  // Most points first.
+  expect(await page.locator(".ar-fac h2").allInnerTexts()).toEqual(["Ultramarines", "Tyranids"]);
+  const um = page.locator('.ar-fac:has(h2:text-is("Ultramarines"))');
+  await expect(um.locator(".ar-stats")).toHaveText("5 units · 18 models · 745\u00a0pts");
+  await expect(um.locator(".ar-paintbar > span")).toHaveText("39% painted");
+  await expect(um.locator(".ar-chip")).toContainText("Ultramarines 2nd Company");
+  await expect(um.locator("thead")).toHaveText(/Unit\s*Role\s*Models\s*Points\s*Painted\s*In lists/);
+  await expect(um.locator('tr:has-text("Intercessor Squad") [data-label="Painted"]')).toHaveText("6/10");
+  await expect(um.locator('tr:has-text("Intercessor Squad") [data-label="In lists"]')).toHaveText("1");
+  await expect(um.locator('tr:has-text("Terminator Squad") [data-label="In lists"]')).toHaveText("0");
+  // Search.
+  await page.fill("#ar-q", "hive");
+  await expect(page.locator('.ar-fac:has(h2:text-is("Tyranids")) tbody tr')).toHaveCount(1);
+  await expect(um).toContainText("No units match.");
+  // The old collection page opens the armoury.
   await open(page, "#/war/collection");
-  await expect(page.locator("#wc-g")).toHaveValue("role");
-  // Search finds units by army name too.
-  await page.selectOption("#wc-g", "army");
-  await page.fill("#wc-q", "hive fleet");
-  expect(await heads()).toEqual(["Hive Fleet Leviathan"]);
+  await expect(page).toHaveURL(/#\/war$/);
+});
+
+test("army lists: each army's full army comes first, then its lists", async ({page}) => {
+  await seed(page);
+  await open(page, "#/war/lists");
+  // Every army shows, even one with no lists yet.
+  expect(await page.locator(".war-sec h2").allInnerTexts()).toEqual(["Ultramarines 2nd Company", "Hive Fleet Leviathan"]);
+  const um = page.locator(".war-sec", {has: page.locator('h2:text-is("Ultramarines 2nd Company")')});
+  await expect(um.locator(".lcard").first()).toContainText("Full army");
+  await expect(um.locator(".full-army .wc-nums")).toContainText("585 / 2,000 pts");
+  await expect(um.locator(".full-army .wc-nums")).toContainText("4 units");
+  await expect(um.locator(".lcard").nth(1)).toContainText("Club night");
+  await um.locator(".full-army").click();
+  await expect(page).toHaveURL(/#\/war\/army\/a1$/);
+  await expect(page.locator('.war-tabs a[aria-current="page"]')).toHaveText("Army lists");
+  // A list of the whole army, to print, export or play.
+  await page.click("#wa-more"); await page.click("[data-full-list]");
+  await expect(page).toHaveURL(/#\/war\/list\//);
+  await expect(page.locator("h1")).toHaveText("Ultramarines 2nd Company: full army");
+  await expect(page.locator(".lb-own")).toHaveText("You own every unit in this list.");
 });
 
 test("an army is what you own; a list can try out units you don't, and marks them until you buy them", async ({page}) => {
@@ -641,7 +657,7 @@ test("Army lists has Import a list, and the faction picker has a Back button", a
   await page.click("dialog[open] [data-x]");
   await open(page, "#/war/new");
   await page.click(".war-actions a:has-text('Back')");
-  await expect(page).toHaveURL(/#\/war$/);
+  await expect(page).toHaveURL(/#\/war\/lists$/);
 });
 
 test("the shopping list gathers units you don't own from every list, and buying one fills it everywhere", async ({page}) => {

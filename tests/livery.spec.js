@@ -63,7 +63,7 @@ test("deleting from War Ledger asks the same way, offers a backup, and deletes e
   const [dl] = await Promise.all([page.waitForEvent("download"), page.click("#dl-export")]);
   expect(dl.suggestedFilename()).toMatch(/^livery-ultramarines-2nd-company-/);
   await page.click("#dl-go");
-  await expect(page).toHaveURL(/#\/war$/);
+  await expect(page).toHaveURL(/#\/war\/lists$/);
   const d = await saved(page);
   expect([d.armies.some(a => a.id === "a1"), d.units.some(u => u.armyId === "a1"), d.lists.some(l => l.armyId === "a1"), d.games.some(g => g.armyId === "a1")]).toEqual([false, false, false, false]);
 });
