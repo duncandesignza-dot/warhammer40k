@@ -38,6 +38,31 @@ Cloudflare needed `"previews": {}` in `wrangler.jsonc` for the Workers Builds ch
 - **Before every push:** run the full test suite (see below), and screenshot the changed pages with Playwright (desktop 1280 wide and phone 390 wide) to check them by eye.
 - **Copy style:** plain, friendly UK English ("colours", "organiser"), short sentences, no jargon. Buttons say what they do ("Import an army", "Export list"). Hints explain in one line.
 
+## Adding an event (when the owner asks)
+
+Players can't add events: the owner asks for one, and it's added by hand to `js/data/events.js`. They show on War Ledger's Events page, on Play on the day, on Community, and in Livery's "Before your events".
+
+**What the owner gives you:**
+- its name and date
+- whether it's a club or national event
+- optionally, the venue, details (points limit, missions, times) and a link
+
+If the name, date or type is missing, ask for it. Nothing else is needed.
+
+**How to add it:** add an entry to `window.LEDGER_EVENTS` in `js/data/events.js`:
+
+```js
+{id: "winter-gt-2026", name: "Winter GT", date: "2026-07-18", kind: "national", place: "Cape Town",
+ notes: "2000 pts, Pariah Nexus missions. Doors open 8am.", link: "https://example.com/winter-gt"},
+```
+
+- `id`: short, lowercase, made from the name and year. **Never change it once the event is up**, because players' sign-ups are kept against it.
+- `date`: `YYYY-MM-DD`. `kind`: `"club"` or `"national"`.
+- `place`, `notes` and `link` are optional. The link must start with `https://`, or it isn't shown.
+- To change an event, edit its entry but keep its `id`. Past events can stay: they move to "Past events" by themselves.
+
+Then commit ("Events: add Winter GT"), push, and say it goes live once it's merged. It's a data change only, so there's no need for screenshots, but run the tests as usual.
+
 ## Running it
 
 ```bash
