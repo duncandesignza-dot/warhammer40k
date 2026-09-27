@@ -271,7 +271,7 @@
       nav.innerHTML = `<button type="button" class="btn-sm ghost" data-auth-open="in">Log in</button><button type="button" class="btn-sm primary" data-auth-open="up">Sign up</button>`;
       return;
     }
-    const commLink = `<a class="top-comm" href="#/community" title="Community"${comm ? ` aria-current="page"` : ""}><span class="tc-ico">${LOGO_COMMUNITY}</span><span class="tc-l">Community</span></a>`;
+    const commLink = `<a class="top-comm" href="#/community" title="Community Ledger"${comm ? ` aria-current="page"` : ""}><span class="tc-ico">${LOGO_COMMUNITY}</span><span class="tc-l">Community Ledger</span></a>`;
     nav.innerHTML = commLink + sw + `<div class="acct">
       <button type="button" class="acct-btn" id="b-acct" aria-haspopup="menu" aria-expanded="false" aria-controls="acct-menu" aria-label="Account menu for ${esc(a.name)}">${avatarHtml(a)}<span class="acct-name">${esc(a.name)}</span>${CARET}</button>
       <div class="acct-menu" id="acct-menu" role="menu" hidden>
@@ -279,7 +279,7 @@
         <a role="menuitem" href="#/">Home</a>
         ${(war ? WAR_TABS : LIV_TABS).map(([k, l]) => `<a role="menuitem" href="#/${war ? "war" : "livery"}${k ? "/" + k : ""}">${esc(l)}</a>`).join("")}
         <a role="menuitem" href="#/shame">Pile of shame</a>
-        <a role="menuitem" href="#/community">Community</a>
+        <a role="menuitem" href="#/community">Community Ledger</a>
         <a role="menuitem" href="#/shared">Shared armies</a>
         <a role="menuitem" href="#/settings">Settings</a>
         ${installable() ? `<button type="button" role="menuitem" data-install>Install app</button>` : ""}
@@ -4340,7 +4340,7 @@
     const comm = !!(opts && opts.comm), war = isWar() && !comm;
     if(comm) document.documentElement.dataset.page = "community"; else delete document.documentElement.dataset.page;
     setTop();
-    document.title = comm ? "Community · Livery Ledger and War Ledger, run by the Eastern Cape Warlords" : war ? "War Ledger · Track your Warhammer 40,000 armies, lists and battles" : "Livery Ledger · Plan and track your Warhammer 40,000 painting";
+    document.title = comm ? "Community Ledger · Run by the Eastern Cape Warlords" : war ? "War Ledger · Track your Warhammer 40,000 armies, lists and battles" : "Livery Ledger · Plan and track your Warhammer 40,000 painting";
     PROF = P.profileFor("ultramarines");
     const me = acct(), online = store.kind === "supabase";
     const nSheets = FACTIONS.reduce((n, f) => n + f.units.filter(u => !u.t).length, 0);
@@ -4782,7 +4782,7 @@ Redemptor Dreadnought (210 points)</pre>
           <div class="lp-cta-btns">${me ? `<a class="btn primary" href="#/community">Open Community</a><a class="btn" href="#/war/events">See the events</a>` : online ? `<button type="button" class="primary" data-cta="up">Join free</button>` : `<a class="btn primary" href="#/war/events">See the events</a>`}</div>
         </div>
         <div class="lpw-art lp-club-art">
-          <span class="lp-club-mark" aria-hidden="true">${LOGO_COMMUNITY}</span>
+          <img class="lp-club-logo" src="img/ecw-logo.webp" alt="Eastern Cape Warlords" width="240" height="240" loading="lazy" decoding="async">
           ${upcoming.length ? `<ul class="cm-evs">${upcoming.slice(0, 3).map(e => `<li><a href="#/war/events"><span class="tag ev-kind ${esc(e.kind)}">${EVENT_KIND[e.kind]}</span><span class="lb-name">${esc(e.name)}<small>${esc([dayText(e.date), e.place].filter(Boolean).join(" · "))}</small></span></a></li>`).join("")}</ul>`
             : `<p class="hint">The club's next events show here once they're added.</p>`}
         </div>
@@ -4824,7 +4824,7 @@ Redemptor Dreadnought (210 points)</pre>
           <div class="lp-switch" role="group" aria-label="Show the homepage for">
             <button type="button" data-lp-mode="livery" aria-pressed="${!war && !comm}"><span class="lps-ico">${LOGO_DROP}</span><span><strong>Livery Ledger</strong><small>Paint your army</small></span></button>
             <button type="button" data-lp-mode="war" aria-pressed="${war}"><span class="lps-ico">${LOGO_SWORDS}</span><span><strong>War Ledger</strong><small>Command your army</small></span></button>
-            <button type="button" data-lp-mode="community" aria-pressed="${comm}"><span class="lps-ico">${LOGO_COMMUNITY}</span><span><strong>Community</strong><small>Meet other players</small></span></button>
+            <button type="button" data-lp-mode="community" aria-pressed="${comm}"><span class="lps-ico">${LOGO_COMMUNITY}</span><span><strong>Community Ledger</strong><small>Meet other players</small></span></button>
           </div>
           ${comm ? `<p class="eyebrow">Run by the Eastern Cape Warlords</p>
           <h1>Paint, play <span class="grad">and meet up.</span></h1>
@@ -5010,11 +5010,11 @@ Redemptor Dreadnought (210 points)</pre>
   /* Community: what's happening beyond your own armies. For now the events coming up and shared armies;
      spotlights and painting events come later. */
   function viewCommunity(){
-    view.name = "community"; document.title = `Community · ${toolName()}`;
+    view.name = "community"; document.title = "Community Ledger";
     const today = isoDay(new Date()), evs = eventData().evs.filter(e => e.date >= today).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 4);
     app.innerHTML = `
       <section class="page-head">
-        <p class="eyebrow">Community</p>
+        <p class="eyebrow">Community Ledger</p>
         <h1>Community</h1>
         <p class="sub">What's happening around the tables: events coming up and armies other painters have shared. Spotlights and painting events are on the way.</p>
       </section>
