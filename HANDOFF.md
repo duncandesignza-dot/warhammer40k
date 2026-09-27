@@ -246,6 +246,7 @@ python3 tools/build_factions.py bsdata && python3 tools/build_sheets.py bsdata
 - **Supabase:**
   - `setup.sql` has a policy "units: army is yours (update)" (a unit can't be moved into someone else's army). If the project was set up before it was added, run just that policy in the SQL editor.
   - Army lists and battles need `supabase/features.sql` (`warMissing` / `code: "nowar"` when missing).
+  - A shared ledger shows its owner as `scheme.by`/`scheme.byPic`, written on save (`myName()` in store.js: display name, else the account name, else the part of the email before @, the same name the profile shows). `store.syncShared()` runs on sign-in and fixes any shared ledgers whose name or picture is out of date.
   - Comments, likes, `army_follows` and `games.opp_user` are also in features.sql. **Follow is per army** (`army_follows`: army_id, user_id); the older `follows` table (people) is no longer used, and features.sql copies its rows into `army_follows`. The people you can tag as a battle opponent are the owners of armies you follow. **Run features.sql again** to create `army_follows`; until then Follow buttons stay hidden.
 - **Store changes:** keep `cleanUnit` / `cleanList` in step with any new field, or it's silently dropped on save. That already happened once with list-entry `gear`.
 

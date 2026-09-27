@@ -130,3 +130,10 @@ test("share an army from War Ledger", async ({page}) => {
   await expect(page.locator("[data-share]")).toHaveText("Shared");
   expect(await axe(page)).toEqual([]);
 });
+
+test("a shared army shows its owner's name, even one shared before they had a display name", async ({page}) => {
+  await mockSupabase(page, {db: {...DB, armies: [{...DB.armies[0], public: true, scheme: {...DB.armies[0].scheme, by: ""}}]}});
+  await page.goto("/#/war");
+  // The account has no display name, so the name is the one the profile shows.
+  await expect.poll(async () => (await db(page)).armies[0].scheme.by).toBe("player");
+});
