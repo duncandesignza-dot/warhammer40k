@@ -4335,6 +4335,7 @@
   const shot = (name, alt, art) => `<figure class="shot" data-shot="${name}"><div class="shot-art" aria-hidden="true">${art}</div><img src="img/shots/${name}.webp" alt="${esc(alt)}" loading="lazy" decoding="async"></figure>`;
   const paintName = l => String(l || "").replace(/^Citadel\s+/, "").replace(/\s*\([^)]*\)\s*$/, "");
   // The homepage shows Livery Ledger, War Ledger or Community; Community is gold and doesn't change the saved tool.
+  let landingDock = null;   // watches the switch at the top, to show the docked one when it's gone
   async function viewLanding(opts){
     view.name = "landing";
     const comm = !!(opts && opts.comm), war = isWar() && !comm;
@@ -4874,6 +4875,7 @@ Redemptor Dreadnought (210 points)</pre>
       </section>`}
 
       ${comm ? commBody() : war ? warBody() : liveryBody()}
+      <div class="lp-dock" id="lp-dock" inert aria-hidden="true"></div>
     `;
     app.querySelectorAll(".shot img").forEach(img => {
       const ok = () => img.closest(".shot").classList.add("has-img");
@@ -4883,8 +4885,20 @@ Redemptor Dreadnought (210 points)</pre>
     let heroAuth = null;
     if($("lp-auth")) heroAuth = authForm($("lp-auth"), "in", {onDone: () => { location.hash = comm ? "#/community" : isWar() ? "#/war" : "#/livery"; }});
     // Switch the homepage between Livery Ledger and War Ledger without leaving it.
+    /* On a desktop, once the switch at the top has scrolled away, the same switch docks at the bottom of the screen. */
+    const heroSw = app.querySelector(".lp-hero .lp-switch"), dock = $("lp-dock");
+    dock.innerHTML = `<div class="lp-switch" role="group" aria-label="Show the homepage for">${heroSw.innerHTML}</div>`;
+    if(landingDock) landingDock.disconnect();
+    landingDock = "IntersectionObserver" in window ? new IntersectionObserver(([e]) => {
+      const on = !e.isIntersecting && e.boundingClientRect.top < 0;
+      dock.classList.toggle("on", on); dock.inert = !on; dock.setAttribute("aria-hidden", String(!on));
+    }) : null;
+    if(landingDock){
+      landingDock.observe(heroSw);
+      const prev = view.cleanup; view.cleanup = () => { if(landingDock){ landingDock.disconnect(); landingDock = null; } if(prev) prev(); };
+    }
     app.querySelectorAll("[data-lp-mode]").forEach(btn => btn.addEventListener("click", async () => {
-      const to = btn.dataset.lpMode, inHero = !!btn.closest(".lp-switch");
+      const to = btn.dataset.lpMode, inHero = !!btn.closest(".lp-hero");
       if(to === "community" ? comm : !comm && (to === "war") === isWar()) return;
       const y = window.scrollY;
       if(to !== "community") setMode(to);

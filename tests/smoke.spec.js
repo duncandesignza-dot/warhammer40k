@@ -68,3 +68,22 @@ test("the background picker sits next to your profile", async ({page}) => {
   await page.click("#b-bg");
   await expect(page.locator("#bg-menu")).toBeVisible();
 });
+
+test("on a desktop, the homepage switch docks at the bottom once you scroll past it", async ({page}) => {
+  await page.setViewportSize({width: 1280, height: 800});
+  await page.goto("/#/");
+  const dock = page.locator("#lp-dock");
+  await expect(dock).not.toHaveClass(/\bon\b/);
+  await page.evaluate(() => window.scrollTo(0, 1400));
+  await expect(dock).toHaveClass(/\bon\b/);
+  await expect(dock).toHaveAttribute("aria-hidden", "false");
+  // Switching from the dock goes to the top of the new homepage.
+  await dock.locator('[data-lp-mode="war"]').click();
+  await expect(page.locator('.lp-hero [data-lp-mode="war"]')).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+  await expect(page.locator("#lp-dock")).not.toHaveClass(/\bon\b/);
+  // Not on a phone.
+  await page.setViewportSize({width: 390, height: 800});
+  await page.evaluate(() => window.scrollTo(0, 1400));
+  await expect(page.locator("#lp-dock")).toBeHidden();
+});
