@@ -593,7 +593,7 @@
         const {error} = on ? await sb.from("army_follows").insert({army_id: armyId, user_id: session.user.id}) : await sb.from("army_follows").delete().eq("army_id", armyId).eq("user_id", session.user.id);
         if(error && !/duplicate/i.test(error.message || "")) throw error;
       },
-      // Every ledger with sharing on, newest first, with painting totals. Readable without logging in.
+      // Every ledger with sharing on, newest first, with painting totals (for logged-in players).
       async listShared(){
         need();
         const armies = (mustOk(await sb.from(A).select("*").eq("public", true).order("updated_at", {ascending: false}).limit(150)) || []).map(toArmy);
@@ -763,5 +763,5 @@
     return ready ? SupaStore() : LocalStore();
   }
 
-  window.LEDGER_STORE = {create, MAX_PHOTOS, FIELDS, STATUS, STAGES, STAGE_KEYS, deriveStatus, cleanUnit, cleanScheme, cleanRecipe, cleanList, cleanGame, newId};
+  window.LEDGER_STORE = {create, MAX_PHOTOS, STATUS, STAGES, STAGE_KEYS, deriveStatus, cleanUnit, newId};
 })();

@@ -149,5 +149,5 @@
     return full.replace('class="mini"','class="mini solo"').replace(/width="\d+" height="\d+" viewBox="0 0 2000 960"/,`width="${w}" height="${w}" viewBox="1040 0 960 960"`);
   }
 
-  window.LEDGER_ART = {injectDefs, badge, shapeIcon, shade, lum, hexOk, loadIcon, pauldron};
+  window.LEDGER_ART = {injectDefs, badge, shapeIcon, hexOk, pauldron};
 })();

@@ -137,3 +137,13 @@ test("a shared army shows its owner's name, even one shared before they had a di
   // The account has no display name, so the name is the one the profile shows.
   await expect.poll(async () => (await db(page)).armies[0].scheme.by).toBe("player");
 });
+
+test("logging out forgets the settings kept in this browser, so the next person doesn't get them", async ({page}) => {
+  await mockSupabase(page, {db: DB});
+  await page.goto("/#/settings");
+  await page.check("#set-points");
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("ll-settings") || "{}").hidePoints)).toBe(true);
+  await page.click("#b-acct"); await page.click("[data-logout]");
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("ll-settings"))).toBeNull();
+  await expect(page.locator("body")).not.toHaveClass(/no-points/);
+});
