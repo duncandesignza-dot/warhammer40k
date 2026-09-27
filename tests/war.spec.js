@@ -258,7 +258,11 @@ test("duplicate a list as a new version and compare the two", async ({page}) => 
 test("a Crusade force: battles give experience and requisition points, and each unit keeps a Crusade card", async ({page}) => {
   await seed(page);
   await open(page, "#/war/lists");
-  await page.click('[data-kind="crusade"]');
+  // One New list button: a Crusade force is one of the choices in it.
+  await expect(page.locator('[data-kind="crusade"]')).toHaveCount(0);
+  await page.click('.war-actions [data-new-list]');
+  await page.selectOption("#w-lk", "crusade");
+  await expect(page.locator("#w-lk-hint")).toContainText("supply limit");
   await page.fill("#w-ln", "Indomitus Crusade"); await page.fill("#w-ll", "1000");
   await page.click("dialog[open] [type=submit]");
   await expect(page.locator("h1")).toHaveText("Indomitus Crusade");

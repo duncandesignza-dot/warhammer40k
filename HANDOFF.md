@@ -181,6 +181,13 @@ python3 tools/build_factions.py bsdata && python3 tools/build_sheets.py bsdata
   - The background picker (`.bgpick`) is moved into the top bar beside the profile menu (or the log in buttons) each time `setTop()` redraws it.
   - On the Community page `html[data-page="community"]` turns the accents gold (the `--brand` variables), neither side of the Livery/War switch is lit, and the header logo shows the two figures over "Livery Ledger". The saved mode (`ll-mode`) is left as it was.
 
+- **Helping people understand it:**
+  - **Tooltips** (`TIPS` and the `tooltips()` block): a styled line on hover (after 450ms) or keyboard focus, never on touch. Text comes from `data-tip`, then `title` (moved into `data-tip`), then the first matching `TIPS` selector, which covers the tabs, top bar and main buttons. Add a new button's tip there.
+  - **ⓘ notes** (`GLOSSARY`, `infoBtn(key)`, `infoNotes()`): a tap or click opens a short explanation with "More in Help". They work on phones. They sit beside jargon: battle size, detachment, warlord, enhancement, leading, Legends, Things to check, Points check, CP, VP, Crusade terms, painting stages, ranks, ledger, To buy and Before your events.
+  - **Help** (`#/help`, `viewHelp(anchor)`): the three tools with each tab explained (from `TIPS`), getting started, every `GLOSSARY` word grouped (`GLOSS_GROUPS`, each at `#/help#g-<key>`), and questions. It's linked from the account menu, the footer and every ⓘ. `routeNow` splits `#/page#anchor`.
+  - **Getting started** (`startCard(tool, title, steps)`): a four-step checklist on the Armoury and the Livery Overview, shown until every step is done or it's hidden (`settings.startHide`).
+  - Army lists has one **+ New list** button; its "What's it for?" choice makes an army list or a Crusade force.
+
 ## Data model (what's saved)
 
 - **Army:** `{id, faction, name, scheme, public, owner?}`.

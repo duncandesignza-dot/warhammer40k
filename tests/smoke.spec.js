@@ -87,3 +87,81 @@ test("on a desktop, the homepage switch docks at the bottom once you scroll past
   await page.evaluate(() => window.scrollTo(0, 1400));
   await expect(page.locator("#lp-dock")).toBeHidden();
 });
+
+test("tooltips: pointing at a tab or button says what it does, and so does tabbing to it", async ({page}) => {
+  await seed(page);
+  await page.setViewportSize({width: 1280, height: 800});
+  await open(page, "#/war");
+  await page.hover('.war-tabs a[href="#/war/lists"]');
+  await expect(page.locator("#tipbox")).toBeVisible();
+  await expect(page.locator("#tipbox")).toHaveText("Lists for your games, with units you own and ones you don't");
+  await expect(page.locator('.war-tabs a[href="#/war/lists"]')).toHaveAttribute("aria-describedby", "tipbox");
+  await page.mouse.move(5, 790);
+  await expect(page.locator("#tipbox")).toBeHidden();
+  // A title becomes a tooltip too, without the browser's own.
+  await open(page, "#/livery/collection");
+  await page.hover("#ro-sel");
+  await expect(page.locator("#tipbox")).toContainText("Pick several units");
+  // Keyboard.
+  await page.locator(".war-tabs a").first().focus();
+  await page.keyboard.press("Tab");
+  await expect(page.locator("#tipbox")).toBeVisible();
+});
+
+test("ⓘ buttons explain a word, on a tap as well as a click, and link to Help", async ({page}) => {
+  await seed(page);
+  await page.setViewportSize({width: 390, height: 800});
+  await open(page, "#/war/list/l1");
+  await page.locator('[data-info="detachment"]').first().click();
+  const pop = page.locator(".infopop");
+  await expect(pop).toContainText("Detachment");
+  await expect(pop).toContainText("The set of army rules you choose for a list");
+  await expect(pop.locator("a")).toHaveAttribute("href", "#/help#g-detachment");
+  await expect(page.locator('[data-info="detachment"]').first()).toHaveAttribute("aria-expanded", "true");
+  await page.keyboard.press("Escape");
+  await expect(pop).toHaveCount(0);
+  // In a summary, it explains without opening or closing the section.
+  await open(page, "#/army/a1/unit/u2");
+  const sec = page.locator('details.dsec[data-k="painting"]');
+  const was = await sec.evaluate(d => d.open);
+  await sec.locator('[data-info="stages"]').click();
+  await expect(page.locator(".infopop")).toContainText("Painting stages");
+  expect(await sec.evaluate(d => d.open)).toBe(was);
+});
+
+test("Help: the three tools, getting started, the words and questions, and a ⓘ opens it at its word", async ({page}) => {
+  await seed(page);
+  await open(page, "#/help");
+  await expect(page.locator("h1")).toHaveText("How it all works");
+  await expect(page.locator(".hp-tool h3")).toHaveText(["Livery Ledger", "War Ledger", "Community Ledger"]);
+  await expect(page.locator(".hp-tool.war .hp-tabs li").first()).toContainText("Every unit you own, by faction");
+  await expect(page.locator("#g-supply-limit dt")).toHaveText("Supply limit");
+  // From a ⓘ: straight to the word.
+  await open(page, "#/war/list/l1");
+  await page.locator('[data-info="detachment"]').first().click();
+  await page.click(".infopop a");
+  await expect(page).toHaveURL(/#\/help#g-detachment$/);
+  await expect(page.locator("#g-detachment")).toBeInViewport();
+  await expect(page.locator("#g-detachment")).toHaveClass(/hp-hit/);
+  // Linked from the footer.
+  await expect(page.locator('.site-foot a[href="#/help"]')).toBeVisible();
+});
+
+test("getting started: a checklist for someone new, ticking off as they go, and it can be hidden", async ({page}) => {
+  await seed(page, `db.units = []; db.lists = []; db.games = []; db.armies = db.armies.slice(0, 1);`);
+  await open(page, "#/war");
+  const card = page.locator('[data-start-card="war"]');
+  await expect(card).toContainText("1 of 4 done");
+  await expect(card.locator("li.done")).toHaveCount(1);
+  await expect(card.locator("li").nth(1)).toContainText("Add the units you own");
+  await open(page, "#/livery");
+  const liv = page.locator('[data-start-card="livery"]');
+  await expect(liv).toContainText("2 of 4 done");
+  await liv.locator("[data-start-hide]").click();
+  await expect(liv).toHaveCount(0);
+  expect(JSON.parse(await page.evaluate(() => localStorage.getItem("ll-settings"))).startHide).toEqual({livery: true});
+  await open(page, "#/livery");
+  await expect(page.locator('[data-start-card="livery"]')).toHaveCount(0);
+  await open(page, "#/war");
+  await expect(page.locator('[data-start-card="war"]')).toHaveCount(1);
+});
