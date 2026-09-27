@@ -993,3 +993,31 @@ test("War Ledger's overview has your profile, getting started and force composit
   await expect(page.locator(".ar-fac")).toHaveCount(2);
   await expect(page.locator(".war-actions [data-coll-add]")).toBeVisible();
 });
+
+test("Add another on a unit you own adds one you don't own yet, so the owned unit isn't counted twice", async ({page}) => {
+  await seed(page);
+  await open(page, "#/war/list/l1");
+  const i = await page.evaluate(() => JSON.parse(localStorage.getItem("livery-ledger-v3")).lists[0].units.findIndex(e => e.u === "u2"));
+  await page.click(`[data-dupe="${i}"]`);
+  await expect.poll(async () => (await saved(page)).lists[0].units.length).toBe(5);
+  const copy = (await saved(page)).lists[0].units[i + 1];
+  expect(copy.u).toBeUndefined();
+  expect(copy).toMatchObject({n: "Intercessor Squad", count: 10, points: 150});
+});
+
+test("game day: CP buttons keep an open datasheet open, and a new game stops showing as in progress", async ({page}) => {
+  await seed(page);
+  await open(page, "#/war/list/l1/play");
+  const unit = page.locator("details.gd-u").first();
+  await unit.locator("summary").click();
+  await expect(unit).toHaveAttribute("open", "");
+  await page.click('[data-step="gd-cp0"][data-d="1"]');
+  await expect(page.locator("#gd-cp0")).toHaveText("1");
+  await expect(unit).toHaveAttribute("open", "");
+  await open(page, "#/war/battles");
+  await expect(page.locator("#pp-go")).toHaveCount(1);
+  await open(page, "#/war/list/l1/play");
+  await page.click("[data-gd-new]"); await page.click("[data-gd-new]");
+  await open(page, "#/war/battles");
+  await expect(page.locator("#pp-go")).toHaveCount(0);
+});

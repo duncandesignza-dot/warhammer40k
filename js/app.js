@@ -729,7 +729,7 @@
   };
   // Which section a page belongs to, so its tab is lit (a ledger counts as Ledgers, an army list as Lists).
   function navSection(parts){
-    if(parts[0] === "war") return ({army: "lists", armies: "armoury", new: "lists", collection: "armoury", list: "lists", compare: "lists", points: "lists", datasheets: "armoury", events: "battles"})[parts[1]] ?? (BOTNAV.war.items.some(i => i[0] === parts[1]) ? parts[1] || "" : "");
+    if(parts[0] === "war") return ({army: "lists", armies: "armoury", new: "lists", collection: "armoury", list: "lists", compare: "lists", points: "lists", datasheets: "armoury", events: "battles", play: "battles"})[parts[1]] ?? (BOTNAV.war.items.some(i => i[0] === parts[1]) ? parts[1] || "" : "");
     if(parts[0] === "army" || parts[0] === "new") return "ledgers";
     if(parts[0] === "livery") return parts[1] === "new" ? "ledgers" : parts[1] === "year" ? "activity" : parts[1] || "";
     return null;
@@ -755,6 +755,12 @@
   const WAR_TABS = [["", "Overview"], ["armoury", "Armoury"], ["lists", "Army lists"], ["datasheets", "Datasheets"], ["battles", "Battles"], ["events", "Events"], ["buy", "To buy"]];
   // How many units your lists want that you don't own, for the To buy tab (worked out whenever War data loads).
   let buyCount = 0;
+  // After a list changes without reloading everything: recount To buy and redraw the tabs' count.
+  function refreshBuy(D){
+    buyCount = shoppingRows(D).reduce((a, r) => a + r.want, 0);
+    const nav = app.querySelector("nav.war-tabs"), on = nav && nav.querySelector("[aria-current]");
+    if(nav) nav.outerHTML = warTabs(on ? (on.getAttribute("href").split("/")[2] || "") : "");
+  }
   const warTabs = on => { on = on === "armies" || on === "collection" ? "armoury" : on; return `<nav class="war-tabs" aria-label="War Ledger">${WAR_TABS.map(([k, l]) => `<a href="#/war${k ? "/" + k : ""}"${k === on ? ` aria-current="page"` : ""}>${l}${k === "buy" && buyCount ? ` <span class="count">${buyCount}</span>` : ""}</a>`).join("")}</nav>`; };
   const missingBanner = D => D.warMissing ? `<div class="banner"><span class="dot warn"></span><span>Army lists and battle reports need a quick database update. Run <strong>supabase/features.sql</strong> in Supabase to turn them on.</span></div>` : "";
 
@@ -1094,7 +1100,7 @@
       ${has ? `
       ${startCard("war", "Getting started with War Ledger", [
         {done: D.armies.length > 0, label: "Add an army", href: "#/war/new", hint: "Pick its faction and give it a name."},
-        {done: mine.length > 0, label: "Add the units you own", href: D.armies[0] ? `#/war/army/${D.armies[0].id}` : "#/war/new", hint: "One at a time, or paste an army list."},
+        {done: mine.length > 0, label: "Add the units you own", href: D.armies[0] ? `#/war/army/${esc(D.armies[0].id)}` : "#/war/new", hint: "One at a time, or paste an army list."},
         {done: D.lists.length > 0, label: "Make an army list", href: "#/war/lists", hint: "Pick units for a game, including ones you don't own yet."},
         {done: D.games.length > 0, label: "Play it and log the battle", href: "#/war/battles", hint: "Take it to the table on Game day, then log the result."}])}
       ${forceStatus(mine)}
@@ -2109,7 +2115,7 @@
     view.name = "war-list"; document.title = `${list.name} · War Ledger`;
     // Saves run one after another, so the last change always wins.
     function save(patch){
-      list = {...list, ...patch}; draw();
+      list = {...list, ...patch}; D.lists = D.lists.map(l => l.id === list.id ? list : l); buyCount = shoppingRows(D).reduce((a, r) => a + r.want, 0); draw();
       chain = chain.then(() => store.saveList(list, list.id)).then(saved => { list = {...list, updatedAt: saved.updatedAt}; D.lists = D.lists.map(l => l.id === list.id ? list : l); })
         .catch(err => { console.error(err); flash("Couldn't save the list: " + errText(err)); });
       return chain;
@@ -2437,8 +2443,12 @@
       else if(b.matches("[data-own-all]")) ownEntries(list.units.map((e, i) => i));
       else if(b.dataset.dupe != null) {
         // Another of the same unit, without the things only one unit can have.
+        // A unit you own is one model kit, so its copy is one you don't own yet, with the same datasheet.
         const i = +b.dataset.dupe, {warlord, enh, lead, xp, hon, scar, cpx, cnote, ...copy} = list.units[i];
-        save({units: [...list.units.slice(0, i + 1), {...copy, k: entryKey()}, ...list.units.slice(i + 1)]});
+        let add = {...copy, k: entryKey()};
+        if(copy.u){ const {u, ...rest} = add, un = D.units.find(x => x.id === u);
+          add = un ? {...rest, n: un.name, sheet: un.datasheet || un.name, role: un.role || "", count: un.count, points: un.points} : rest; }
+        save({units: [...list.units.slice(0, i + 1), add, ...list.units.slice(i + 1)]});
       }
       else if(b.dataset.addTab) { addTab = b.dataset.addTab; draw(); const t = app.querySelector(`[data-add-tab="${addTab}"]`); if(t) t.focus(); }
       else if(b.matches("[data-jump-add]")) { const p = $("lb-add"); if(p){ p.scrollIntoView({behavior: "smooth", block: "start"}); const f = $("lb-dq") || $("lb-q"); if(f) f.focus({preventScroll: true}); } }
@@ -2701,16 +2711,18 @@
     if(!D.armies.length){ flash("Create an army first."); return; }
     if(D.warMissing){ flash("Run supabase/features.sql in Supabase to turn on battle reports."); return; }
     const edit = !!(g && g.id), seed = g || {};
-    const armyId = D.armies.some(a => a.id === seed.armyId) ? seed.armyId : D.armies[0].id;
+    // Editing a battle whose army was deleted keeps it there, rather than moving it to another army.
+    const lost = edit && seed.armyId && !D.armies.some(a => a.id === seed.armyId);
+    const armyId = lost || D.armies.some(a => a.id === seed.armyId) ? seed.armyId : D.armies[0].id;
     const d = modal(edit ? "Edit battle" : "Log a battle", `
       <div class="wgrid">
-        <label class="span2">Your army<select id="w-ga">${D.armies.map(a => `<option value="${esc(a.id)}"${a.id === armyId ? " selected" : ""}>${esc(a.name)}</option>`).join("")}</select></label>
+        <label class="span2">Your army<select id="w-ga">${lost ? `<option value="${esc(armyId)}" selected>Deleted army</option>` : ""}${D.armies.map(a => `<option value="${esc(a.id)}"${a.id === armyId ? " selected" : ""}>${esc(a.name)}</option>`).join("")}</select></label>
         <label>Date<input id="w-gd" type="date" value="${esc(seed.date || isoDay(new Date()))}" max="${isoDay(new Date())}"></label>
         <label class="span3">Army list<select id="w-gl"></select></label>
         <label class="span2">Opponent's faction${factionSelect("w-go", seed.opp || "", "Not sure / other")}</label>
         <label><span>Opponent <span class="opt">(optional)</span></span><input id="w-gp" maxlength="60" value="${esc(seed.oppName || "")}" placeholder="Name"></label>
         <p class="span3 opp-note" id="w-gon" aria-live="polite" hidden></p>
-        <label class="span3" id="w-gf-l" hidden><span>Tag a friend <span class="opt">(optional)</span></span><select id="w-gf"><option value="">No one</option></select><small class="hint" id="w-gf-h">They'll see this battle and can add it to their own record.</small></label>
+        <label class="span3" id="w-gf-l" hidden><span>Tag a friend <span class="opt">(optional)</span></span><select id="w-gf"><option value="">No one</option>${seed.oppUser ? `<option value="${esc(seed.oppUser)}" selected>${esc(seed.oppUserName || "A player")}</option>` : ""}</select><small class="hint" id="w-gf-h">They'll see this battle and can add it to their own record.</small></label>
         <label class="span3"><span>Mission <span class="opt">(optional)</span></span><input id="w-gm" maxlength="80" value="${esc(seed.mission || "")}"></label>
       </div>
       <fieldset class="wfs"><legend>Result</legend>
@@ -2746,11 +2758,12 @@
     // Online: people whose armies you follow can be tagged as the opponent.
     if(store.listTagged && store.session) friendsList().then(fs => {
       if(!d.open) return;
-      const cur = seed.oppUser && !fs.some(f => f.id === seed.oppUser) ? [{id: seed.oppUser, name: seed.oppUserName || "A player"}] : [];
-      const all = cur.concat(fs);
+      // The friend already tagged on this battle is in the list from the start, so a slow or failed load can't untag them.
+      const cur = seed.oppUser ? [{id: seed.oppUser, name: seed.oppUserName || "A player"}] : [];
+      const all = cur.concat(fs.filter(f => f.id !== seed.oppUser));
       $("w-gf-l").hidden = false;
       if(!all.length){ $("w-gf").disabled = true; $("w-gf-h").textContent = "Follow one of their armies on Shared armies to tag them as your opponent."; return; }
-      $("w-gf").insertAdjacentHTML("beforeend", all.map(f => `<option value="${esc(f.id)}"${f.id === seed.oppUser ? " selected" : ""}>${esc(f.name)}</option>`).join(""));
+      $("w-gf").insertAdjacentHTML("beforeend", fs.filter(f => f.id !== seed.oppUser).map(f => `<option value="${esc(f.id)}">${esc(f.name)}</option>`).join(""));
       $("w-gf").addEventListener("change", () => { const f = all.find(x => x.id === $("w-gf").value); if(f && !$("w-gp").value.trim()) $("w-gp").value = f.name; });
     }).catch(err => console.warn("Couldn't load friends", err));
     d.querySelector("form").addEventListener("submit", async e => {
@@ -2894,15 +2907,15 @@
         try {
           const units = l.units.concat({n: sh.n, sheet: sh.n, role: roleOf(sh), count, points: sheetPts(sh, count) ?? 0, k: entryKey()});
           await store.saveList({...l, units}, l.id);
-          l.units = units; d.close(); flash(`Added ${sh.n} to ${l.name}, as a unit you don't own yet.`);
+          l.units = units; refreshBuy(D); d.close(); flash(`Added ${sh.n} to ${l.name}, as a unit you don't own yet.`);
         } catch(err){ console.error(err); flash("Couldn't add it: " + errText(err)); }
       });
     }
     fillRoles(); ready(); draw();
-    $("dsp-f").addEventListener("change", e => { fid = e.target.value; ready(); role = ""; try { localStorage.setItem("ll-ds-prefs", JSON.stringify({f: fid, sort})); } catch(err){} history.replaceState(null, "", "#/war/datasheets" + (fid ? "/" + fid : "")); lastHash = location.hash; document.title = fid ? `${factionName(fid)} datasheets · War Ledger` : "Datasheets · War Ledger"; fillRoles(); draw(); });
+    $("dsp-f").addEventListener("change", e => { fid = e.target.value; ready(); role = ""; try { localStorage.setItem("ll-ds-prefs", JSON.stringify({sort})); } catch(err){} history.replaceState(null, "", "#/war/datasheets" + (fid ? "/" + fid : "")); lastHash = location.hash; document.title = fid ? `${factionName(fid)} datasheets · War Ledger` : "Datasheets · War Ledger"; fillRoles(); draw(); });
     $("dsp-q").addEventListener("input", e => { q = e.target.value.trim().toLowerCase(); draw(); });
     $("dsp-r").addEventListener("change", e => { role = e.target.value; draw(); });
-    $("dsp-s").addEventListener("change", e => { sort = e.target.value; try { localStorage.setItem("ll-ds-prefs", JSON.stringify({f: fid, sort})); } catch(err){} draw(); });
+    $("dsp-s").addEventListener("change", e => { sort = e.target.value; try { localStorage.setItem("ll-ds-prefs", JSON.stringify({sort})); } catch(err){} draw(); });
     $("dsp-l").addEventListener("change", e => { legends = e.target.checked; draw(); });
     onApp(e => { const b = e.target.closest("[data-dsp]"); if(b) openSheet(b.dataset.dsp); });
   }
@@ -2994,7 +3007,9 @@
     const saved = id => { try { const st = JSON.parse(localStorage.getItem("ll-play-" + id) || "null"); return st && Array.isArray(st.vp) ? st : null; } catch(e){ return null; } };
     const lists = D.lists.filter(l => l.status !== "archived" && D.armies.some(a => a.id === l.armyId));
     if(!lists.length) return "";
-    const going = lists.map(l => [l, saved(l.id)]).filter(x => x[1]);
+    // A game counts as started once it has a score, a later round, Command Points, a destroyed unit or an opponent.
+    const started = st => st && (st.round > 1 || st.vp.some(r => r[0] != null || r[1] != null) || (st.cp || []).some(Boolean) || (st.dead || []).length || st.opp || st.mission);
+    const going = lists.map(l => [l, saved(l.id)]).filter(x => started(x[1]));
     const today = isoDay(new Date()), evs = eventData().evs;
     const todays = evs.filter(e => e.date === today && e.mine && lists.some(l => l.id === e.mine.listId));
     const vpOf = (st, side) => st.vp.reduce((a, r) => a + (+r[side] || 0), 0);
@@ -3024,6 +3039,7 @@
     try { const saved = JSON.parse(localStorage.getItem(KEY) || "null"); if(saved && Array.isArray(saved.vp)) st = {...st, ...saved}; } catch(e){}
     const keep = () => { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch(e){} };
     const s = listState(list, D), rows = s.rows.filter(x => !x.gone);
+    st.dead = (Array.isArray(st.dead) ? st.dead : []).filter(k => rows.some(r => r.k === k));   // units since taken out of the list
     const gearOf = x => x.u ? [x.u.ranged, x.u.melee].filter(Boolean).join(", ") : (x.e.gear || "");
     const total = side => st.vp.reduce((a, r) => a + (+r[side] || 0), 0);
     const scored = () => st.vp.some(r => r[0] != null || r[1] != null);
@@ -3092,11 +3108,17 @@
         const d = +b.dataset.d;
         if(b.dataset.step === "gd-round") st.round = Math.min(PLAY_ROUNDS, Math.max(1, st.round + d));
         else { const i = b.dataset.step === "gd-cp0" ? 0 : 1; st.cp[i] = Math.min(99, Math.max(0, st.cp[i] + d)); }
-        keep(); draw(); const again = app.querySelector(`[data-step="${b.dataset.step}"][data-d="${d}"]`); if(again && !again.disabled) again.focus();
+        // Updated in place, so an open datasheet stays open.
+        keep();
+        const id = b.dataset.step, v = id === "gd-round" ? st.round : st.cp[id === "gd-cp0" ? 0 : 1], max = id === "gd-round" ? PLAY_ROUNDS : 99, min = id === "gd-round" ? 1 : 0;
+        $(id).textContent = v;
+        app.querySelectorAll(`[data-step="${id}"]`).forEach(x => { x.disabled = +x.dataset.d < 0 ? v <= min : v >= max; });
+        if(id === "gd-round"){ const tr = app.querySelector("tr.now"); if(tr) [...tr.parentElement.children].forEach((r, i) => r.classList.toggle("now", i + 1 === st.round)); }
+        if(b.disabled){ const other = app.querySelector(`[data-step="${id}"][data-d="${-d}"]`); if(other) other.focus(); }
       }
       else if(b.matches("[data-gd-new]")){
         if(!newArmed){ newArmed = true; b.textContent = "Press again to clear this game"; setTimeout(() => { newArmed = false; if(b.isConnected) b.textContent = "Start a new game"; }, 4000); return; }
-        st = fresh(); keep(); newArmed = false; draw(); flash("New game started.");
+        st = fresh(); try { localStorage.removeItem(KEY); } catch(err){} newArmed = false; draw(); flash("New game started.");
       }
       else if(b.matches("[data-gd-log]")){
         const us = total(0), them = total(1), has = scored();
@@ -3202,13 +3224,14 @@
         }
         flash(`${r.name} added to ${r.army.name}, and to Livery Ledger ready to paint.`);
         D = await warData(); draw();
-      } catch(err){ console.error(err); flash("Couldn't save: " + errText(err)); b.disabled = false; }
+      } catch(err){ console.error(err); flash("Couldn't save: " + errText(err)); D = await warData(); draw(); }
     });
   }
   async function viewWarBattles(){
     view.name = "war-battles"; document.title = "Battles · War Ledger";
     let D = await warData(), armyF = "", tagged = [];
-    const loadTagged = () => taggedFor(D).then(t => { tagged = t; if(view.name === "war-battles") draw(); }).catch(err => console.warn("Couldn't load tagged battles", err));
+    const seq = view.seq;   // this visit to the page; a later one has its own
+    const loadTagged = () => taggedFor(D).then(t => { if(view.seq !== seq || !$("wb-out")) return; tagged = t; draw(); }).catch(err => console.warn("Couldn't load tagged battles", err));
     const again = async () => { D = await warData(); draw(); loadTagged(); };
     app.innerHTML = `
       <section class="page-head war-head">
@@ -3315,7 +3338,7 @@
       if(ta){ const g = tagged.find(x => x.id === ta.dataset.tagAdd); if(g) addTagged(D, g, again); return; }
       if(th){ try { localStorage.setItem(TAG_HIDE, JSON.stringify([...tagHidden(), th.dataset.tagHide].slice(-200))); } catch(err){} tagged = tagged.filter(x => x.id !== th.dataset.tagHide); draw(); return; }
       const b = e.target.closest("[data-unit]"), u = b && D.units.find(x => x.id === b.dataset.unit);
-      if(u){ openUnit(armyById(D, u.armyId), u, again, {armies: D.armies, pools: D.pools}); return; }
+      if(u){ const a = armyById(D, u.armyId); if(a) openUnit(a, u, again, {armies: D.armies, pools: D.pools}); return; }
       const on = e.target.closest("[data-on-edit]"); if(on){ editNote(on.dataset.onEdit); return; }
       warClicks(e, D, again);
     });
