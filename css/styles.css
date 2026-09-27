@@ -632,7 +632,7 @@ div.hd-when{display:contents}
 /* "More" menu for backups */
 .more{position:relative}
 .more-menu{position:absolute;right:0;top:calc(100% + 6px);z-index:40;min-width:190px;padding:6px;display:flex;flex-direction:column;gap:2px;background:rgba(13,17,20,.97);border:1px solid var(--line-strong);border-radius:var(--r);box-shadow:0 20px 50px -10px rgba(0,0,0,.8);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
-.more-menu button{justify-content:flex-start;background:transparent;border:0;font-weight:500;font-size:.85rem;padding:9px 10px;border-radius:9px}
+.more-menu button{justify-content:flex-start;text-align:left;white-space:nowrap;background:transparent;border:0;font-weight:500;font-size:.85rem;padding:9px 10px;border-radius:9px}
 .more-menu button:hover{background:var(--brand-soft)}
 .more-menu hr{border:0;border-top:1px solid var(--line);margin:4px 2px}
 .more-menu .menu-danger{color:var(--bad)}
@@ -1930,3 +1930,29 @@ dialog.wdlg.xwide{max-width:min(1120px,calc(100vw - 24px))}
 .gd-dead{flex:none;white-space:nowrap}
 .gd-end{margin:6px 0 20px}
 @media (max-width:480px){.gd-steps{gap:6px}.gd-step{padding:8px 4px}.gd-ctl{gap:6px}.gd-ctl .btn-sm{width:34px;height:34px}}
+.war-tabs .count{margin-left:4px;font-family:var(--mono);font-size:.7rem;padding:1px 6px;border-radius:99px;background:var(--brand-soft);color:var(--brand)}
+/* Datasheets: a faction's datasheets to browse. */
+.ds-filters{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:8px}
+.ds-filters .ds-f{min-width:220px}
+.ds-filters input[type=search]{flex:1 1 220px}
+.dsp-rows{list-style:none;margin:0 0 12px;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:8px}
+.dsp-open{width:100%;display:flex;align-items:center;gap:12px;text-align:left;padding:12px 14px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface);color:inherit;font:inherit;cursor:pointer}
+.dsp-open:hover,.dsp-open:focus-visible{border-color:var(--line-strong)}
+.dsp-open .lb-name{flex:1;min-width:0;display:flex;flex-direction:column}
+.dsp-open small{color:var(--muted);font-size:.82rem}
+.dsp-add{flex:1;min-width:0}.dsp-add select{width:100%}
+@media (max-width:640px){.ds-filters>*{flex:1 1 100%}.ds-filters select{width:100%}.dsp-rows{grid-template-columns:1fr}}
+/* Events and Play. */
+.ev-list-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;align-items:start}
+.ev-list-grid>.panel{margin:0}
+.ev-top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.ev-h{margin:0;font-size:1.05rem}
+.ev-top small,.ev-list small{color:var(--muted);font-size:.84rem}
+.ev.today{border-color:var(--brand-line)}
+.ev p{margin:10px 0 0}
+.ev .row-actions{margin-top:12px}
+.ev-warn{color:var(--warn,#facc15);font-size:.88rem}
+.ev-notes{white-space:pre-line;font-size:.9rem;color:var(--muted)}
+.ev-res b{font-family:var(--mono)}
+.pp-rows{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.pp-rows li{display:flex;align-items:center;gap:12px;padding:10px 14px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface)}

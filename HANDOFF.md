@@ -96,7 +96,7 @@ python3 tools/build_factions.py bsdata && python3 tools/build_sheets.py bsdata
 
 - **Routing:** hash routes in `route()`.
   - Livery: `#/livery`, `#/livery/{ledgers,collection,activity,paints,new}`, `#/army/<id>` (the ledger), `#/army/<id>/{colours,guide,unit/<uid>}`, `#/new/<faction>`.
-  - War: `#/war` (the Armies tab), `#/war/{lists,battles,new,collection,buy,points}`, `#/war/armies` (redirects to `#/war`), `#/war/list/<id>/{print,play}`, `#/war/new/<faction>`, `#/war/army/<id>`, `#/war/list/<id>`, `#/war/compare/<a>/<b>`.
+  - War: `#/war` (the Armies tab), `#/war/{lists,datasheets,play,battles,events,buy,points,new,collection}`, `#/war/datasheets/<faction>`, `#/war/armies` (redirects to `#/war`), `#/war/list/<id>/{print,play}`, `#/war/new/<faction>`, `#/war/army/<id>`, `#/war/list/<id>`, `#/war/compare/<a>/<b>`.
   - Shared: `#/shame`, `#/settings`, `#/shared`, `#/painter/<id>`, and `#/` (landing).
 - **Page lifecycle:**
   - `route()` queues: one page loads at a time, and only the newest address is opened, so a slow page can't draw over the one you went to. `routeNow()` does the work.
@@ -157,7 +157,8 @@ python3 tools/build_factions.py bsdata && python3 tools/build_sheets.py bsdata
 ## Product decisions to keep
 
 - **An army is what you own**, in both tools (the same units). **A list is for testing**: units from your army plus datasheets you don't own, marked "Not owned", with "You own 3 of 4 units · 160 pts not owned" at the top.
-- War tabs: Armies (the overview, `#/war`), Army lists, Battles. The collection page still exists (header button) but isn't a tab.
+- War tabs: Armies (the overview, `#/war`), Army lists, Datasheets, Play, Battles, Events, To buy (with a count). Phones' bottom bar has Armies, Lists, Play, Battles and To buy; Datasheets and Events are buttons on the Armies page. The collection page still exists (header button) but isn't a tab.
+- Events are kept in `settings.events` (`warEvents`/`saveEvents`); an event's result is the battles logged with its list on its date.
 - The list builder's Add units opens on "Your units"; Datasheets is the second tab.
 - **War has no built/painted/battle-ready tracking.** It was removed on purpose so people can test armies they don't own. The fields are still stored and Livery owns them.
 - **Rules text stays out of the data.** Only numbers, profiles, and names of abilities, rules and keywords (the same choice as `build_factions.py`). Adding ability descriptions is possible but was deliberately not done.
