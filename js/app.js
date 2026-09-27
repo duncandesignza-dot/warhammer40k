@@ -538,6 +538,7 @@
         else if(parts[1] === "lists") await viewWarLists();
         else if(parts[1] === "battles") await viewWarBattles();
         else if(parts[1] === "buy") await viewWarBuy();
+        else if(parts[1] === "points") await viewWarPoints();
         else if(!parts[1]) await viewWarDash();
         else viewNotFound();
       } else
@@ -655,7 +656,7 @@
   };
   // Which section a page belongs to, so its tab is lit (a ledger counts as Ledgers, an army list as Lists).
   function navSection(parts){
-    if(parts[0] === "war") return ({army: "", armies: "", new: "", collection: "", list: "lists", compare: "lists", buy: "lists"})[parts[1]] ?? (BOTNAV.war.items.some(i => i[0] === parts[1]) ? parts[1] || "" : "");
+    if(parts[0] === "war") return ({army: "", armies: "", new: "", collection: "", list: "lists", compare: "lists", buy: "lists", points: "lists"})[parts[1]] ?? (BOTNAV.war.items.some(i => i[0] === parts[1]) ? parts[1] || "" : "");
     if(parts[0] === "army" || parts[0] === "new") return "ledgers";
     if(parts[0] === "livery") return parts[1] === "new" ? "ledgers" : parts[1] || "";
     return null;
@@ -1764,13 +1765,72 @@
     app.innerHTML = `
       <section class="page-head war-head">
         <div><p class="eyebrow">War Ledger</p><h1>Army lists</h1><p class="sub">A list is a force to try out: units from your army, plus any you don't own yet. It's what you take to a particular game, and a Crusade force is the Order of Battle you grow over a campaign.</p></div>
-        <div class="war-actions">${D.warMissing ? "" : `${D.armies.length ? `<button type="button" class="primary" data-new-list="">+ New list</button><button type="button" data-new-list="" data-kind="crusade">+ New Crusade force</button>` : ""}<button type="button"${D.armies.length ? "" : ` class="primary"`} data-import-army>Import a list</button>${shoppingRows(D).length ? `<a class="btn" href="#/war/buy">Shopping list <span class="count">${shoppingRows(D).reduce((a, r) => a + r.want, 0)}</span></a>` : ""}`}</div>
+        <div class="war-actions">${D.warMissing ? "" : `${D.armies.length ? `<button type="button" class="primary" data-new-list="">+ New list</button><button type="button" data-new-list="" data-kind="crusade">+ New Crusade force</button>` : ""}<button type="button"${D.armies.length ? "" : ` class="primary"`} data-import-army>Import a list</button><a class="btn" href="#/war/points">Points check</a>${shoppingRows(D).length ? `<a class="btn" href="#/war/buy">Shopping list <span class="count">${shoppingRows(D).reduce((a, r) => a + r.want, 0)}</span></a>` : ""}`}</div>
       </section>
       ${warTabs("lists")}
       ${missingBanner(D)}
       ${latestBanner(D)}
       ${!D.armies.length ? warEmpty() : groups.length ? groups.map(([a, ls]) => `<section class="war-sec"><div class="sec-h"><h2>${esc(a.name)}</h2><a href="#/war/army/${esc(a.id)}">View army</a></div><div class="ledgers">${ls.map(l => listCard(l, D)).join("")}</div></section>`).join("")
         : D.warMissing ? "" : `<section class="panel war-empty"><h2>No army lists yet</h2><p class="sub">Build a list from one of your armies, or paste one you've made elsewhere, and War Ledger checks it against the points and the rules.</p><button type="button" class="primary" data-new-list="">+ New list</button></section>`}`;
+  }
+  // The latest points for a list: units from the collection take them on the unit itself (so every list using
+  // it follows); list-only units and enhancements change in the list. Returns the list's new units.
+  async function latestUnits(list, ch){
+    for(const c of ch.items.filter(c => c.kind === "unit")){ const u = c.x.u; await store.saveUnit(u.armyId, mergeUnit(u, {points: c.to}), u.id, null, false, u); }
+    return list.units.map((e, i) => {
+      const n = {...e};
+      ch.items.filter(c => c.x.i === i).forEach(c => { if(c.kind === "entry") n.points = c.to; if(c.kind === "enh") n.enh = {...n.enh, p: c.to}; });
+      return n;
+    });
+  }
+  // Points check: every list (not archived) whose total differs with the latest datasheet points, what changes, and
+  // whether it would then be over its limit. Also any list already over its limit.
+  function pointsReport(D){
+    return D.lists.filter(l => l.status !== "archived").map(l => {
+      const a = D.armies.find(x => x.id === l.armyId); if(!a) return null;
+      const s = listState(l, D), ch = latestChanges(l, s, a.faction);
+      return {l, a, s, ch, now: s.points, next: ch.next, overNow: !!l.limit && s.points > l.limit, overNext: !!l.limit && ch.next > l.limit};
+    }).filter(r => r && (r.ch.items.length || r.overNow));
+  }
+  async function viewWarPoints(){
+    view.name = "war-points"; document.title = "Points check · War Ledger";
+    let D = await warData();
+    function draw(){
+      const rs = pointsReport(D), upd = rs.filter(r => r.ch.items.length);
+      app.innerHTML = `
+        <div class="crumbs"><a href="#/war">War Ledger</a> / <a href="#/war/lists">Army lists</a> / Points check</div>
+        <section class="page-head war-head">
+          <div><p class="eyebrow">War Ledger</p><h1>Points check</h1><p class="sub">${dataBuilt() ? `Datasheet points were last updated ${esc(dayText(dataBuilt()))}. ` : ""}Lists whose points differ from the latest datasheets, and lists over their limit.</p></div>
+          ${upd.length > 1 ? `<div class="war-actions"><button type="button" class="primary" data-latest-all>Update all ${upd.length} lists</button></div>` : ""}
+        </section>
+        ${warTabs("lists")}
+        ${rs.length ? `<div class="pc-list">${rs.map(r => `<section class="panel pc${r.overNext || r.overNow && !r.ch.items.length ? " over" : ""}" aria-labelledby="pc-${esc(r.l.id)}">
+          <div class="pc-top"><div><h2 class="pc-h" id="pc-${esc(r.l.id)}"><a href="#/war/list/${esc(r.l.id)}">${esc(r.l.name)}</a></h2><small>${esc(r.a.name)}${r.l.limit ? ` · ${ptsText(r.l.limit)} limit` : ""}</small></div>
+            <p class="pc-nums">${r.ch.items.length ? `<b>${num(r.now)}</b> → <b>${num(r.next)}</b> pts` : `<b>${num(r.now)}</b> pts`}</p></div>
+          ${r.overNext ? `<p class="pc-warn">${r.ch.items.length ? `With the latest points it's ${ptsText(r.next - r.l.limit)} over its limit.` : `It's ${ptsText(r.now - r.l.limit)} over its limit.`}</p>` : r.overNow ? `<p class="pc-warn">It's ${ptsText(r.now - r.l.limit)} over its limit now${r.ch.items.length ? ", and fits with the latest points" : ""}.</p>` : ""}
+          ${r.ch.items.length ? `<ul class="pc-items">${r.ch.items.map(c => `<li>${esc(c.name)} <span>${num(c.from)} → ${num(c.to)}</span></li>`).join("")}</ul>
+          <div class="row-actions"><button type="button" class="btn-sm primary" data-latest-one="${esc(r.l.id)}">Update to the latest points</button>${r.ch.shared ? `<span class="hint">Units from your army change in every list that uses them.</span>` : ""}</div>` : ""}
+        </section>`).join("")}</div>`
+          : `<section class="panel war-empty"><h2>All up to date</h2><p class="sub">Every list uses the latest datasheet points and fits its limit.</p><a class="btn" href="#/war/lists">Your army lists</a></section>`}`;
+    }
+    async function update(ids){
+      let n = 0;
+      for(const id of ids){
+        const r = pointsReport(D).find(x => x.l.id === id); if(!r || !r.ch.items.length) continue;
+        const units = await latestUnits(r.l, r.ch);
+        await store.saveList({...r.l, units, ptsAsOf: isoDay(new Date())}, r.l.id);
+        D = await warData(); n++;
+      }
+      flash(`Updated ${plural(n, "list")} to the latest points.`); draw();
+    }
+    draw();
+    onApp(async e => {
+      const one = e.target.closest("[data-latest-one]"), all = e.target.closest("[data-latest-all]");
+      if(!one && !all) return;
+      (one || all).disabled = true;
+      try { await update(one ? [one.dataset.latestOne] : pointsReport(D).filter(r => r.ch.items.length).map(r => r.l.id)); }
+      catch(err){ console.error(err); flash("Couldn't update the points: " + errText(err)); draw(); }
+    });
   }
   // Lists (not archived) whose total would change with the latest datasheet points, unless that note was hidden.
   function latestBanner(D){
@@ -1782,7 +1842,7 @@
     }).filter(Boolean);
     if(!hit.length) return "";
     return `<div class="banner latest-b"><span class="dot warn"></span><span>${dataBuilt() ? `Datasheet points were updated ${esc(dayText(dataBuilt()))}. ` : ""}${hit.length === 1 ? "This list comes" : `${hit.length} lists come`} to a different total with the latest points:
-      ${hit.map(([l, a, b]) => `<a href="#/war/list/${esc(l.id)}">${esc(l.name)}</a> (${num(a)} → ${num(b)} pts)`).join(", ")}.</span></div>`;
+      ${hit.map(([l, a, b]) => `<a href="#/war/list/${esc(l.id)}">${esc(l.name)}</a> (${num(a)} → ${num(b)} pts)`).join(", ")}. <a href="#/war/points">Points check</a></span></div>`;
   }
   // Battle size, points limit, detachments, status and points date: shared by the New list and List details dialogs.
   function listFields(l, D, faction){
@@ -2211,12 +2271,7 @@
         const ch = latestChanges(list, listState(list, D), army.faction);
         b.disabled = true;
         try {
-          for(const c of ch.items.filter(c => c.kind === "unit")){ const u = c.x.u; await store.saveUnit(u.armyId, mergeUnit(u, {points: c.to}), u.id, null, false, u); }
-          const units = list.units.map((e, i) => {
-            const mine = ch.items.filter(c => c.x.i === i), n = {...e};
-            mine.forEach(c => { if(c.kind === "entry") n.points = c.to; if(c.kind === "enh") n.enh = {...n.enh, p: c.to}; });
-            return n;
-          });
+          const units = await latestUnits(list, ch);
           D = await warData();
           await save({units, ptsAsOf: isoDay(new Date())});
           flash(`Updated ${plural(ch.items.length, "points value")}. The list is now ${ptsText(listState(list, D).points)}.`);

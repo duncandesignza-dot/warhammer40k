@@ -3,7 +3,7 @@ const {test, expect, seed, open, noSidewaysScroll} = require("./helpers");
 
 const ROUTES = ["#/", "#/livery", "#/livery/ledgers", "#/livery/collection", "#/livery/paints", "#/livery/activity", "#/livery/new", "#/livery/new/ultramarines",
   "#/army/a1", "#/army/a1/colours", "#/army/a1/guide", "#/army/a1/unit/u2",
-  "#/war", "#/war/armies", "#/war/collection", "#/war/lists", "#/war/battles", "#/war/buy", "#/war/list/l1/print", "#/war/army/a1", "#/war/army/a2", "#/war/list/l1", "#/war/new", "#/war/new/necrons",
+  "#/war", "#/war/armies", "#/war/collection", "#/war/lists", "#/war/battles", "#/war/buy", "#/war/points", "#/war/list/l1/print", "#/war/army/a1", "#/war/army/a2", "#/war/list/l1", "#/war/new", "#/war/new/necrons",
   "#/shame", "#/settings", "#/shared", "#/nope"];
 const SIZES = {desktop: {width: 1366, height: 900}, phone: {width: 412, height: 915}, "small phone": {width: 320, height: 640}};
 

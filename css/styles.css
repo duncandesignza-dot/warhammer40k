@@ -1881,3 +1881,14 @@ dialog.wdlg.xwide{max-width:min(1120px,calc(100vw - 24px))}
   .pl .wtable thead th{color:#555!important}
   .pl-role{break-inside:avoid}
 }
+/* Points check: lists whose points differ from the latest datasheets, or over their limit. */
+.pc-list{display:flex;flex-direction:column;gap:12px}
+.pc-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.pc-h{margin:0;font-size:1.05rem}.pc-h a{color:inherit}
+.pc-top small{color:var(--muted);font-size:.84rem}
+.pc-nums{margin:0;font-family:var(--mono);color:var(--muted)}.pc-nums b{color:var(--ink);font-size:1.05rem}
+.pc-warn{margin:8px 0 0;color:var(--bad);font-weight:600;font-size:.9rem}
+.pc.over{border-color:rgba(248,113,113,.45)}
+.pc-items{list-style:none;margin:10px 0 12px;padding:0;display:flex;flex-direction:column;gap:4px;font-size:.88rem}
+.pc-items li{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid var(--line);padding:4px 0}
+.pc-items span{font-family:var(--mono);color:var(--muted);white-space:nowrap}

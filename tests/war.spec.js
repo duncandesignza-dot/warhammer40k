@@ -688,3 +688,27 @@ test("a list prints on one clean page, with its datasheets if you like", async (
   await page.reload();
   await expect(page.locator("#pl-sheets")).toBeChecked();
 });
+
+test("the points check shows every list the latest points change, flags ones over the limit, and updates them", async ({page}) => {
+  await seed(page, `db.units.find(u => u.id === "u4").points = 180; db.lists[0].units[3].points = 150;
+    db.lists.push({id: "l2", armyId: "a1", name: "Tight", limit: 500, detachments: [], status: "draft", units: [{u: "u4", k: "a"}, {n: "Gladiator Lancer", sheet: "Gladiator Lancer", role: "Vehicle", count: 1, points: 150, k: "b"}, {u: "u1", k: "c"}], createdAt: "2026-09-02", updatedAt: "2026-09-02"});`);
+  await open(page, "#/war/lists");
+  await page.click('a:has-text("Points check")');
+  await expect(page).toHaveURL(/#\/war\/points$/);
+  const card = name => page.locator(".pc", {has: page.locator(".pc-h", {hasText: name})});
+  await expect(card("Club night").locator(".pc-nums")).toHaveText("560 → 585 pts");
+  await expect(card("Club night").locator(".pc-items")).toContainText("Redemptor Dreadnought 180 → 195");
+  // 410 now, 435 with the latest points: under 500, so no warning; lower the limit and it warns.
+  await expect(card("Tight").locator(".pc-warn")).toHaveCount(0);
+  await page.evaluate(() => { const d = JSON.parse(localStorage.getItem("livery-ledger-v3")); d.lists.find(l => l.id === "l2").limit = 420; localStorage.setItem("livery-ledger-v3", JSON.stringify(d)); });
+  await page.reload();
+  await expect(card("Tight").locator(".pc-warn")).toHaveText("With the latest points it's 15 pts over its limit.");
+  await page.click("[data-latest-all]");
+  await expect(page.locator(".toast")).toContainText("Updated 2 lists to the latest points.");
+  // Tight is still over its limit after the update, so it stays; Club night is done.
+  await expect(card("Club night")).toHaveCount(0);
+  await expect(card("Tight").locator(".pc-warn")).toHaveText("It's 15 pts over its limit.");
+  const d = await saved(page);
+  expect(d.units.find(u => u.id === "u4").points).toBe(195);
+  expect(d.lists.find(l => l.id === "l2").units[1].points).toBe(160);
+});
