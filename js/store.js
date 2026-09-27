@@ -509,7 +509,8 @@
     const toComment = r => ({id: r.id, armyId: r.army_id, owner: r.owner, body: String(r.body || ""), createdAt: r.created_at,
       byName: String(r.by_name || "").slice(0, 40), byPic: typeof r.by_pic === "string" && PIC_BASE && r.by_pic.startsWith(PIC_BASE) && !/["'<>\s]/.test(r.by_pic) ? r.by_pic : ""});
     let paintsTable = null;   // null: not checked yet; false: owned_paints isn't set up, so paints stay on the account
-    const myName = () => String(((session && session.user.user_metadata) || {}).display_name || "").trim();
+    // The name shown on your shared ledgers and comments: the same one your profile shows.
+    const myName = () => { const u = session && session.user, m = (u && u.user_metadata) || {}; return String(m.display_name || m.name || m.full_name || String((u && u.email) || "").split("@")[0] || "").trim().slice(0, 40); };
     const myPic = () => String(((session && session.user.user_metadata) || {}).avatar_url || "");
 
     return {
@@ -737,6 +738,14 @@
           } catch(e){ console.warn("Couldn't update the name on shared ledgers", e); }
         }
         return d && d.user;
+      },
+      // Your shared ledgers carry your name and picture; bring any that are out of date up to date
+      // (older ones were shared before you had a display name).
+      async syncShared(){
+        if(!session) return;
+        const mine = mustOk(await sb.from(A).select("id,scheme").eq("owner", session.user.id).eq("public", true)) || [];
+        for(const r of mine.filter(r => !r.scheme || r.scheme.by !== myName() || (r.scheme.byPic || "") !== myPic()))
+          await sb.from(A).update({scheme: {...(r.scheme || {}), by: myName(), byPic: myPic()}}).eq("id", r.id);
       },
       async uploadAvatar(file){
         need();

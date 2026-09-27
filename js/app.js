@@ -7958,6 +7958,7 @@ Redemptor Dreadnought (210 points)</pre>
       store.setSession(session); first = false;
       loadSettings(); setTop();
       if(changed) setTimeout(route, 0);
+      if(changed && session) store.syncShared().catch(e => console.warn("Couldn't update the name on shared ledgers", e));
       // Opened the link in a password reset email: they're signed in, now ask for the new password.
       if(event === "PASSWORD_RECOVERY") setTimeout(() => openAuth("reset"), 60);
       else if(wasFirst && linkErr) setTimeout(() => openAuth(/expired|invalid/i.test(linkErr.code + linkErr.text) ? "forgot" : "in",
