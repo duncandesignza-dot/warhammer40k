@@ -2668,6 +2668,22 @@
         <thead><tr><th scope="col">Unit</th><th scope="col" class="n">Picked</th><th scope="col" class="n">Won</th></tr></thead>
         <tbody>${rows.slice(0, 10).map(([name, v]) => `<tr><th scope="row">${name}</th><td class="n">${v.length}</td><td class="n">${plural(recordOf(v).w, "game")}</td></tr>`).join("")}</tbody></table></div></section>` : "";
     }
+    // How each unit does: the games it was in (the list's units as the list is now, or the units that
+    // took part in a Crusade battle) and how many of those were won. Only lists you logged a game with count.
+    function unitsTable(gs){
+      const m = new Map();
+      gs.forEach(g => {
+        const l = g.listId && D.lists.find(x => x.id === g.listId); if(!l) return;
+        const took = g.took && g.took.length ? new Set(g.took) : null;
+        const names = new Set(l.units.filter(e => e && (!took || took.has(e.k))).map(e => { const u = e.u && D.units.find(x => x.id === e.u); return u ? u.name : e.n; }).filter(Boolean));
+        names.forEach(n => { if(!m.has(n)) m.set(n, []); m.get(n).push(g); });
+      });
+      const rows = [...m.entries()].sort((a, b) => b[1].length - a[1].length || recordOf(b[1]).w / b[1].length - recordOf(a[1]).w / a[1].length || a[0].localeCompare(b[0])).slice(0, 12);
+      return rows.length ? `<section class="panel wrec"><h2 class="ph">Units in your games</h2><div class="wt-scroll"><table class="wtable compact">
+        <thead><tr><th scope="col">Unit</th><th scope="col" class="n">Games</th><th scope="col" class="n">W</th><th scope="col" class="n">Won</th></tr></thead>
+        <tbody>${rows.map(([n, v]) => { const r = recordOf(v); return `<tr><th scope="row">${esc(n)}</th><td class="n">${v.length}</td><td class="n">${r.w}</td><td class="n">${pctOf(r.w, v.length)}%</td></tr>`; }).join("")}</tbody></table></div>
+        <p class="hint">From the lists you logged each game with, as they are now. Crusade battles count the units that took part.</p></section>` : "";
+    }
     const group = (gs, key, name) => { const m = new Map(); gs.forEach(g => { const k = key(g); if(!m.has(k)) m.set(k, []); m.get(k).push(g); }); return [...m.entries()].map(([k, v]) => [name(k, v), v]).sort((a, b) => b[1].length - a[1].length); };
     function draw(){
       if(!D.armies.length){ $("wb-out").innerHTML = warEmpty(); return; }
@@ -2693,6 +2709,7 @@
           ${table("By detachment", group(gs.filter(g => detOf(g)), detOf, k => esc(k)))}
           ${gs.filter(g => g.mission).length ? table("By mission", group(gs.filter(g => g.mission), g => g.mission.trim().toLowerCase(), (k, v) => esc(v[0].mission.trim()))) : ""}
           ${mvpTable(gs)}
+          ${unitsTable(gs)}
         </div>
         <section class="war-sec"><div class="sec-h"><h2>History</h2></div>${gameRows(gs, D)}</section>`
         : `<section class="panel war-empty"><h2>No battles yet</h2><p class="sub">After a game, log the result here. War Ledger keeps each army's record, and shows it on Shared armies when you share that army.</p>${D.warMissing ? "" : `<button type="button" class="primary" data-log="${esc(armyF)}">Log a battle</button>`}</section>`}`;

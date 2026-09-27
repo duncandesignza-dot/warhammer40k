@@ -214,6 +214,10 @@ test("battle stats: streaks, scores, a margin chart and more ways to slice the r
   await expect(page.locator(".mchart .mc-bar").first()).toHaveAttribute("data-tip", /Draw vs T'au Empire · no score/);
   for(const [title, row] of [["By detachment", "Gladius Task Force"], ["By mission", "Take and Hold"], ["Most valuable units", "Captain"]])
     await expect(page.locator(".wrec", {has: page.locator("h2", {hasText: title})})).toContainText(row);
+  // Each unit in the lists you played with: g1 used Club night (a win), so its four units are 1 game, 100% won.
+  const units = page.locator(".wrec", {has: page.locator("h2", {hasText: "Units in your games"})});
+  await expect(units.locator("tbody tr")).toHaveCount(4);
+  await expect(units.locator('tbody tr:has-text("Gladiator Lancer")')).toContainText("100%");
   await page.locator(".wrec").getByRole("button", {name: "Captain"}).click();
   await expect(page.locator("dialog[open]")).toBeVisible();
 });
