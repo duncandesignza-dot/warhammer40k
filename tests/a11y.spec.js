@@ -2,7 +2,7 @@
 const {test, expect, seed, open, axe, noSidewaysScroll} = require("./helpers");
 
 const PAGES = ["#/", "#/livery", "#/livery/collection", "#/livery/paints", "#/livery/new/ultramarines", "#/army/a1", "#/army/a1/colours",
-  "#/war", "#/war/collection", "#/war/army/a1", "#/war/list/l1", "#/war/lists", "#/war/battles", "#/shame", "#/settings"];
+  "#/war", "#/war/collection", "#/war/army/a1", "#/war/list/l1", "#/war/lists", "#/war/battles", "#/war/buy", "#/shame", "#/settings"];
 
 test("main pages on a desktop", async ({page}) => {
   await seed(page);

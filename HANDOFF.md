@@ -70,7 +70,8 @@ js/config.js          Supabase URL + anon key (empty = browser-only mode)
 js/paints.js          paint catalogue UI (lazy-loads js/data/paints.js)
 js/art.js             badge/emblem drawing
 js/data/factions.js   datasheets per faction: name n, role r, sizes ms, max copies mx, epic hero eh,
-                      points p, points brackets pb [[lo,hi,pts]], weapon names wr/wm, Legends tag t;
+                      points p, points brackets pb [[lo,hi,pts]], weapon names wr/wm, Legends tag t,
+                      the units a character can lead ld (names from its Leader ability);
                       detachments dets [{n, dp, c, e:[[enhancement, pts, only?]]}]; battle sizes
 js/data/sheets/<faction>.js   datasheet profiles, loaded on demand (see "Datasheet profiles")
 js/data/presets.js, emblems.js, paints.js   colour presets, faction emblems, paint data
@@ -95,7 +96,7 @@ python3 tools/build_factions.py bsdata && python3 tools/build_sheets.py bsdata
 
 - **Routing:** hash routes in `route()`.
   - Livery: `#/livery`, `#/livery/{ledgers,collection,activity,paints,new}`, `#/army/<id>` (the ledger), `#/army/<id>/{colours,guide,unit/<uid>}`, `#/new/<faction>`.
-  - War: `#/war` (the Armies tab), `#/war/{lists,battles,new,collection}`, `#/war/armies` (redirects to `#/war`), `#/war/new/<faction>`, `#/war/army/<id>`, `#/war/list/<id>`, `#/war/compare/<a>/<b>`.
+  - War: `#/war` (the Armies tab), `#/war/{lists,battles,new,collection,buy,points}`, `#/war/armies` (redirects to `#/war`), `#/war/list/<id>/{print,play}`, `#/war/new/<faction>`, `#/war/army/<id>`, `#/war/list/<id>`, `#/war/compare/<a>/<b>`.
   - Shared: `#/shame`, `#/settings`, `#/shared`, `#/painter/<id>`, and `#/` (landing).
 - **Page lifecycle:**
   - `route()` queues: one page loads at a time, and only the newest address is opened, so a slow page can't draw over the one you went to. `routeNow()` does the work.
@@ -118,6 +119,12 @@ python3 tools/build_factions.py bsdata && python3 tools/build_sheets.py bsdata
     - Dialogs: `openEntryView` (the eye), `openEntryOptions` (character ⋯), `openSheetPeek`.
   - `openUnitSheet(army, unit, edit)` and `sheetEye(u)`: the eye on army and collection tables. `sheetFaction` finds which faction's sheets file a datasheet is in.
     - `addSheet` adds a datasheet to the list.
+  - Buying: `unitFromEntry(army, entry)` makes an army unit from a not-owned entry; `ownedEntry(entry, unit)` points the entry at it.
+  - Shopping list (`#/war/buy`): `shoppingRows(D)` gathers not-owned entries across lists (not archived) by army, datasheet and size.
+  - Points check (`#/war/points`): `pointsReport(D)` and `latestUnits(list, changes)` (also used by a list's "Update to latest points").
+  - Print (`#/war/list/<id>/print`, `viewWarListPrint`) and Game day (`#/war/list/<id>/play`, `viewWarPlay`; kept in localStorage `ll-play-<id>`).
+  - Battles: "Units in your games" (`unitsTable`) and Opponent notes (`settings.oppNotes`, shown in `openGame`).
+  - Leader check: `listChecks` flags a lead not in the leader's `ld`; the ⋯ Leading menu lists "Can lead" first.
   - `openUnit(army, unit, done, opts)`: the War unit editor. `mergeUnit` keeps fields the other editor owns.
   - Pasting and importing: `makeListReader(fid)` (`parseList` / `parseCode`), `openListImport` (Paste a list), `openAddFromList`, `openImportArmy` + `detectFaction`.
   - Export: `exportText` (New Recruit tournament layout).
@@ -189,4 +196,3 @@ python3 tools/build_factions.py bsdata && python3 tools/build_sheets.py bsdata
 
 - Show ability descriptions in the datasheet view (a build-script change).
 - Per-model wargear with counts ("2 with Khornate eviscerator"), like New Recruit's model breakdown. The data only has the datasheet's weapon names, not its option groups.
-- Check leaders against each datasheet's "Leader" list (BSData has it in the Leader ability's text).

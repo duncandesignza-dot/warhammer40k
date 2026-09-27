@@ -1846,3 +1846,87 @@ dialog.wdlg.xwide{max-width:min(1120px,calc(100vw - 24px))}
 .faction-hero{margin:0;border-radius:10px;overflow:hidden;border:1px solid var(--line);background:var(--surface)}
 .faction-hero img{display:block;width:100%;height:auto;aspect-ratio:16/5;object-fit:cover}
 .setup .panel>label+.faction-hero{margin-top:14px}
+/* Shopping list: units your lists use that you don't own yet. */
+.buy-h{display:flex;align-items:center;gap:10px}.buy-h h2{margin:0}
+.buy-rows{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.buy-rows li{display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface)}
+.buy-name{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.buy-name small{color:var(--muted);font-size:.84rem}
+.buy-lists a{color:inherit}
+.war-actions .btn .count,.lb-own .count{margin-left:6px;font-family:var(--mono);font-size:.72rem;padding:1px 7px;border-radius:99px;background:var(--brand-soft);color:var(--brand)}
+@media (max-width:640px){.buy-rows li{flex-wrap:wrap}.buy-rows li .btn-sm{width:100%}}
+/* A list to print: the page on screen, and clean black on white on paper. */
+.pl-tools{margin-bottom:18px}
+.pl{max-width:900px}
+.pl-head h1{margin:0 0 4px}
+.pl-head p{margin:0 0 4px;color:var(--muted)}
+.pl-total b{color:var(--ink);font-size:1.2rem}
+.pl-role{margin-top:20px}
+.pl-role h2,.pl-sheet h2{font-size:1rem;margin:0 0 8px;display:flex;align-items:baseline;gap:10px}
+.pl-role h2 small{color:var(--muted);font-weight:500;font-size:.84rem}
+.pl-t{width:100%;border-collapse:collapse;font-size:.9rem}
+.pl-t th,.pl-t td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+.pl-t thead th{font-family:var(--mono);font-size:.64rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted)}
+.pl-t .n{text-align:right;white-space:nowrap}
+.pl-t th,.pl-t td{overflow-wrap:anywhere}
+@media (max-width:420px){.pl-t th,.pl-t td{padding:6px 4px}.pl-t thead th{letter-spacing:.04em}}
+.pl-t tbody th small{display:block;font-weight:400;color:var(--muted);font-size:.8rem}
+.pl-wl{font-family:var(--mono);font-size:.62rem;text-transform:uppercase;letter-spacing:.08em;border:1px solid var(--line-strong);border-radius:5px;padding:1px 5px;margin-left:4px}
+.pl-sheet{margin-top:22px;break-inside:avoid}
+@media print{
+  .no-print,.war-tabs{display:none!important}
+  .pl-t th,.pl-t td{border-color:#ccc}
+  .pl-sheet .ds-more{display:none}
+  .pl .wt-scroll,.pl .wtable,.pl .wtable thead,.pl .wtable tr,.pl .wtable th,.pl .wtable td,.pl .tag{background:#fff!important;color:#111!important;border-color:#ccc!important;box-shadow:none!important}
+  .pl .wtable thead th{color:#555!important}
+  .pl-role{break-inside:avoid}
+}
+/* Points check: lists whose points differ from the latest datasheets, or over their limit. */
+.pc-list{display:flex;flex-direction:column;gap:12px}
+.pc-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.pc-h{margin:0;font-size:1.05rem}.pc-h a{color:inherit}
+.pc-top small{color:var(--muted);font-size:.84rem}
+.pc-nums{margin:0;font-family:var(--mono);color:var(--muted)}.pc-nums b{color:var(--ink);font-size:1.05rem}
+.pc-warn{margin:8px 0 0;color:var(--bad);font-weight:600;font-size:.9rem}
+.pc.over{border-color:rgba(248,113,113,.45)}
+.pc-items{list-style:none;margin:10px 0 12px;padding:0;display:flex;flex-direction:column;gap:4px;font-size:.88rem}
+.pc-items li{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid var(--line);padding:4px 0}
+.pc-items span{font-family:var(--mono);color:var(--muted);white-space:nowrap}
+/* Opponent notes: what to watch for against each faction. */
+.on-list{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px}
+.on-list li{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;padding:12px 14px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface)}
+.on-list li>div{min-width:0}
+.on-list small{color:var(--muted);font-family:var(--mono);font-size:.74rem}
+.on-list p{margin:6px 0 0;font-size:.9rem;white-space:pre-line;overflow-wrap:anywhere}
+.opp-note{margin:0;padding:10px 12px;border-radius:var(--r);background:rgba(250,204,21,.08);border:1px solid rgba(250,204,21,.3);font-size:.88rem;white-space:pre-line}
+.opp-note b{display:block;margin-bottom:2px}
+/* Game day: the list at the table. */
+.gd-game,.gd-score,.gd-units{margin-bottom:14px}
+.gd-game .wgrid{margin-bottom:12px}
+.gd-game .opp-note{margin-bottom:12px}
+.gd-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.gd-step{display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface)}
+.gd-l{font-family:var(--mono);font-size:.66rem;text-transform:uppercase;letter-spacing:.12em;color:var(--muted)}
+.gd-ctl{display:flex;align-items:center;gap:10px}
+.gd-ctl .btn-sm{width:40px;height:40px;padding:0;font-size:1.2rem}
+.gd-ctl output{min-width:2ch;text-align:center;font-size:1.6rem;font-weight:800}
+.gd-t{width:100%;border-collapse:collapse}
+.gd-t th,.gd-t td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:center}
+.gd-t thead th{font-family:var(--mono);font-size:.66rem;text-transform:uppercase;letter-spacing:.12em;color:var(--muted)}
+.gd-t tbody th{font-family:var(--mono);color:var(--muted)}
+.gd-t tr.now{background:var(--brand-soft)}
+.gd-t input{width:100%;max-width:120px;text-align:center}
+.gd-t tfoot th,.gd-t tfoot td{font-weight:800;font-size:1.2rem;border-bottom:0}
+.gd-units h2 small{font-family:var(--mono);font-size:.74rem;color:var(--muted);margin-left:8px;letter-spacing:0;text-transform:none}
+.gd-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.gd-list li{display:block;padding:10px 12px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface)}
+.gd-list li.dead{opacity:.5}.gd-list li.dead strong{text-decoration:line-through}
+.gd-u{flex:1;min-width:0}
+.gd-u summary{cursor:pointer;list-style:none;display:flex;align-items:flex-start;gap:10px}.gd-u summary::-webkit-details-marker{display:none}
+.gd-n{flex:1;min-width:0}
+.gd-n .tag{vertical-align:2px;margin-left:4px}
+.gd-n{display:flex;flex-direction:column}.gd-n small{color:var(--muted);font-size:.82rem}
+.gd-ds{margin-top:10px}
+.gd-dead{flex:none;white-space:nowrap}
+.gd-end{margin:6px 0 20px}
+@media (max-width:480px){.gd-steps{gap:6px}.gd-step{padding:8px 4px}.gd-ctl{gap:6px}.gd-ctl .btn-sm{width:34px;height:34px}}

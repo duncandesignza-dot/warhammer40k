@@ -214,6 +214,10 @@ test("battle stats: streaks, scores, a margin chart and more ways to slice the r
   await expect(page.locator(".mchart .mc-bar").first()).toHaveAttribute("data-tip", /Draw vs T'au Empire · no score/);
   for(const [title, row] of [["By detachment", "Gladius Task Force"], ["By mission", "Take and Hold"], ["Most valuable units", "Captain"]])
     await expect(page.locator(".wrec", {has: page.locator("h2", {hasText: title})})).toContainText(row);
+  // Each unit in the lists you played with: g1 used Club night (a win), so its four units are 1 game, 100% won.
+  const units = page.locator(".wrec", {has: page.locator("h2", {hasText: "Units in your games"})});
+  await expect(units.locator("tbody tr")).toHaveCount(4);
+  await expect(units.locator('tbody tr:has-text("Gladiator Lancer")')).toContainText("100%");
   await page.locator(".wrec").getByRole("button", {name: "Captain"}).click();
   await expect(page.locator("dialog[open]")).toBeVisible();
 });
@@ -638,4 +642,155 @@ test("Army lists has Import a list, and the faction picker has a Back button", a
   await open(page, "#/war/new");
   await page.click(".war-actions a:has-text('Back')");
   await expect(page).toHaveURL(/#\/war$/);
+});
+
+test("the shopping list gathers units you don't own from every list, and buying one fills it everywhere", async ({page}) => {
+  await seed(page, `db.lists.push({id: "l2", armyId: "a1", name: "Big game", limit: 3000, detachments: [], status: "draft", units: [
+    {n: "Gladiator Lancer", sheet: "Gladiator Lancer", role: "Vehicle", count: 1, points: 160, k: "x"}, {n: "Gladiator Lancer", sheet: "Gladiator Lancer", role: "Vehicle", count: 1, points: 160, k: "y"},
+    {n: "Hellblaster Squad", sheet: "Hellblaster Squad", role: "Infantry", count: 5, points: 115, k: "z"}], createdAt: "2026-09-02", updatedAt: "2026-09-02"});`);
+  await open(page, "#/war/lists");
+  await expect(page.locator('a[href="#/war/buy"]')).toContainText("3");
+  await open(page, "#/war/buy");
+  // Most wanted first: the Lancer is in both lists, and Big game wants two.
+  const rows = page.locator(".buy-rows li");
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(0)).toContainText("2× Gladiator Lancer");
+  await expect(rows.nth(0).locator(".buy-lists")).toHaveText("In Club night, Big game");
+  await expect(page.locator(".page-head .sub")).toContainText("3 units you don't own yet");
+  // One bought: it fills one spot in each list, and the second Lancer is still wanted.
+  await rows.nth(0).locator("[data-buy]").click();
+  await expect(page.locator(".toast")).toContainText("Gladiator Lancer added to Ultramarines 2nd Company");
+  const d = await saved(page), lancer = d.units.find(u => u.name === "Gladiator Lancer");
+  expect(d.lists.find(l => l.id === "l1").units.find(e => e.k === "d").u).toBe(lancer.id);
+  const l2 = d.lists.find(l => l.id === "l2").units;
+  expect([l2[0].u, l2[1].u]).toEqual([lancer.id, undefined]);
+  await expect(page.locator(".buy-rows li").first()).toContainText("Gladiator Lancer");
+  await expect(page.locator(".buy-rows li").first().locator(".buy-lists")).toHaveText("In Big game");
+});
+
+test("a list prints on one clean page, with its datasheets if you like", async ({page}) => {
+  await seed(page, `db.lists[0].units[0].warlord = true; db.lists[0].units[0].enh = {n: "Artificer Armour", p: 10};
+    db.units.find(u => u.id === "u2").ranged = "Bolt Rifle";`);
+  await open(page, "#/war/list/l1");
+  await page.click('a:has-text("Print list")');
+  await expect(page).toHaveURL(/#\/war\/list\/l1\/print$/);
+  const pl = page.locator(".pl");
+  await expect(pl.locator("h1")).toHaveText("Club night");
+  await expect(pl.locator(".pl-total")).toContainText("595 / 2,000 pts · 4 units · 13 models");
+  await expect(pl.locator('tr:has-text("Captain")')).toContainText("Warlord");
+  await expect(pl.locator('tr:has-text("Captain")')).toContainText("Enhancement: Artificer Armour (+10)");
+  await expect(pl.locator('tr:has-text("Intercessor Squad")')).toContainText("Bolt Rifle");
+  await expect(pl.locator(".pl-sheet")).toHaveCount(0);
+  await page.check("#pl-sheets");
+  await expect(pl.locator(".pl-sheet")).toHaveCount(4);
+  await expect(pl.locator('.pl-sheet:has(h2:text-is("Intercessor Squad")) table').nth(1).locator("tbody th")).toHaveText(["Bolt Rifle"]);
+  // Remembered next time.
+  await page.reload();
+  await expect(page.locator("#pl-sheets")).toBeChecked();
+});
+
+test("the points check shows every list the latest points change, flags ones over the limit, and updates them", async ({page}) => {
+  await seed(page, `db.units.find(u => u.id === "u4").points = 180; db.lists[0].units[3].points = 150;
+    db.lists.push({id: "l2", armyId: "a1", name: "Tight", limit: 500, detachments: [], status: "draft", units: [{u: "u4", k: "a"}, {n: "Gladiator Lancer", sheet: "Gladiator Lancer", role: "Vehicle", count: 1, points: 150, k: "b"}, {u: "u1", k: "c"}], createdAt: "2026-09-02", updatedAt: "2026-09-02"});`);
+  await open(page, "#/war/lists");
+  await page.click('a:has-text("Points check")');
+  await expect(page).toHaveURL(/#\/war\/points$/);
+  const card = name => page.locator(".pc", {has: page.locator(".pc-h", {hasText: name})});
+  await expect(card("Club night").locator(".pc-nums")).toHaveText("560 → 585 pts");
+  await expect(card("Club night").locator(".pc-items")).toContainText("Redemptor Dreadnought 180 → 195");
+  // 410 now, 435 with the latest points: under 500, so no warning; lower the limit and it warns.
+  await expect(card("Tight").locator(".pc-warn")).toHaveCount(0);
+  await page.evaluate(() => { const d = JSON.parse(localStorage.getItem("livery-ledger-v3")); d.lists.find(l => l.id === "l2").limit = 420; localStorage.setItem("livery-ledger-v3", JSON.stringify(d)); });
+  await page.reload();
+  await expect(card("Tight").locator(".pc-warn")).toHaveText("With the latest points it's 15 pts over its limit.");
+  await page.click("[data-latest-all]");
+  await expect(page.locator(".toast")).toContainText("Updated 2 lists to the latest points.");
+  // Tight is still over its limit after the update, so it stays; Club night is done.
+  await expect(card("Club night")).toHaveCount(0);
+  await expect(card("Tight").locator(".pc-warn")).toHaveText("It's 15 pts over its limit.");
+  const d = await saved(page);
+  expect(d.units.find(u => u.id === "u4").points).toBe(195);
+  expect(d.lists.find(l => l.id === "l2").units[1].points).toBe(160);
+});
+
+test("opponent notes: written on Battles, shown when you log a battle against that faction", async ({page}) => {
+  await seed(page);
+  await open(page, "#/war/battles");
+  const panel = page.locator(".opp-notes");
+  await expect(panel.locator(".on-list strong")).toHaveText(["Necrons", "Orks", "T'au Empire"]);
+  await expect(panel.locator('li:has-text("Necrons") small')).toHaveText("1–0 against them");
+  await page.click('[aria-label="Edit your notes on Necrons"]');
+  await page.fill("#on-text", "Reanimation: finish units off.");
+  await page.click("dialog[open] [type=submit]");
+  await expect(panel.locator('li:has-text("Necrons") p')).toHaveText("Reanimation: finish units off.");
+  // A faction you haven't faced yet.
+  await page.selectOption("#on-add", "drukhari");
+  await page.fill("#on-text", "Fast raiders: screen the objectives.");
+  await page.click("dialog[open] [type=submit]");
+  await expect(panel.locator(".on-list strong")).toHaveText(["Necrons", "Orks", "T'au Empire", "Drukhari"]);
+  await expect(panel.locator('li:has-text("Drukhari") p')).toHaveText("Fast raiders: screen the objectives.");
+  // Remembered with your settings.
+  expect(JSON.parse(await page.evaluate(() => localStorage.getItem("ll-settings"))).oppNotes.necrons).toBe("Reanimation: finish units off.");
+  await page.click("[data-log]");
+  await expect(page.locator("#w-gon")).toBeHidden();
+  await page.selectOption("#w-go", "necrons");
+  await expect(page.locator("#w-gon")).toContainText("Your notes on Necrons");
+  await expect(page.locator("#w-gon")).toContainText("Reanimation: finish units off.");
+});
+
+test("a character leading a unit its datasheet doesn't list is flagged, and the units it can lead come first", async ({page}) => {
+  await seed(page, `db.lists[0].units[0].lead = "c";`);
+  await open(page, "#/war/list/l1");
+  // The Captain is leading the Redemptor Dreadnought.
+  const note = page.locator(".tc-list > li", {hasText: "can't usually lead"});
+  await expect(note).toContainText("Captain can't usually lead Redemptor Dreadnought.");
+  await expect(note).toContainText("Intercessor Squad");
+  await page.click('[aria-label="Warlord, enhancement and leading for Captain"]');
+  expect(await page.locator("#w-eld optgroup").evaluateAll(gs => gs.map(g => [g.label, [...g.children].map(o => o.textContent)]))).toEqual([
+    ["Can lead", ["Intercessor Squad"]], ["Other units", ["Redemptor Dreadnought", "Gladiator Lancer"]]]);
+  await page.selectOption("#w-eld", {label: "Intercessor Squad"});
+  await page.click("dialog[open] [type=submit]");
+  await expect(page.locator(".tc-list > li", {hasText: "can't usually lead"})).toHaveCount(0);
+});
+
+test("game day: round, CP and VP at the table, kept through a reload, then logged with the score filled in", async ({page}) => {
+  await seed(page);
+  await open(page, "#/war/list/l1");
+  await page.click('a:has-text("Game day")');
+  await expect(page).toHaveURL(/#\/war\/list\/l1\/play$/);
+  await page.selectOption("#gd-opp", "necrons");
+  await page.fill("#gd-mission", "Take and Hold");
+  await page.click('[aria-label="Round: one more"]');
+  await expect(page.locator("#gd-round")).toHaveText("2");
+  await page.click('[aria-label="Your CP: one more"]'); await page.click('[aria-label="Your CP: one more"]');
+  await expect(page.locator("#gd-cp0")).toHaveText("2");
+  await page.fill('[aria-label="Your points in round 1"]', "10");
+  await page.fill('[aria-label="Their points in round 1"]', "5");
+  await page.fill('[aria-label="Your points in round 2"]', "15");
+  await expect(page.locator("#gd-t0")).toHaveText("25");
+  await page.check('[data-dead="c"]');
+  await expect(page.locator("#gd-left")).toHaveText("3 of 4 left");
+  // Ticking it doesn't open the unit.
+  expect(await page.locator('.gd-u[data-k="c"]').evaluate(d => d.open)).toBe(false);
+  // A unit's datasheet opens from the list.
+  await page.click('.gd-u[data-k="b"] summary');
+  await expect(page.locator('.gd-u[data-k="b"] .gd-ds table').first()).toContainText("Intercessor");
+  // A reload keeps the game.
+  await page.reload();
+  await expect(page.locator("#gd-round")).toHaveText("2");
+  await expect(page.locator("#gd-t0")).toHaveText("25");
+  await expect(page.locator('[data-dead="c"]')).toBeChecked();
+  // Log it: army, list, opponent, mission, score and result are filled in.
+  await page.click("[data-gd-log]");
+  await expect(page.locator("#w-gl")).toHaveValue("l1");
+  await expect(page.locator("#w-go")).toHaveValue("necrons");
+  await expect(page.locator("#w-gm")).toHaveValue("Take and Hold");
+  await expect(page.locator("#w-gu")).toHaveValue("25");
+  await expect(page.locator("#w-gt")).toHaveValue("5");
+  await expect(page.locator("[name=w-gr][value=w]")).toBeChecked();
+  await page.click("dialog[open] [type=submit]");
+  await expect(page).toHaveURL(/#\/war\/battles$/);
+  const d = await saved(page);
+  expect(d.games.find(g => g.us === 25)).toMatchObject({listId: "l1", opp: "necrons", them: 5, result: "w"});
+  expect(await page.evaluate(() => localStorage.getItem("ll-play-l1"))).toBeNull();
 });

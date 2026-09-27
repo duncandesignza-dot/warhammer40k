@@ -127,6 +127,33 @@ def weapons(entry, depth=0, seen=None, acc=None):
         if t: weapons(t, depth+1, seen, acc)
     return acc
 
+# The units a character can lead: the names listed in its Leader ability (only the names, not the rules text).
+def leads(entry, depth=0, seen=None, acc=None):
+    if seen is None: seen, acc = set(), []
+    if depth > 7 or not isinstance(entry, dict): return acc
+    key = entry.get("id")
+    if key in seen: return acc
+    if key: seen.add(key)
+    profs = list(entry.get("profiles", []) or [])
+    for il in entry.get("infoLinks", []) or []:
+        t = ents.get(il.get("targetId"))
+        if t and t.get("typeName"): profs.append(t)
+    for p in profs:
+        if p.get("typeName") != "Abilities": continue
+        text = " ".join(c.get("$text", "") for c in p.get("characteristics", []) or [])
+        m = re.search(r"attached to the following units?:\s*(.+)", text, re.S | re.I)
+        if not m: continue
+        body = re.split(r"\n\s*\n(?!\s*■)|(?<=[a-z])\.\s", m.group(1))[0]
+        for part in re.split(r"■|\n|,|;|\band\b", body):
+            n = re.sub(r"[*^]+|\(.*?\)", "", part).strip(" .:\t")
+            if n and len(n) < 60 and n not in acc: acc.append(n)
+    for k in ("selectionEntries", "selectionEntryGroups", "sharedSelectionEntries"):
+        for c in entry.get(k, []) or []: leads(c, depth+1, seen, acc)
+    for el in entry.get("entryLinks", []) or []:
+        t = ents.get(el.get("targetId"))
+        if t: leads(t, depth+1, seen, acc)
+    return acc
+
 def tidy(names):
     """Collapse weapon profile variants ("Plasma pistol - supercharge") into one weapon name."""
     out, seen = [], set()
@@ -193,6 +220,7 @@ def units_for(files):
             names.add(name)
             kw = keywords(link, t)
             w = weapons(t)
+            ld = leads(t) if role in ("Character", "Epic Hero") else []
             pts, br = points(t)
             tag = "Legends" if "[Legends]" in name else ("Crucible" if "[Crucible]" in name else "")
             clean = re.sub(r"\s*\[(Legends|Crucible)\]\s*", "", name).strip()
@@ -209,6 +237,7 @@ def units_for(files):
                 **({"pb": br} if br else {}),
                 **({"wr": tidy(w["Ranged"])[:40]} if w["Ranged"] else {}),
                 **({"wm": tidy(w["Melee"])[:40]} if w["Melee"] else {}),
+                **({"ld": ld[:30]} if ld else {}),
             })
     out.sort(key=lambda u: (u.get("t", "") != "", ROLE_ORDER.index(u["r"]), u["n"]))
     return out
@@ -432,6 +461,19 @@ for fn, fid, name, group, parent, extra in FACTIONS:
     dets = detachments_for(fid, [fn] + extra + DET_LIBRARIES.get(fid, []), docs[fn]["id"]) if fn in docs else []
     result["factions"].append({"id": fid, "name": name, "group": group, **({"parent": parent} if parent else {}), "units": us, **({"dets": dets} if dets else {})})
     print(f"{name:26} {len(us):4} units {len(dets):3} detachments {sum(len(d.get('e', [])) for d in dets):4} enhancements", file=sys.stderr)
+
+# Leader lists name units in capitals: match each to a datasheet name (any faction, since a chapter's
+# characters lead Space Marines units too), and drop the ones that don't match anything.
+def norm_name(n): return re.sub(r"[^a-z0-9]+", " ", n.lower().replace("’", "'")).strip()
+all_names = {}
+for f in result["factions"]:
+    for u in f["units"]: all_names.setdefault(norm_name(u["n"]), u["n"])
+for f in result["factions"]:
+    for u in f["units"]:
+        if "ld" not in u: continue
+        got = [all_names[norm_name(n)] for n in u["ld"] if norm_name(n) in all_names]
+        if got: u["ld"] = sorted(set(got))
+        else: del u["ld"]
 
 # Chapters repeat most of their parent's units and detachments. To keep the file small, a chapter keeps only
 # what's its own, plus the names of any parent units (ux) or detachments (dx) it doesn't get. The app (and
