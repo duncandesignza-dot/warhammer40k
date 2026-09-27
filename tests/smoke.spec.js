@@ -1,5 +1,5 @@
 // Every page opens without errors and without sideways scrolling, on a desktop, a phone and a small phone.
-const {test, expect, seed, open, noSidewaysScroll} = require("./helpers");
+const {test, expect, seed, open, noSidewaysScroll, mockSupabase} = require("./helpers");
 
 const ROUTES = ["#/", "#/livery", "#/livery/ledgers", "#/livery/collection", "#/livery/paints", "#/livery/activity", "#/livery/new", "#/livery/new/ultramarines",
   "#/army/a1", "#/army/a1/colours", "#/army/a1/guide", "#/army/a1/unit/u2",
@@ -36,4 +36,35 @@ test("both modes of the homepage open, and the switch changes the colours", asyn
   await expect.poll(brand).toBe("#ec5a5f");
   await page.goto("/#/livery");
   await expect.poll(brand).toBe("#3ddc84");
+});
+
+test("the homepage's Community view is gold, says who runs it and lists every feature", async ({page}) => {
+  for(const w of [1280, 390, 320]){
+    await page.setViewportSize({width: w, height: 800});
+    await page.goto("/#/");
+    await page.click('.lp-switch [data-lp-mode="community"]');
+    await expect(page.locator('.lp-switch [data-lp-mode="community"]')).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator(".lp-switch [aria-pressed=true]")).toHaveCount(1);
+    await expect(page.locator(".lp-hero .eyebrow")).toHaveText("Run by the Eastern Cape Warlords");
+    await expect(page.locator("#lp-club-h")).toContainText("Eastern Cape Warlords");
+    await expect(page.locator(".lp-both-col.liv li")).toContainText(["Scheme lab: try schemes side by side"]);
+    await expect(page.locator(".lp-both-col.war li")).toContainText(["Game day at the table"]);
+    expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--brand").trim())).toBe("#f5b83d");
+    expect(await noSidewaysScroll(page)).toBeLessThanOrEqual(0);
+    // Back to Livery Ledger: green again, and the saved tool wasn't changed.
+    await page.click('.lp-switch [data-lp-mode="livery"]');
+    expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--brand").trim())).toBe("#3ddc84");
+  }
+});
+
+test("the background picker sits next to your profile", async ({page}) => {
+  await mockSupabase(page);
+  await page.goto("/#/livery");
+  await page.locator(".acct").waitFor();
+  expect(await page.evaluate(() => document.querySelector(".bgpick").nextElementSibling.className)).toBe("acct");
+  await page.goto("/#/war");
+  await page.locator(".acct").waitFor();
+  expect(await page.evaluate(() => document.querySelector(".bgpick").nextElementSibling.className)).toBe("acct");
+  await page.click("#b-bg");
+  await expect(page.locator("#bg-menu")).toBeVisible();
 });
