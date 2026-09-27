@@ -1957,7 +1957,7 @@ dialog.wdlg.xwide{max-width:min(1120px,calc(100vw - 24px))}
 .pp-rows{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
 .pp-rows li{display:flex;align-items:center;gap:12px;padding:10px 14px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface)}
 /* Armoury: your units by faction, with painting progress from Livery Ledger. */
-.ar-tools{margin:0 0 6px}.ar-tools input{width:100%;max-width:420px}
+.ar-tools{margin:16px 0 6px}.ar-tools input[type=search]{width:100%;flex:1 1 100%}
 .ar-fac{margin-top:26px}
 .ar-head{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:8px}
 .ar-title{flex:1;min-width:180px}.ar-title h2{margin:0}
