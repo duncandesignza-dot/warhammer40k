@@ -31,6 +31,14 @@
     (Array.isArray(list) ? list : []).forEach(e => { if(e && /^\d{4}-\d\d-\d\d$/.test(e.d)){ const n = Math.max(0, Math.min(1440, parseInt(e.m, 10) || 0)); if(n) m.set(e.d, Math.min(1440, (m.get(e.d) || 0) + n)); } });
     return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0])).slice(-400).map(([d, n]) => ({d, m: n}));
   }
+  /* Painting journal: dated notes on a unit, e.g. {id, d: "2026-09-24", t: "Tried a new edge highlight, too bright", p: photo}.
+     p is one of the unit's photos (a gallery path), or "". Newest last, up to 200. */
+  function cleanJournal(list){
+    const photo = x => typeof x === "string" && (/^data:image\/(jpeg|png|webp);base64,/.test(x) || /^[\w-]+\/[\w-]+\/[\w-]+\.jpg$/.test(x) || IDB_REF.test(x)) ? x : "";
+    return (Array.isArray(list) ? list : []).filter(e => e && /^\d{4}-\d\d-\d\d$/.test(e.d) && (String(e.t || "").trim() || photo(e.p)))
+      .map(e => ({id: /^[\w-]{1,40}$/.test(e.id || "") ? e.id : newId(), d: e.d, t: String(e.t || "").trim().slice(0, 1000), p: photo(e.p)}))
+      .sort((a, b) => a.d.localeCompare(b.d)).slice(-200);
+  }
   // An existing unit that gains painted models logs them today; taking some back (a mistake or an undo) removes them from today.
   function nextLog(prev, u){
     if(!prev) return u.log;   // new, imported or duplicated units aren't painting activity
@@ -96,6 +104,7 @@
     // Painting history: models painted per day, e.g. [{d: "2026-09-24", n: 3}].
     o.log = cleanLog(r.log);
     o.tlog = cleanTlog(r.tlog);
+    o.journal = cleanJournal(r.journal);
     // Extra photos (the gallery): storage paths online, small data URLs when saving in this browser.
     o.photos = (Array.isArray(r.photos) ? r.photos : []).filter(x => typeof x === "string" && (/^data:image\/(jpeg|png|webp);base64,/.test(x) || /^[\w-]+\/[\w-]+\/[\w-]+\.jpg$/.test(x) || IDB_REF.test(x))).slice(0, MAX_PHOTOS);
     // War Ledger: models built (null = follow the Built stage), a battle-ready override (null = follow

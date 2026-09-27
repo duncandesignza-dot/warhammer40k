@@ -113,6 +113,35 @@
     simMemo.set(key, out);
     return out;
   }
+  // How close a match is, in words, from its colour distance.
+  const matchWord = d => d < 6 ? "Very close match" : d < 11 ? "Close match" : "Similar";
+  /* The paints in labels (say, the ones you own) nearest in colour to a paint, like for like, closest first.
+     Shades match by the usual swaps, since their recorded colours can't be compared. */
+  function nearestOf(label, labels, n){
+    const p = label ? find(label) : null;
+    if(!p || !okHex(p.hex) || !cat) return [];
+    const pool = (labels || []).map(find).filter(c => c && c.key !== p.key);
+    if(kind(p) === "wash"){
+      const swaps = new Set((p.brand === "Citadel" ? washSwaps(p) : []).map(c => c.key));
+      const back = Object.entries(WASH_EQ).filter(([, l]) => l.some(bn => norm(bn.replace("|", " ")) === p.key)).map(([k]) => k);
+      return pool.filter(c => swaps.has(c.key) || (c.brand === "Citadel" && back.includes(c.nk))).slice(0, n || 3).map(c => ({...c, d: 0, match: "Common swap"}));
+    }
+    const k = kind(p) === "skip" ? "paint" : kind(p), L = p._lab || (p._lab = lab(p.hex));
+    return pool.filter(c => okHex(c.hex) && kind(c) === k).map(c => { const q = c._lab || (c._lab = lab(c.hex)); return {...c, d: Math.sqrt((L[0] - q[0]) ** 2 + (L[1] - q[1]) ** 2 + (L[2] - q[2]) ** 2)}; })
+      .filter(c => c.d < (k === "contrast" ? 10 : 18)).sort((a, b) => a.d - b.d).slice(0, n || 3).map(c => ({...c, match: matchWord(c.d)}));
+  }
+  /* The paint nearest a colour: from labels first when one is close (d < 8), otherwise from the brands
+     given (Citadel by default). metal: look among metallics. Returns a catalogue paint or null. */
+  function nearestHex(hex, opts){
+    if(!cat || !okHex(hex)) return null;
+    opts = opts || {};
+    const L = lab(hex), want = opts.metal ? "metal" : "paint", brands = opts.brands && opts.brands.length ? opts.brands : ["Citadel"];
+    const dist = c => { const q = c._lab || (c._lab = lab(c.hex)); return Math.sqrt((L[0] - q[0]) ** 2 + (L[1] - q[1]) ** 2 + (L[2] - q[2]) ** 2); };
+    const best = list => { let b = null; for(const c of list){ if(!okHex(c.hex) || kind(c) !== want) continue; const d = dist(c); if(!b || d < b.d) b = {...c, d}; } return b; };
+    const mine = best((opts.labels || []).map(find).filter(Boolean));
+    if(mine && mine.d < 8) return mine;
+    return best(cat.list.filter(c => brands.includes(c.brand) && !/discontinued/i.test(c.set))) || mine;
+  }
   const swatch = (label, cls) => { const p = find(label); return `<span class="pswatch ${cls || ""}" style="${p ? "background:" + p.hex : ""}"></span>`; };
 
   /* Autocomplete on a text input. opts.extra(): extra names (e.g. paints you own); opts.onPick(label). */
@@ -360,5 +389,5 @@
     return p ? {name: p.name, meta: [p.brand, p.set].filter(Boolean).join(" · ")} : {name: label || "", meta: ""};
   }
 
-  window.LEDGER_PAINTUI = {load, find, search, swatch, picker, norm, slot, shortName, describe, similar, swapsText, suggestSteps};
+  window.LEDGER_PAINTUI = {load, find, search, swatch, picker, norm, slot, shortName, describe, similar, swapsText, suggestSteps, nearestOf, nearestHex, matchWord};
 })();
