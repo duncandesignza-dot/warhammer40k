@@ -632,7 +632,7 @@ div.hd-when{display:contents}
 /* "More" menu for backups */
 .more{position:relative}
 .more-menu{position:absolute;right:0;top:calc(100% + 6px);z-index:40;min-width:190px;padding:6px;display:flex;flex-direction:column;gap:2px;background:rgba(13,17,20,.97);border:1px solid var(--line-strong);border-radius:var(--r);box-shadow:0 20px 50px -10px rgba(0,0,0,.8);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
-.more-menu button{justify-content:flex-start;background:transparent;border:0;font-weight:500;font-size:.85rem;padding:9px 10px;border-radius:9px}
+.more-menu button{justify-content:flex-start;text-align:left;white-space:nowrap;background:transparent;border:0;font-weight:500;font-size:.85rem;padding:9px 10px;border-radius:9px}
 .more-menu button:hover{background:var(--brand-soft)}
 .more-menu hr{border:0;border-top:1px solid var(--line);margin:4px 2px}
 .more-menu .menu-danger{color:var(--bad)}

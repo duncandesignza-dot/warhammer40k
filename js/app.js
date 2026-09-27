@@ -2018,7 +2018,14 @@
           <div class="wh-id">${armyBadge(army, 56)}<div><p class="eyebrow"><a href="#/war/army/${esc(army.id)}">${esc(army.name)}</a> · ${esc(factionName(army.faction))}</p><h1>${esc(list.name)}</h1>
             <p class="sub">${esc([sizeName(list), detText(list), list.limit ? ptsText(list.limit) + " limit" : "No points limit", gs.length ? `${recText(rec)} record` : ""].filter(Boolean).join(" · "))}</p>
             <p class="lst-meta">${crTag(list)}${statusTag(list)}<span>${list.ptsAsOf ? `Points as of ${esc(dayText(list.ptsAsOf))}` : "Points date not set"}</span></p></div></div>
-          <div class="war-actions"><button type="button" class="primary" data-log="${esc(army.id)}" data-list="${esc(list.id)}">Log a battle</button><button type="button" data-import>Paste a list</button><button type="button" data-export>Export list</button><a class="btn" href="#/war/list/${esc(list.id)}/play">Game day</a><a class="btn" href="#/war/list/${esc(list.id)}/print">Print list</a><button type="button" data-details>Edit details</button></div>
+          <div class="war-actions"><button type="button" class="primary" data-log="${esc(army.id)}" data-list="${esc(list.id)}">Log a battle</button><button type="button" data-import>Paste a list</button><button type="button" data-export>Export list</button><a class="btn" href="#/war/list/${esc(list.id)}/play">Game day</a><button type="button" data-details>Edit details</button>
+            <div class="more"><button type="button" id="wl-more" aria-expanded="false" aria-controls="wl-menu">More</button>
+              <div class="more-menu" id="wl-menu" hidden>
+                <a href="#/war/list/${esc(list.id)}/print">Print list</a>
+                <button type="button" data-dup>Duplicate list</button>
+                <button type="button" data-compare>Compare with another list</button>
+                <hr><button type="button" class="menu-danger" id="w-dellist">Delete list</button>
+              </div></div></div>
         </section>
         ${warTabs("lists")}
         <section class="war-stats" aria-label="List summary">
@@ -2061,7 +2068,7 @@
             <button type="button" class="btn-sm" data-add-unit>+ Add a new unit to the army</button>`}
           </section>
         </div>
-        <section class="war-sec danger-zone"><div class="row-actions"><button type="button" class="btn-sm" data-dup>Duplicate list</button><button type="button" class="btn-sm" data-compare>Compare with another list</button><button type="button" class="btn-sm danger" id="w-dellist">Delete list</button></div></section>`;
+`;
       const inp = $("lb-q");
       if(inp) inp.addEventListener("input", () => { q = inp.value.trim().toLowerCase(); const pos = inp.selectionStart; draw(); const n = $("lb-q"); n.focus(); n.setSelectionRange(pos, pos); });
       // Filtering the datasheets only redraws their list, so typing isn't interrupted.
@@ -2263,8 +2270,15 @@
       });
     }
     draw();
+    // The More menu: Print, Duplicate, Compare and Delete. It closes on a click elsewhere or Escape.
+    const menuClose = () => { const m = $("wl-menu"); if(m && !m.hidden){ m.hidden = true; $("wl-more").setAttribute("aria-expanded", "false"); return true; } return false; };
+    onWin("click", e => { if(!e.target.closest(".more")) menuClose(); }, document);
+    onWin("keydown", e => { if(e.key === "Escape" && menuClose()) $("wl-more").focus(); }, document);
     onApp(async e => {
       const b = e.target.closest("button"); if(!b) return;
+      if(b.id === "wl-more"){ const m = $("wl-menu"), open = m.hidden; m.hidden = !open; b.setAttribute("aria-expanded", open); if(open) (m.querySelector("a,button") || b).focus(); return; }
+      // Delete asks twice, so the menu stays open for the second press.
+      if(b.closest("#wl-menu") && b.id !== "w-dellist") menuClose();
       if(b.dataset.add) save({units: list.units.concat({u: b.dataset.add, k: entryKey()})});
       else if(b.dataset.sheet) addSheet(b.dataset.sheet);
       else if(b.dataset.peek) openSheetPeek(b.dataset.peek);

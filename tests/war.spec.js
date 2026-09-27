@@ -225,11 +225,11 @@ test("battle stats: streaks, scores, a margin chart and more ways to slice the r
 test("duplicate a list as a new version and compare the two", async ({page}) => {
   await seed(page);
   await open(page, "#/war/list/l1");
-  await page.click("[data-dup]");
+  await page.click("#wl-more"); await page.click("[data-dup]");
   await expect(page.locator("h1")).toHaveText("Club night v2");
   await page.click('[data-rm="0"]');                  // take the Captain out of the new version
   await page.click('[data-view="2"]'); await page.fill("#w-ep", "200"); await page.click("dialog[open] [type=submit]");
-  await page.click("[data-compare]");
+  await page.click("#wl-more"); await page.click("[data-compare]");
   await expect(page.locator("h1")).toHaveText("Compare lists");
   await expect(page.locator(".cmp-t thead")).toContainText("Club nightClub night v2");
   await expect(page.locator("section", {has: page.locator("h2", {hasText: "Only in Club night"})}).first()).toContainText("Captain");
@@ -674,7 +674,7 @@ test("a list prints on one clean page, with its datasheets if you like", async (
   await seed(page, `db.lists[0].units[0].warlord = true; db.lists[0].units[0].enh = {n: "Artificer Armour", p: 10};
     db.units.find(u => u.id === "u2").ranged = "Bolt Rifle";`);
   await open(page, "#/war/list/l1");
-  await page.click('a:has-text("Print list")');
+  await page.click("#wl-more"); await page.click('a:has-text("Print list")');
   await expect(page).toHaveURL(/#\/war\/list\/l1\/print$/);
   const pl = page.locator(".pl");
   await expect(pl.locator("h1")).toHaveText("Club night");
@@ -856,4 +856,22 @@ test("play: pick a list, and carry on a game in progress", async ({page}) => {
   await going.getByRole("link", {name: "Carry on"}).click();
   await expect(page).toHaveURL(/#\/war\/list\/l1\/play$/);
   await expect(page.locator("#gd-round")).toHaveText("3");
+});
+
+test("a list's More menu has Print, Duplicate, Compare and Delete, and closes on Escape", async ({page}) => {
+  await seed(page);
+  await open(page, "#/war/list/l1");
+  await expect(page.locator(".danger-zone")).toHaveCount(0);
+  await page.click("#wl-more");
+  await expect(page.locator("#wl-menu a, #wl-menu button")).toHaveText(["Print list", "Duplicate list", "Compare with another list", "Delete list"]);
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#wl-menu")).toBeHidden();
+  await expect(page.locator("#wl-more")).toBeFocused();
+  // Delete asks twice; the menu stays open between presses.
+  await page.click("#wl-more");
+  await page.click("#w-dellist");
+  await expect(page.locator("#w-dellist")).toHaveText("Press again to delete");
+  await page.click("#w-dellist");
+  await expect(page).toHaveURL(/#\/war\/lists$/);
+  expect((await saved(page)).lists.some(l => l.id === "l1")).toBe(false);
 });
