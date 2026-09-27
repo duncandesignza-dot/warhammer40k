@@ -147,6 +147,15 @@ test("Help: the three tools, getting started, the words and questions, and a ⓘ
   await expect(page.locator('.site-foot a[href="#/help"]')).toBeVisible();
 });
 
+test("Help sits just left of Settings on each ledger's overview", async ({page}) => {
+  await seed(page);
+  for(const h of ["#/livery", "#/war", "#/community"]){
+    await open(page, h);
+    const links = page.locator(':is(.page-head,.profile-head) a[href="#/help"] + a[href="#/settings"]');
+    await expect(links, h).toBeVisible();
+  }
+});
+
 test("getting started: a checklist for someone new, ticking off as they go, and it can be hidden", async ({page}) => {
   await seed(page, `db.units = []; db.lists = []; db.games = []; db.armies = db.armies.slice(0, 1);`);
   await open(page, "#/war");

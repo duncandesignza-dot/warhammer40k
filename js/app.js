@@ -3332,7 +3332,7 @@
     if(me) getShame().then(l => { const a = app.querySelector('.ph-actions a[href="#/shame"]'); if(a) a.innerHTML = "Pile of shame" + (l.length ? `<span class="count">${l.length}</span>` : ""); }).catch(() => {});
   }
   const shameBtn = () => `<a class="btn btn-sm" href="#/shame">Pile of shame${shameCount() ? `<span class="count">${shameCount()}</span>` : ""}</a>`;
-  const settingsBtn = `<a class="btn btn-sm" href="#/settings">Settings</a>`;
+  const settingsBtn = `<a class="btn btn-sm" href="#/help">Help</a><a class="btn btn-sm" href="#/settings">Settings</a>`;
 
   const LIV_TABS = [["", "Overview"], ["ledgers", "Ledgers"], ["collection", "Collection"], ["projects", "Projects"], ["paints", "Paints & recipes"], ["activity", "Painting activity"]];
   const livTabs = on => `<nav class="war-tabs" aria-label="Livery Ledger">${LIV_TABS.map(([k, l]) => `<a href="#/livery${k ? "/" + k : ""}"${k === on ? ` aria-current="page"` : ""}>${esc(l)}</a>`).join("")}</nav>`;
@@ -5057,11 +5057,7 @@ Redemptor Dreadnought (210 points)</pre>
     view.name = "community"; document.title = "Community Ledger";
     const today = isoDay(new Date()), evs = eventData().evs.filter(e => e.date >= today).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 4);
     app.innerHTML = `
-      <section class="page-head">
-        <p class="eyebrow">Community Ledger</p>
-        <h1>Community</h1>
-        <p class="sub">What's happening around the tables: events coming up and armies other painters have shared. Spotlights and painting events are on the way.</p>
-      </section>
+      ${tabHead("Community Ledger", "Community", "What's happening around the tables: events coming up and armies other painters have shared. Spotlights and painting events are on the way.", settingsBtn)}
       ${commTabs("")}
       <section class="war-sec" aria-labelledby="cm-ev"><div class="sec-h"><h2 id="cm-ev">Events coming up</h2><a href="#/war/events">All events</a></div>
         ${evs.length ? `<ul class="cm-evs">${evs.map(e => `<li><a href="#/war/events"><span class="tag ev-kind ${esc(e.kind)}">${EVENT_KIND[e.kind]}</span><span class="lb-name">${esc(e.name)}<small>${esc([dayText(e.date), e.place].filter(Boolean).join(" · "))}</small></span>${e.mine ? `<span class="cm-going">You're going</span>` : ""}</a></li>`).join("")}</ul>`
