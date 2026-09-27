@@ -46,12 +46,12 @@ test("without the lists and battles tables, War Ledger says how to set them up",
   await expect(page.locator(".banner")).toContainText("features.sql");
 });
 
-// Another painter's shared army, to comment on and follow.
+// Another player's shared army, to comment on and follow.
 const SHARED = {...DB, armies: [...DB.armies, {id: "a2", owner: "u2", faction: "ultramarines", name: "Robin's Ultramarines", public: true, updated_at: "2026-09-20",
   scheme: {by: "Robin", tiers: [{name: "Line", color: "#1f4aa8"}], colors: {armour: "#1f4aa8"}, rec: {w: 3, l: 1, d: 0}}}],
   units: [...DB.units, {id: "r1", army_id: "a2", owner: "u2", created_at: "2026-09-03", data: {name: "Intercessors", datasheet: "Intercessor Squad", role: "Battleline", count: 10, points: 80, painted: 5, stages: ["built"]}}]};
 
-test("comment on a shared army, and see the painter's profile", async ({page}) => {
+test("comment on a shared army, and see the player's profile", async ({page}) => {
   await mockSupabase(page, {db: SHARED});
   await page.goto("/#/army/a2");
   const box = page.locator(".comments");
@@ -68,16 +68,18 @@ test("comment on a shared army, and see the painter's profile", async ({page}) =
   await page.click(".owner-link");
   await expect(page.locator("h1")).toHaveText("Robin");
   // (The pretend database ignores which columns are asked for, so the painted totals aren't checked here.)
-  await expect(page.locator(".painter-head .sub")).toContainText("1 shared army");
-  await expect(page.locator(".painter-head .sub")).toContainText("3–1 battle record");
+  await expect(page.locator(".player-head .sub")).toContainText("1 shared army");
+  await expect(page.locator(".player-head .sub")).toContainText("3–1 battle record");
   await expect(page.locator(".shcard h3")).toHaveText("Robin's Ultramarines");
-  await page.click('.painter-head [data-follow="u2"]');
-  await expect(page.locator('.painter-head [data-follow="u2"]')).toHaveText("Following");
-  expect((await db(page)).follows).toEqual([expect.objectContaining({follower: "u1", followee: "u2"})]);
+  // Follow is for the army, on its card.
+  await expect(page.locator(".player-head [data-follow]")).toHaveCount(0);
+  await page.click('.shcard [data-follow="a2"]');
+  await expect(page.locator('.shcard [data-follow="a2"]')).toHaveText("Following army");
+  expect((await db(page)).army_follows).toEqual([expect.objectContaining({army_id: "a2", user_id: "u1"})]);
 });
 
 test("battles against a friend: tag them, and add their battle against you to your record", async ({page}) => {
-  await mockSupabase(page, {db: {...SHARED, follows: [{follower: "u1", followee: "u2"}],
+  await mockSupabase(page, {db: {...SHARED, army_follows: [{army_id: "a2", user_id: "u1"}],
     games: [{id: "rg1", owner: "u2", army_id: "a2", opp_user: "u1", created_at: "2026-09-21", data: {armyId: "a2", date: "2026-09-21", result: "w", us: 70, them: 50, mission: "Take and Hold", byName: "Robin", byArmy: "Robin's Ultramarines", byFaction: "ultramarines", oppUser: "u1"}}]}});
   await page.goto("/#/war");
   await expect(page.locator("#wd-tag")).toContainText("Robin logged a battle against you.");
@@ -106,12 +108,12 @@ test("battles against a friend: tag them, and add their battle against you to yo
   expect(tagged[0]).toMatchObject({opp_user: "u2", data: expect.objectContaining({oppUser: "u2", byName: "player", byArmy: "Szarekhan Dynasty", byFaction: "necrons"})});
 });
 
-test("no accessibility problems on a painter's profile, comments and battles against you", async ({page}) => {
+test("no accessibility problems on a player's profile, comments and battles against you", async ({page}) => {
   await mockSupabase(page, {db: {...SHARED, comments: [{id: "c1", army_id: "a2", owner: "u2", body: "Thanks for looking!", by_name: "Robin", created_at: "2026-09-22T10:00:00Z"}],
     games: [{id: "rg1", owner: "u2", army_id: "a2", opp_user: "u1", created_at: "2026-09-21", data: {armyId: "a2", date: "2026-09-21", result: "w", us: 70, them: 50, byName: "Robin", byArmy: "Robin's Ultramarines", byFaction: "ultramarines", oppUser: "u1"}}]}});
-  for(const r of ["#/army/a2", "#/painter/u2", "#/war/battles"]){
+  for(const r of ["#/army/a2", "#/player/u2", "#/war/battles"]){
     await page.goto("/" + r); await page.waitForLoadState("networkidle");
-    await expect(page.locator(r === "#/army/a2" ? ".comments" : r === "#/war/battles" ? ".tagged" : ".painter-head")).toBeVisible();
+    await expect(page.locator(r === "#/army/a2" ? ".comments" : r === "#/war/battles" ? ".tagged" : ".player-head")).toBeVisible();
     expect(await axe(page), r).toEqual([]);
   }
 });

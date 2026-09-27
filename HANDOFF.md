@@ -6,7 +6,7 @@ Everything a new session (or a new account) needs to pick this project up. Read 
 
 One static site with two tools that share the same armies and units:
 
-- **Livery Ledger**: plan and track painting. Colour schemes, paint recipes, painting stages, photos, painting time, pile of shame. It shows **only units you own**.
+- **Livery Ledger**: plan and track painting. Colour schemes, paint recipes, painting stages, photos, painting time. It shows **only units you own**.
 - **War Ledger**: the army planner and list builder, a lightweight New Recruit. Armies (owned or not), army lists, battle reports and Crusade forces.
 
 A toggle in the header switches between them. Everything is vanilla JS, with no build step and no framework.
@@ -37,6 +37,7 @@ Cloudflare needed `"previews": {}` in `wrangler.jsonc` for the Workers Builds ch
 - **Commits:** clear messages that describe the change for a person. Don't put AI model names or identifiers in commits or PRs.
 - **Before every push:** run the full test suite (see below), and screenshot the changed pages with Playwright (desktop 1280 wide and phone 390 wide) to check them by eye.
 - **Copy style:** plain, friendly UK English ("colours", "organiser"), short sentences, no jargon. Buttons say what they do ("Import an army", "Export list"). Hints explain in one line.
+- **Wording:** call people *players* (the site covers painting, playing and the club), not painters. "Army Painter" is a paint brand and stays.
 
 ## Adding an event (when the owner asks)
 
@@ -123,11 +124,11 @@ python3 tools/build_factions.py bsdata && python3 tools/build_sheets.py bsdata
 - **Routing:** hash routes in `route()`.
   - Livery: `#/livery`, `#/livery/{ledgers,collection,activity,paints,new}`, `#/army/<id>` (the ledger), `#/army/<id>/{colours,guide,unit/<uid>}`, `#/new/<faction>`.
   - War: `#/war` (the Armies tab), `#/war/{lists,datasheets,play,battles,events,buy,points,new,collection}`, `#/war/datasheets/<faction>`, `#/war/armies` (redirects to `#/war`), `#/war/list/<id>/{print,play}`, `#/war/new/<faction>`, `#/war/army/<id>`, `#/war/list/<id>`, `#/war/compare/<a>/<b>`.
-  - Shared: `#/shame`, `#/settings`, `#/community`, `#/community/shared` (Shared armies; `#/shared` redirects there), `#/painter/<id>`, and `#/` (landing).
+  - Shared: `#/settings`, `#/community`, `#/community/shared` (Shared armies; `#/shared` redirects there), `#/player/<id>` (a player's profile; old `#/painter/<id>` links still work), and `#/` (landing). `#/shame` (the removed pile of shame) and `#/profile` redirect to `#/livery`.
 - **Page lifecycle:**
   - `route()` queues: one page loads at a time, and only the newest address is opened, so a slow page can't draw over the one you went to. `routeNow()` does the work.
   - A page slower than 250ms shows a bar along the top (`busy()`, `body.loading`, `aria-busy` on `#app`).
-  - Online, `cacheReads(store)` keeps the reads (`listArmies`, `listAllUnits`, `listLists`, `listGames`, `listTagged`, `listUnits`, `getArmy`, `summary`, `listKits`) for a minute and shares ones in flight. Any store method that isn't a read clears it (before and after), as does coming back to the tab. Callers get copies.
+  - Online, `cacheReads(store)` keeps the reads (`listArmies`, `listAllUnits`, `listLists`, `listGames`, `listTagged`, `listUnits`, `getArmy`, `summary`) for a minute and shares ones in flight. Any store method that isn't a read clears it (before and after), as does coming back to the tab. Callers get copies.
   - Supabase requests give up after 20s (reads) or 60s (saves) with a plain message (`timedFetch` in store.js); datasheet files after 15s. Before this, one stalled request froze every page after it.
   - `view.seq` goes up on every route, so async work that outlives its page (not awaited by the view) can tell it has been left.
   - Listeners go through `onApp(handler)` (clicks on `#app`) and `onWin(type, handler, target)`. Both chain into `view.cleanup`.
@@ -176,7 +177,7 @@ python3 tools/build_factions.py bsdata && python3 tools/build_sheets.py bsdata
 - **Community** (`#/community`, `viewCommunity`, icon `LOGO_COMMUNITY` / `img/community.svg`: the Livery and War shield in gold with two figures): in the header (icon only below 1100px, and in the account menu; hidden from the header below 480px) for logged-in players. For now: events coming up, a link to Shared armies, and Spotlights and Painting events marked Coming soon.
   - Its name in the header, switch and menus is **Community Ledger** (just "Community" in the header below 480px). The club section on the homepage shows the Eastern Cape Warlords logo (`img/ecw-logo.webp`, 480×480, transparent).
   - On desktops (900px and up) a copy of the homepage switch docks at the bottom of the screen (`#lp-dock`, shown by an IntersectionObserver on the hero switch, `landingDock`) once the top one has scrolled away. Switching from it goes to the top of the new homepage.
-  - Shared armies and painter profiles are part of Community Ledger: gold, with its tabs (`COMM_TABS`: Overview, Shared armies) and, on phones, its own bottom bar (`BOTNAV.community`: Overview, Shared, Events, Livery, War). Shared armies isn't in the account menu any more.
+  - Shared armies and player profiles are part of Community Ledger: gold, with its tabs (`COMM_TABS`: Overview, Shared armies) and, on phones, its own bottom bar (`BOTNAV.community`: Overview, Shared, Events, Livery, War). Shared armies isn't in the account menu any more.
   - The homepage switch has a third choice, Community (`viewLanding({comm: true})`): gold, "Run by the Eastern Cape Warlords", what Community offers, the club section with upcoming events, and every Livery and War feature in two lists. It doesn't change the saved tool. Keep those feature lists (and the "little things" cards on the Livery and War homepages) up to date when features are added.
   - The background picker (`.bgpick`) is moved into the top bar beside the profile menu (or the log in buttons) each time `setTop()` redraws it.
   - On the Community page `html[data-page="community"]` turns the accents gold (the `--brand` variables), neither side of the Livery/War switch is lit, and the header logo shows the two figures over "Livery Ledger". The saved mode (`ll-mode`) is left as it was.
@@ -185,7 +186,7 @@ python3 tools/build_factions.py bsdata && python3 tools/build_sheets.py bsdata
   - **Tooltips** (`TIPS` and the `tooltips()` block): a styled line on hover (after 450ms) or keyboard focus, never on touch. Text comes from `data-tip`, then `title` (moved into `data-tip`), then the first matching `TIPS` selector, which covers the tabs, top bar and main buttons. Add a new button's tip there.
   - **ⓘ notes** (`GLOSSARY`, `infoBtn(key)`, `infoNotes()`): a tap or click opens a short explanation with "More in Help". They work on phones. They sit beside jargon: battle size, detachment, warlord, enhancement, leading, Legends, Things to check, Points check, CP, VP, Crusade terms, painting stages, ranks, ledger, To buy and Before your events.
   - **Help** (`#/help`, `viewHelp(anchor)`): the three tools with each tab explained (from `TIPS`), getting started, every `GLOSSARY` word grouped (`GLOSS_GROUPS`, each at `#/help#g-<key>`), and questions. It's linked from the account menu, the footer and every ⓘ. `routeNow` splits `#/page#anchor`.
-  - **Getting started** (`startCard(tool, title, steps)`): a four-step checklist on the Armoury and the Livery Overview, shown until every step is done or it's hidden (`settings.startHide`).
+  - **Getting started** (`startCard(tool, title, steps)`): a four-step checklist on the War and Livery Overviews, shown until every step is done or it's hidden (`settings.startHide`).
   - Army lists has one **+ New list** button; its "What's it for?" choice makes an army list or a Crusade force.
 
 ## Data model (what's saved)
@@ -204,13 +205,14 @@ python3 tools/build_factions.py bsdata && python3 tools/build_sheets.py bsdata
   - List-only unit (not owned): `{n, sheet, role, count, points, gear?, k}`. Shown with a "Not owned" tag; "I've bought this" (in the eye) and "Mark all as owned" (`ownEntries`) turn it into an army unit with the same `k`.
   - Either can also have `warlord`, `enh: {n, p}`, `lead: <k of the unit it leads>`, and Crusade `xp`, `hon`, `scar`, `cpx`, `cnote`.
 - **Game:** `{armyId, listId, date, opp, oppName, mission, result: w|l|d, us, them, mvp, took[], mfg, oppUser?, …}`.
-- **Settings:** in localStorage and on the account (`currency`, `listChecks`, …).
+- **Settings:** in localStorage and on the account (`hidePoints`, `listChecks`, …).
 
 ## Product decisions to keep
 
 - **An army is what you own**, in both tools (the same units). **A list is for testing**: units from your army plus datasheets you don't own, marked "Not owned", with "You own 3 of 4 units · 160 pts not owned" at the top.
-- War tabs: Armoury (`#/war`), Army lists, Datasheets, Play, Battles, Events, To buy (with a count). Phones' bottom bar has Armoury, Lists, Play, Battles and To buy; Datasheets and Events are buttons on the Armoury, shown only on phones (`.phone-only`), since the tabs have them elsewhere.
-- **Armoury** (`viewWarDash`/`drawWarDash`): every unit you own by faction, with units, models, points, painting (read-only, from Livery's `painted`), how many lists use each unit and the faction's record. `#/war/collection` and `#/war/armies` redirect here.
+- War tabs: Overview (`#/war`), Armoury (`#/war/armoury`), Army lists, Datasheets, Play, Battles, Events, To buy (with a count). Phones' bottom bar has Overview, Armoury, Lists, Play, Battles and To buy (the bar sizes its columns from `--bn-n`); Datasheets and Events are buttons on the Overview, shown only on phones (`.phone-only`), since the tabs have them elsewhere.
+- **Overview** (`viewWarDash()`/`drawWarDash(D, q, false)` + `warOverview`): the profile header (armies, points, lists, record; an Armoury button with the unit count, New army, Import, Help, Settings), getting started, force composition, your armies, the latest three lists, the last three battles with Log a battle, events coming up and what your lists want to buy. No Add unit here.
+- **Armoury** (`viewWarDash("armoury")`, `#/war/armoury`): every unit you own by faction, with units, models, points, painting (read-only, from Livery's `painted`), how many lists use each unit and the faction's record, plus + Add unit. `#/war/collection` and `#/war/armies` redirect here.
 - **Army lists**: every army with its "Full army" card (`fullArmyCard`, opens `#/war/army/<id>`) then its lists. Army pages sit under Army lists; their More menu has "Make a list of the whole army".
 - Events are club or national events listed by hand in `js/data/events.js` (`window.LEDGER_EVENTS`): the owner asks for one to be added, and it's added there and pushed. Players can't add or edit events. Each needs an `id` that never changes (sign-ups are kept against it), `name`, `date` and `kind` (`club`/`national`), plus optional `place`, `notes` and an https `link`. Players sign up ("I'm going", or "I went" after) with a list and notes, kept in `settings.eventLog` (`myEvents`/`saveMyEvent`); the old player-made `settings.events` are dropped. An event's result is the battles logged with your list on its date.
 - The list builder's Add units opens on "Your units"; Datasheets is the second tab.
@@ -244,7 +246,7 @@ python3 tools/build_factions.py bsdata && python3 tools/build_sheets.py bsdata
 - **Supabase:**
   - `setup.sql` has a policy "units: army is yours (update)" (a unit can't be moved into someone else's army). If the project was set up before it was added, run just that policy in the SQL editor.
   - Army lists and battles need `supabase/features.sql` (`warMissing` / `code: "nowar"` when missing).
-  - Kits (pile of shame), comments, likes, follows and `games.opp_user` are also in features.sql. All of it has been run on the project.
+  - Comments, likes, `army_follows` and `games.opp_user` are also in features.sql. **Follow is per army** (`army_follows`: army_id, user_id); the older `follows` table (people) is no longer used, and features.sql copies its rows into `army_follows`. The people you can tag as a battle opponent are the owners of armies you follow. **Run features.sql again** to create `army_follows`; until then Follow buttons stay hidden. The `kits` table (the removed pile of shame) is no longer used.
 - **Store changes:** keep `cleanUnit` / `cleanList` in step with any new field, or it's silently dropped on save. That already happened once with list-entry `gear`.
 
 ## Ideas that came up but aren't done

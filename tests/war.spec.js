@@ -20,8 +20,8 @@ test("muster an army and add units from a pasted list", async ({page}) => {
 
 test("a unit can live in the armoury without an army, and lists can use it", async ({page}) => {
   await seed(page);
-  await open(page, "#/war");
-  await page.click(".ph-actions [data-coll-add]");
+  await open(page, "#/war/armoury");
+  await page.click(".war-actions [data-coll-add]");
   await page.selectOption("#w-cf", "ultramarines");
   await page.selectOption("#w-ca", "");
   await page.click("dialog[open] [type=submit]");
@@ -35,11 +35,9 @@ test("a unit can live in the armoury without an army, and lists can use it", asy
 
 test("the armoury lists your units by faction, with points, painting and how often your lists use them", async ({page}) => {
   await seed(page, `db.units.push({id: "u9", armyId: "a1", name: "Gladiator Lancer", datasheet: "Gladiator Lancer", role: "Vehicle", count: 1, points: 160, painted: 0, stages: [], fav: true});`);
-  await open(page, "#/war");
+  await open(page, "#/war/armoury");
   await expect(page.locator("h1")).toHaveText("Armoury");
   await expect(page.locator('.war-tabs a[aria-current="page"]')).toHaveText("Armoury");
-  await expect(page.locator(".profile-head .stats")).toContainText("2Factions");
-  await expect(page.locator(".profile-head .stats")).toContainText("21%Painted");
   // Most points first.
   expect(await page.locator(".ar-fac h2").allInnerTexts()).toEqual(["Ultramarines", "Tyranids"]);
   const um = page.locator('.ar-fac:has(h2:text-is("Ultramarines"))');
@@ -56,7 +54,7 @@ test("the armoury lists your units by faction, with points, painting and how oft
   await expect(um).toContainText("No units match.");
   // The old collection page opens the armoury.
   await open(page, "#/war/collection");
-  await expect(page).toHaveURL(/#\/war$/);
+  await expect(page).toHaveURL(/#\/war\/armoury$/);
 });
 
 test("army lists: each army's full army comes first, then its lists", async ({page}) => {
@@ -500,6 +498,7 @@ test("units stay in armies they belong to: only real allies are matched, and odd
   await page.keyboard.press("Escape");
   // Adding from the collection: a Tyranid unit can't pick an Ultramarines army.
   await open(page, "#/war/collection");
+  await expect(page).toHaveURL(/#\/war\/armoury$/);
   await page.click("[data-coll-add]");
   await page.selectOption("#w-cf", "tyranids");
   expect(await page.locator("#w-ca option").allInnerTexts()).toEqual(["Not in an army", "Hive Fleet Leviathan"]);
@@ -921,19 +920,19 @@ test("events: with none added yet, say they'll show here", async ({page}) => {
 test("online, moving between War Ledger pages reads your data once, and a change is seen straight away", async ({page}) => {
   await mockSupabase(page, {db: {armies: [{id: "a1", owner: "u1", faction: "ultramarines", name: "Ultras", scheme: {}, created_at: "2026-01-01"}],
     units: [{id: "u1", owner: "u1", army_id: "a1", data: {name: "Captain", datasheet: "Captain", role: "Character", count: 1, points: 80}, created_at: "2026-01-01"}]}});
-  await page.goto("/#/war");
+  await page.goto("/#/war/armoury");
   await expect(page).toHaveTitle(/Armoury/);
   await page.locator("[data-wstar=u1]").waitFor();
   const reads = () => page.evaluate(() => ({...window.__reads}));
   const go = async h => { await page.evaluate(h => { location.hash = h; }, h); await page.waitForFunction(h => location.hash === h && !document.getElementById("app").hasAttribute("aria-busy"), h); };
   const first = await reads();
-  for(const h of ["#/war/lists", "#/war/battles", "#/war/buy", "#/war"]) await go(h);
+  for(const h of ["#/war/lists", "#/war/battles", "#/war/buy", "#/war", "#/war/armoury"]) await go(h);
   await expect(page).toHaveTitle(/Armoury/);
   expect(await reads()).toEqual(first);
   // Starring a unit saves it, which clears what was kept: the next page reads again and shows the star.
   await page.click("[data-wstar=u1]");
   await expect(page.locator("[data-wstar=u1]")).toHaveAttribute("aria-pressed", "true");
-  await go("#/war/lists"); await go("#/war");
+  await go("#/war/lists"); await go("#/war/armoury");
   await expect(page.locator("[data-wstar=u1]")).toHaveAttribute("aria-pressed", "true");
   expect((await reads()).units).toBeGreaterThan(first.units);
 });
@@ -965,4 +964,29 @@ test("a list's More menu has Print, Duplicate, Compare and Delete, and closes on
   await page.click("#w-dellist");
   await expect(page).toHaveURL(/#\/war\/lists$/);
   expect((await saved(page)).lists.some(l => l.id === "l1")).toBe(false);
+});
+
+test("War Ledger's overview has your profile, getting started and force composition; its Armoury button opens every unit", async ({page}) => {
+  await seed(page);
+  await open(page, "#/war");
+  await expect(page.locator('.war-tabs a[aria-current="page"]')).toHaveText("Overview");
+  await expect(page.locator(".war-comp")).toBeVisible();
+  await expect(page.locator(".ar-fac")).toHaveCount(0);
+  await expect(page.locator(".ph-actions [data-coll-add]")).toHaveCount(0);
+  await expect(page.locator(".profile-head .stats")).toContainText("2Armies");
+  await expect(page.locator(".profile-head .stats")).toContainText("1Lists");
+  await expect(page.locator(".profile-head .stats")).toContainText("1–1–1Record");
+  // A true overview: armies, latest lists, recent battles and events.
+  await expect(page.locator("#wo-armies ~ .ledgers .war-card, section:has(#wo-armies) .war-card")).toHaveCount(2);
+  await expect(page.locator("section:has(#wo-lists) .war-card h3")).toHaveText(["Club night"]);
+  await expect(page.locator("section:has(#wo-games) .games li")).toHaveCount(3);
+  await expect(page.locator("section:has(#wo-games) .games li").first()).toContainText("vs Sam");
+  await expect(page.locator("section:has(#wo-ev)")).toBeVisible();
+  const btn = page.locator('.ph-actions a[href="#/war/armoury"]');
+  await expect(btn).toHaveText("Armoury6");
+  await btn.click();
+  await expect(page).toHaveURL(/#\/war\/armoury$/);
+  await expect(page.locator("h1")).toHaveText("Armoury");
+  await expect(page.locator(".ar-fac")).toHaveCount(2);
+  await expect(page.locator(".war-actions [data-coll-add]")).toBeVisible();
 });
