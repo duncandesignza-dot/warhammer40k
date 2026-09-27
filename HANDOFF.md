@@ -70,7 +70,8 @@ js/config.js          Supabase URL + anon key (empty = browser-only mode)
 js/paints.js          paint catalogue UI (lazy-loads js/data/paints.js)
 js/art.js             badge/emblem drawing
 js/data/factions.js   datasheets per faction: name n, role r, sizes ms, max copies mx, epic hero eh,
-                      points p, points brackets pb [[lo,hi,pts]], weapon names wr/wm, Legends tag t;
+                      points p, points brackets pb [[lo,hi,pts]], weapon names wr/wm, Legends tag t,
+                      the units a character can lead ld (names from its Leader ability);
                       detachments dets [{n, dp, c, e:[[enhancement, pts, only?]]}]; battle sizes
 js/data/sheets/<faction>.js   datasheet profiles, loaded on demand (see "Datasheet profiles")
 js/data/presets.js, emblems.js, paints.js   colour presets, faction emblems, paint data
@@ -189,4 +190,3 @@ python3 tools/build_factions.py bsdata && python3 tools/build_sheets.py bsdata
 
 - Show ability descriptions in the datasheet view (a build-script change).
 - Per-model wargear with counts ("2 with Khornate eviscerator"), like New Recruit's model breakdown. The data only has the datasheet's weapon names, not its option groups.
-- Check leaders against each datasheet's "Leader" list (BSData has it in the Leader ability's text).

@@ -737,3 +737,18 @@ test("opponent notes: written on Battles, shown when you log a battle against th
   await expect(page.locator("#w-gon")).toContainText("Your notes on Necrons");
   await expect(page.locator("#w-gon")).toContainText("Reanimation: finish units off.");
 });
+
+test("a character leading a unit its datasheet doesn't list is flagged, and the units it can lead come first", async ({page}) => {
+  await seed(page, `db.lists[0].units[0].lead = "c";`);
+  await open(page, "#/war/list/l1");
+  // The Captain is leading the Redemptor Dreadnought.
+  const note = page.locator(".tc-list > li", {hasText: "can't usually lead"});
+  await expect(note).toContainText("Captain can't usually lead Redemptor Dreadnought.");
+  await expect(note).toContainText("Intercessor Squad");
+  await page.click('[aria-label="Warlord, enhancement and leading for Captain"]');
+  expect(await page.locator("#w-eld optgroup").evaluateAll(gs => gs.map(g => [g.label, [...g.children].map(o => o.textContent)]))).toEqual([
+    ["Can lead", ["Intercessor Squad"]], ["Other units", ["Redemptor Dreadnought", "Gladiator Lancer"]]]);
+  await page.selectOption("#w-eld", {label: "Intercessor Squad"});
+  await page.click("dialog[open] [type=submit]");
+  await expect(page.locator(".tc-list > li", {hasText: "can't usually lead"})).toHaveCount(0);
+});

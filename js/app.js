@@ -1689,6 +1689,13 @@
       const leaders = rows.filter(r => r.lead === x.k);
       if(leaders.length > 1) add("lead:" + x.k, `${x.name} is led by ${leaders.map(r => r.name).join(" and ")}.`, "A unit usually has one leader, unless a datasheet says it can have more.");
     });
+    // A character leading a unit its datasheet's Leader ability doesn't list.
+    rows.forEach(x => {
+      const led = x.lead && rows.find(r => r.k === x.lead); if(!led) return;
+      const n = rowSheetName(x), sh = sheetByName(sheetFaction(faction, n), n), target = rowSheetName(led);
+      if(sh && sh.ld && !sh.ld.includes(target))
+        add(`canlead:${x.k}:${target}`, `${x.name} can't usually lead ${led.name}.`, `Its datasheet lists: ${sh.ld.join(", ")}.`);
+    });
     // Units from outside the army's faction (and its allies).
     rows.forEach(x => {
       const n = x.u ? x.u.datasheet : x.sheet;
@@ -2214,6 +2221,9 @@
       const opts = enhOptions(army.faction, list.detachments);
       opts.forEach(([n, p, only, det]) => { known[n] = p; labels[n] = [`${p} pts`, det, only ? only.join(" or ") + " only" : ""].filter(Boolean).join(" · "); });
       const bodies = s.rows.filter(r => !r.gone && r.i !== i && !isCharRole(r.role));
+      // The units its datasheet says it can lead come first.
+      const lsh = sheetByName(sheetFaction(army.faction, rowSheetName(x)), rowSheetName(x)), canLead = r => lsh && lsh.ld && lsh.ld.includes(rowSheetName(r));
+      const leadGroups = lsh && lsh.ld ? [["Can lead", bodies.filter(canLead)], ["Other units", bodies.filter(r => !canLead(r))]].filter(g => g[1].length) : [["", bodies]];
       const d = modal(`${esc(x.name)}: warlord and enhancement`, `
         <label class="chk"><input type="checkbox" id="w-ewl"${x.warlord ? " checked" : ""}><span>Warlord of this list</span></label>
         <fieldset class="wfs"><legend>Enhancement</legend>
@@ -2221,7 +2231,7 @@
           <label>Points<input id="w-eep" type="number" min="0" max="999" inputmode="numeric" value="${x.enh && x.enh.p ? x.enh.p : ""}"></label></div>
           <datalist id="w-een-dl">${[...opts.map(o => o[0]), ...Object.keys(known).filter(n => !labels[n]).sort()].filter((n, j, a) => a.indexOf(n) === j).map(n => `<option value="${esc(n)}"${labels[n] ? ` label="${esc(labels[n])}"` : ""}>`).join("")}</datalist>
         </fieldset>
-        <label>Leading<select id="w-eld"><option value="">Not leading a unit</option>${bodies.map(r => { const other = s.rows.find(o => o.lead === r.k && o.i !== i && !o.gone); return `<option value="${esc(r.k)}"${x.lead === r.k ? " selected" : ""}>${esc(r.name)}${other ? ` (led by ${esc(other.name)})` : ""}</option>`; }).join("")}</select></label>
+        <label>Leading<select id="w-eld"><option value="">Not leading a unit</option>${leadGroups.map(([label, rs]) => { const opts = rs.map(r => { const other = s.rows.find(o => o.lead === r.k && o.i !== i && !o.gone); return `<option value="${esc(r.k)}"${x.lead === r.k ? " selected" : ""}>${esc(r.name)}${other ? ` (led by ${esc(other.name)})` : ""}</option>`; }).join(""); return label ? `<optgroup label="${esc(label)}">${opts}</optgroup>` : opts; }).join("")}</select></label>
         <div class="row-actions"><button type="submit" class="primary">Save</button></div>`);
       // Fill in the points for a known enhancement, unless you've typed your own.
       let autoP = x.enh && known[x.enh.n] === x.enh.p ? String(x.enh.p || "") : null;
