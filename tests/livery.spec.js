@@ -273,7 +273,7 @@ test("community: in the header once you're logged in, with the events coming up"
   await page.goBack();
   await expect(page.locator(".cm-evs li")).toHaveCount(1);
   await expect(page.locator(".cm-evs li")).toContainText("Winter GT");
-  await expect(page.locator('.cm-card[href="#/shared"]')).toBeVisible();
+  await expect(page.locator('.cm-card[href="#/community/shared"]')).toBeVisible();
 });
 
 test("community: logged out, it asks you to log in, and there's no header link", async ({page}) => {
@@ -408,4 +408,24 @@ test("year in review: models, time, busiest month, factions and units finished, 
   await page.click("#yr-share");
   await expect(page.locator("#sh-box img")).toHaveAttribute("src", /^blob:/);
   await expect(page.locator("#sh-acts a[download]")).toHaveAttribute("download", `my-${Y}-in-painting.jpg`);
+});
+
+test("shared armies live in Community Ledger: gold, with its tabs, and the old address still works", async ({page}) => {
+  await mockSupabase(page);
+  await page.goto("/#/shared");
+  await expect(page).toHaveURL(/#\/community\/shared$/);
+  await expect(page.locator("h1")).toHaveText("Shared armies");
+  await expect(page.locator(".war-tabs[aria-label='Community Ledger'] a[aria-current]")).toHaveText("Shared armies");
+  expect(await page.evaluate(() => document.documentElement.dataset.page)).toBe("community");
+  await expect(page.locator(".mode-switch a[aria-current]")).toHaveCount(0);
+  await expect(page.locator(".top-comm")).toHaveAttribute("aria-current", "page");
+  // Not in the account menu any more; the tab goes back to the overview.
+  await expect(page.locator('#acct-menu a[href="#/shared"], #acct-menu a[href="#/community/shared"]')).toHaveCount(0);
+  await page.click(".war-tabs[aria-label='Community Ledger'] a[href='#/community']");
+  await expect(page.locator("h1")).toHaveText("Community");
+  // On a phone, Community Ledger has its own bottom bar.
+  await page.setViewportSize({width: 390, height: 800});
+  await expect(page.locator("#botnav")).toHaveAttribute("aria-label", "Community Ledger sections");
+  await page.click('#botnav a[href="#/community/shared"]');
+  await expect(page.locator('#botnav a[aria-current]')).toHaveText("Shared");
 });

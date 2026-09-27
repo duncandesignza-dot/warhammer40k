@@ -42,9 +42,9 @@ test("the homepage's Community view is gold, says who runs it and lists every fe
   for(const w of [1280, 390, 320]){
     await page.setViewportSize({width: w, height: 800});
     await page.goto("/#/");
-    await page.click('.lp-switch [data-lp-mode="community"]');
-    await expect(page.locator('.lp-switch [data-lp-mode="community"]')).toHaveAttribute("aria-pressed", "true");
-    await expect(page.locator(".lp-switch [aria-pressed=true]")).toHaveCount(1);
+    await page.click('.lp-hero [data-lp-mode="community"]');
+    await expect(page.locator('.lp-hero [data-lp-mode="community"]')).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator(".lp-hero .lp-switch [aria-pressed=true]")).toHaveCount(1);
     await expect(page.locator(".lp-hero .eyebrow")).toHaveText("Run by the Eastern Cape Warlords");
     await expect(page.locator("#lp-club-h")).toContainText("Eastern Cape Warlords");
     await expect(page.locator(".lp-both-col.liv li")).toContainText(["Scheme lab: try schemes side by side"]);
@@ -52,7 +52,7 @@ test("the homepage's Community view is gold, says who runs it and lists every fe
     expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--brand").trim())).toBe("#f5b83d");
     expect(await noSidewaysScroll(page)).toBeLessThanOrEqual(0);
     // Back to Livery Ledger: green again, and the saved tool wasn't changed.
-    await page.click('.lp-switch [data-lp-mode="livery"]');
+    await page.click('.lp-hero [data-lp-mode="livery"]');
     expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--brand").trim())).toBe("#3ddc84");
   }
 });
@@ -67,4 +67,23 @@ test("the background picker sits next to your profile", async ({page}) => {
   expect(await page.evaluate(() => document.querySelector(".bgpick").nextElementSibling.className)).toBe("acct");
   await page.click("#b-bg");
   await expect(page.locator("#bg-menu")).toBeVisible();
+});
+
+test("on a desktop, the homepage switch docks at the bottom once you scroll past it", async ({page}) => {
+  await page.setViewportSize({width: 1280, height: 800});
+  await page.goto("/#/");
+  const dock = page.locator("#lp-dock");
+  await expect(dock).not.toHaveClass(/\bon\b/);
+  await page.evaluate(() => window.scrollTo(0, 1400));
+  await expect(dock).toHaveClass(/\bon\b/);
+  await expect(dock).toHaveAttribute("aria-hidden", "false");
+  // Switching from the dock goes to the top of the new homepage.
+  await dock.locator('[data-lp-mode="war"]').click();
+  await expect(page.locator('.lp-hero [data-lp-mode="war"]')).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+  await expect(page.locator("#lp-dock")).not.toHaveClass(/\bon\b/);
+  // Not on a phone.
+  await page.setViewportSize({width: 390, height: 800});
+  await page.evaluate(() => window.scrollTo(0, 1400));
+  await expect(page.locator("#lp-dock")).toBeHidden();
 });

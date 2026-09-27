@@ -2161,3 +2161,12 @@ a.cm-card:hover,a.cm-card:focus-visible{border-color:var(--brand-line)}
 .lp-club .lp-cta-btns{margin-top:20px}
 /* A small phone hasn't room for "Community Ledger" beside the buttons: just "Community". */
 @media (max-width:480px){html[data-page="community"] .brand-word b{display:none}}
+/* Homepage: on a desktop the Livery / War / Community switch docks at the bottom once the one at the top has scrolled away. */
+.lp-dock{display:none}
+@media (min-width:900px){
+  .lp-dock{display:block;position:fixed;left:50%;bottom:20px;z-index:40;transform:translate(-50%,calc(100% + 30px));opacity:0;pointer-events:none;transition:transform .35s cubic-bezier(.2,.8,.2,1),opacity .25s}
+  .lp-dock.on{transform:translate(-50%,0);opacity:1;pointer-events:auto}
+  .lp-dock .lp-switch{margin:0;background:rgba(13,17,20,.92);box-shadow:0 24px 60px -14px rgba(0,0,0,.9)}
+  body:has(.lp-dock) .site-foot{padding-bottom:120px}
+}
+@media (min-width:900px) and (prefers-reduced-motion:reduce){.lp-dock{transition:none}}
