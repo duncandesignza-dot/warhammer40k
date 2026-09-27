@@ -262,7 +262,7 @@
       nav.innerHTML = `<button type="button" class="btn-sm ghost" data-auth-open="in">Log in</button><button type="button" class="btn-sm primary" data-auth-open="up">Sign up</button>`;
       return;
     }
-    const comm = `<a class="top-comm" href="#/community" title="Community"${(location.hash || "").startsWith("#/community") ? ` aria-current="page"` : ""}><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3 19c.6-3.3 3-5 6-5s5.4 1.7 6 5"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14.2c2.6-.2 4.5 1.3 5 4.3"/></svg><span>Community</span></a>`;
+    const comm = `<a class="top-comm" href="#/community" title="Community"${(location.hash || "").startsWith("#/community") ? ` aria-current="page"` : ""}><span class="tc-ico">${LOGO_COMMUNITY}</span><span class="tc-l">Community</span></a>`;
     nav.innerHTML = comm + sw + `<div class="acct">
       <button type="button" class="acct-btn" id="b-acct" aria-haspopup="menu" aria-expanded="false" aria-controls="acct-menu" aria-label="Account menu for ${esc(a.name)}">${avatarHtml(a)}<span class="acct-name">${esc(a.name)}</span>${CARET}</button>
       <div class="acct-menu" id="acct-menu" role="menu" hidden>
@@ -629,6 +629,8 @@
         else if(parts[1] === "collection") await viewLiveryRoster();
         else if(parts[1] === "roster"){ history.replaceState(null, "", "#/livery/collection"); lastHash = location.hash; await viewLiveryRoster(); }
         else if(parts[1] === "activity") await viewLiveryActivity();
+        else if(parts[1] === "projects") await viewLiveryProjects();
+        else if(parts[1] === "year") await viewLiveryYear(/^\d{4}$/.test(parts[2] || "") ? parts[2] : "");
         else if(parts[1] === "paints") await viewLiveryPaints();
         else if(!parts[1]) await viewLivery();
         else viewNotFound();
@@ -719,7 +721,7 @@
   function navSection(parts){
     if(parts[0] === "war") return ({army: "lists", armies: "", new: "lists", collection: "", list: "lists", compare: "lists", points: "lists", datasheets: "", events: "battles"})[parts[1]] ?? (BOTNAV.war.items.some(i => i[0] === parts[1]) ? parts[1] || "" : "");
     if(parts[0] === "army" || parts[0] === "new") return "ledgers";
-    if(parts[0] === "livery") return parts[1] === "new" ? "ledgers" : parts[1] || "";
+    if(parts[0] === "livery") return parts[1] === "new" ? "ledgers" : parts[1] === "year" ? "activity" : parts[1] || "";
     return null;
   }
   function setBotNav(parts){
@@ -800,18 +802,20 @@
     g.fillStyle = "#6b7a76"; g.font = `600 26px system-ui, -apple-system, "Segoe UI", sans-serif`; g.fillText("Painted with Livery Ledger · liveryledger.co.za", 60, H - 44);
     return new Promise((res, rej) => c.toBlob(b => b ? res(b) : rej(new Error("Couldn't make the picture.")), "image/jpeg", .9));
   }
-  async function openShareImage(u, army, src){
-    const d = modal(`Share ${esc(u.name || "this unit")}`, `<div class="share-img" id="sh-box"><p class="hint">Making the picture…</p></div><div class="row-actions" id="sh-acts" hidden></div>`);
+  // A picture to share, in a dialog: Share where the browser can, and Download. make() returns a JPEG blob.
+  async function shareDialog(title, fileBase, alt, make){
+    const d = modal(title, `<div class="share-img" id="sh-box"><p class="hint">Making the picture…</p></div><div class="row-actions" id="sh-acts" hidden></div>`);
     try {
-      const blob = await makeShareImage(u, army, src), url = URL.createObjectURL(blob), file = `${String(u.name || "unit").replace(/[^\w-]+/g, "-").replace(/^-+|-+$/g, "").toLowerCase() || "unit"}-painted.jpg`;
+      const blob = await make(), url = URL.createObjectURL(blob), file = `${String(fileBase).replace(/[^\w-]+/g, "-").replace(/^-+|-+$/g, "").toLowerCase() || "livery-ledger"}.jpg`;
       d.addEventListener("close", () => URL.revokeObjectURL(url));
-      d.querySelector("#sh-box").innerHTML = `<img src="${url}" alt="The picture to share: ${esc(u.name || "unit")}, painted">`;
+      d.querySelector("#sh-box").innerHTML = `<img src="${url}" alt="${esc(alt)}">`;
       const f = new File([blob], file, {type: "image/jpeg"}), canShare = navigator.canShare && navigator.canShare({files: [f]});
       const acts = d.querySelector("#sh-acts"); acts.hidden = false;
       acts.innerHTML = `${canShare ? `<button type="button" class="primary" id="sh-go">Share</button>` : ""}<a class="btn${canShare ? "" : " primary"}" href="${url}" download="${esc(file)}">Download</a>`;
-      if(canShare) acts.querySelector("#sh-go").addEventListener("click", () => navigator.share({files: [f], title: `${u.name} · Livery Ledger`}).catch(() => {}));
-    } catch(err){ console.error(err); const b = d.querySelector("#sh-box"); if(b) b.innerHTML = `<p class="hint">Couldn't make the picture from this photo. Try again, or pick another photo as the main one.</p>`; }
+      if(canShare) acts.querySelector("#sh-go").addEventListener("click", () => navigator.share({files: [f], title: title.replace(/<[^>]+>/g, "")}).catch(() => {}));
+    } catch(err){ console.error(err); const b = d.querySelector("#sh-box"); if(b) b.innerHTML = `<p class="hint">Couldn't make the picture. Try again, or pick another photo as the main one.</p>`; }
   }
+  const openShareImage = (u, army, src) => shareDialog(`Share ${esc(u.name || "this unit")}`, `${u.name || "unit"}-painted`, `The picture to share: ${u.name || "unit"}, painted`, () => makeShareImage(u, army, src));
 
   /* ---------- painting time ---------- */
   // Each unit keeps minutes painted per day (tlog). One timer runs at a time, kept in this browser so it
@@ -3296,7 +3300,7 @@
   const shameBtn = () => `<a class="btn btn-sm" href="#/shame">Pile of shame${shameCount() ? `<span class="count">${shameCount()}</span>` : ""}</a>`;
   const settingsBtn = `<a class="btn btn-sm" href="#/settings">Settings</a>`;
 
-  const LIV_TABS = [["", "Overview"], ["ledgers", "Ledgers"], ["collection", "Collection"], ["paints", "Paints & recipes"], ["activity", "Painting activity"]];
+  const LIV_TABS = [["", "Overview"], ["ledgers", "Ledgers"], ["collection", "Collection"], ["projects", "Projects"], ["paints", "Paints & recipes"], ["activity", "Painting activity"]];
   const livTabs = on => `<nav class="war-tabs" aria-label="Livery Ledger">${LIV_TABS.map(([k, l]) => `<a href="#/livery${k ? "/" + k : ""}"${k === on ? ` aria-current="page"` : ""}>${esc(l)}</a>`).join("")}</nav>`;
   // A page's heading on the tab pages (the overview has the profile header instead).
   const tabHead = (eyebrow, title, sub, actions) => `<section class="page-head war-head">
@@ -3391,19 +3395,21 @@
         actions: armies.length ? `<a class="btn btn-sm" href="#/livery/collection">${LIST_ICON}Your collection<span class="count">${num(tot.units)}</span></a>${shameBtn()}${settingsBtn}` : ""})}
       ${livTabs("")}
       <div id="paint-status"></div>
+      <div id="ov-proj"></div>
       <div id="ov-events"></div>
       <div id="ov-next"></div>
       ${signedOut ? `<div class="banner"><span class="dot"></span>Log in to create a ledger and see the ones you've made. <button type="button" class="btn-sm" data-signin>Log in</button></div>` : ""}
       ${armies.length ? `
       <section class="war-sec" aria-labelledby="yl-h"><div class="sec-h"><h2 id="yl-h">Your ledgers</h2><div class="sec-acts">${armies.length > shown.length ? `<a href="#/livery/ledgers">All ${armies.length} ledgers</a>` : ""}${newLedgerBtn("primary btn-sm")}</div></div>
         <div class="ledgers">${shown.map(a => ledgerCard(a, sum)).join("")}</div></section>
-      <section class="war-sec" aria-labelledby="pa-h"><div class="sec-h"><h2 id="pa-h">Painting activity</h2><a href="#/livery/activity">See your painting activity</a></div>
+      <section class="war-sec" aria-labelledby="pa-h"><div class="sec-h"><h2 id="pa-h">Painting activity</h2><div class="sec-acts"><a href="#/livery/year">Your ${new Date().getFullYear()} in review</a><a href="#/livery/activity">See your painting activity</a></div></div>
         <div id="act-sum" class="act-sum"><p class="hint">Adding up your painting…</p></div></section>`
       : signedOut ? "" : livEmpty()}`;
     wireProfileHead();
     if(armies.length) store.listAllUnits().then(us => {
       const ps = $("paint-status"); if(ps) ps.innerHTML = paintStatus(us.filter(u => armies.some(a => a.id === u.armyId)));
       drawUpNext(us.filter(u => unitOwned(u) && armies.some(a => a.id === u.armyId)), armies);
+      drawProjects(us.filter(unitOwned));
       store.listLists().catch(() => []).then(lists => drawEventPaint(lists, us)).catch(err => console.error(err));
       const box = $("act-sum"); if(!box) return;
       const A = activityOf(us), goal = getGoal();
@@ -3432,23 +3438,106 @@
     PROF = keep;
   }
   /* Before your events: for each event you're going to, what's left to paint in the list you're taking. */
+  const daysUntil = d => Math.round((new Date(d + "T00:00:00") - new Date(isoDay(new Date()) + "T00:00:00")) / DAY_MS);
+  /* A painting goal's card (an event or a project): models left, days to go and models a day, and the units with most left.
+     o: {id, title, date, line (html under the title), j (paintJob), empty (text when nothing's in your collection), missing (text), actions (html)} */
+  function goalCard(o){
+    const j = o.j, n = daysUntil(o.date), pct = j.models ? Math.round((j.models - j.todo) / j.models * 100) : 0;
+    const when = n === 0 ? "Today" : n === 1 ? "Tomorrow" : n > 1 ? `In ${n} days` : `${plural(-n, "day")} ago`;
+    return `<section class="panel ep${j.models && !j.todo ? " done" : ""}" aria-labelledby="ep-${esc(o.id)}">
+      <div class="ep-top"><h3 id="ep-${esc(o.id)}">${esc(o.title)}</h3><small>${esc([when, dayText(o.date)].join(" · "))}</small></div>
+      ${o.line ? `<p class="ep-list">${o.line}</p>` : ""}
+      ${j.models ? `<div class="wbar" aria-hidden="true"><i style="width:${pct}%"></i></div>
+      <p class="ep-sum">${j.todo ? `<b>${plural(j.todo, "model")}</b> to paint, ${n > 0 ? `${plural(n, "day")} to go, <b>${perDay(j.todo, n)}</b>` : n === 0 ? `today, <b>${perDay(j.todo, 0)}</b>` : "and the date has passed"}` : `<b>All ${plural(j.models, "model")} painted.</b> ${o.doneText || "Done."}`}</p>` : `<p class="hint">${esc(o.empty || "Nothing to paint in it yet.")}</p>`}
+      ${j.left.length ? `<ul class="ep-left">${j.left.slice(0, 3).map(x => `<li><a href="#/army/${esc(x.u.armyId)}/unit/${esc(x.u.id)}">${esc(x.u.name || "Unit")}</a><small>${x.n} to go${nextStageOf(x.u) ? " · next: " + esc(nextStageOf(x.u).toLowerCase()) : ""}</small></li>`).join("")}${j.left.length > 3 ? `<li class="hint">and ${plural(j.left.length - 3, "more unit")}</li>` : ""}</ul>` : ""}
+      ${j.missing && o.missing ? `<p class="hint">${o.missing(j.missing)}</p>` : ""}
+      ${o.actions ? `<div class="row-actions">${o.actions}</div>` : ""}
+    </section>`;
+  }
   function drawEventPaint(lists, units){
     const box = $("ov-events"); if(!box) return;
-    const today = isoDay(new Date()), days = d => Math.round((new Date(d + "T00:00:00") - new Date(today + "T00:00:00")) / DAY_MS);
+    const today = isoDay(new Date());
     const evs = eventData().evs.filter(e => e.mine && e.date >= today && lists.some(l => l.id === e.mine.listId)).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 3);
     if(!evs.length){ box.innerHTML = ""; return; }
     box.innerHTML = `<section class="war-sec" aria-labelledby="ep-h"><div class="sec-h"><h2 id="ep-h">Before your events</h2><a href="#/war/events">Events</a></div>
-      <div class="ep-grid">${evs.map(ev => {
-        const l = lists.find(x => x.id === ev.mine.listId), j = paintJob(l, units), n = days(ev.date), pct = j.models ? Math.round((j.models - j.todo) / j.models * 100) : 0;
-        const when = n === 0 ? "Today" : n === 1 ? "Tomorrow" : `In ${n} days`;
-        return `<section class="panel ep" aria-labelledby="ep-${esc(ev.id)}">
-          <div class="ep-top"><h3 id="ep-${esc(ev.id)}">${esc(ev.name)}</h3><small>${esc([when, dayText(ev.date)].join(" · "))}</small></div>
-          <p class="ep-list">Taking <a href="#/war/list/${esc(l.id)}">${esc(l.name)}</a></p>
-          ${j.models ? `<div class="wbar" aria-hidden="true"><i style="width:${pct}%"></i></div>
-          <p class="ep-sum">${j.todo ? `<b>${plural(j.todo, "model")}</b> to paint, ${n === 0 ? "today" : plural(n, "day") + " to go"}, <b>${perDay(j.todo, n)}</b>` : `<b>All ${plural(j.models, "model")} painted.</b> Ready for the table.`}</p>` : `<p class="hint">None of the units in this list are in your collection yet.</p>`}
-          ${j.left.length ? `<ul class="ep-left">${j.left.slice(0, 3).map(x => `<li><a href="#/army/${esc(x.u.armyId)}/unit/${esc(x.u.id)}">${esc(x.u.name || "Unit")}</a><small>${x.n} to go${nextStageOf(x.u) ? " · next: " + esc(nextStageOf(x.u).toLowerCase()) : ""}</small></li>`).join("")}${j.left.length > 3 ? `<li class="hint">and ${plural(j.left.length - 3, "more unit")}</li>` : ""}</ul>` : ""}
-          ${j.missing ? `<p class="hint">${plural(j.missing, "unit")} in the list ${j.missing === 1 ? "isn't" : "aren't"} in your collection yet.</p>` : ""}
-        </section>`; }).join("")}</div></section>`;
+      <div class="ep-grid">${evs.map(ev => { const l = lists.find(x => x.id === ev.mine.listId);
+        return goalCard({id: ev.id, title: ev.name, date: ev.date, line: `Taking <a href="#/war/list/${esc(l.id)}">${esc(l.name)}</a>`, j: paintJob(l, units), doneText: "Ready for the table.",
+          empty: "None of the units in this list are in your collection yet.", missing: m => `${plural(m, "unit")} in the list ${m === 1 ? "isn't" : "aren't"} in your collection yet.`}); }).join("")}</div></section>`;
+  }
+  /* ---------- projects ----------
+     Your own painting goals: a name, a date to finish by and the units in it, kept with your settings
+     ({id, name, date, units: [unit ids]}). Each shows what's left the same way as an event. */
+  const myProjects = () => (Array.isArray(settings.projects) ? settings.projects : []).filter(p => p && p.id && /^\d{4}-\d{2}-\d{2}$/.test(p.date || "") && Array.isArray(p.units));
+  const saveProjects = list => saveSettings({projects: list.slice(0, 30)});
+  const projectJob = (p, units) => paintJob({units: p.units.map(u => ({u}))}, units);
+  const projectCard = (p, units, edit) => goalCard({id: "pj-" + p.id, title: p.name, date: p.date, j: projectJob(p, units), line: plural(p.units.filter(id => units.some(u => u.id === id)).length, "unit"),
+    doneText: "Project finished.", empty: "Its units aren't in your collection any more.", actions: edit ? `<button type="button" class="btn-sm" data-pj-edit="${esc(p.id)}" aria-label="Edit ${esc(p.name)}">Edit</button>` : ""});
+  function drawProjects(units){
+    const box = $("ov-proj"); if(!box) return;
+    const live = myProjects().filter(p => projectJob(p, units).todo).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 3);
+    box.innerHTML = live.length ? `<section class="war-sec" aria-labelledby="pj-h"><div class="sec-h"><h2 id="pj-h">Your projects</h2><a href="#/livery/projects">All projects</a></div>
+      <div class="ep-grid">${live.map(p => projectCard(p, units)).join("")}</div></section>` : "";
+  }
+  async function viewLiveryProjects(){
+    view.name = "liv-projects"; document.title = "Projects · Livery Ledger";
+    const [{armies}, all, raw] = await Promise.all([liveryData(), store.listAllUnits(), store.listArmies()]);
+    const me = store.session ? store.session.user.id : null, pools = raw.filter(a => isPool(a) && (!me || !a.owner || a.owner === me));
+    const groups = armies.concat(pools), byId = Object.fromEntries(groups.map(a => [a.id, a]));
+    const units = all.filter(u => byId[u.armyId] && unitOwned(u));
+    function draw(){
+      const ps = myProjects(), live = ps.filter(p => projectJob(p, units).todo || !projectJob(p, units).models).sort((a, b) => a.date.localeCompare(b.date)), done = ps.filter(p => !live.includes(p));
+      app.innerHTML = `${tabHead("Livery Ledger", "Projects", "Your painting goals: pick the units and a date to finish by, and see what's left and how many models a day it takes.", store.canWrite || store.session ? `<button type="button" class="primary" data-pj-new>+ New project</button>` : "")}
+        ${livTabs("projects")}
+        ${ps.length ? `${live.length ? `<section class="war-sec" aria-labelledby="pj-now"><div class="sec-h"><h2 id="pj-now">On the go</h2></div><div class="ep-grid">${live.map(p => projectCard(p, units, true)).join("")}</div></section>` : ""}
+          ${done.length ? `<section class="war-sec" aria-labelledby="pj-done"><div class="sec-h"><h2 id="pj-done">Finished</h2></div><div class="ep-grid">${done.map(p => projectCard(p, units, true)).join("")}</div></section>` : ""}`
+        : `<section class="panel war-empty"><h2>No projects yet</h2><p class="sub">Set yourself a goal, like finishing a squad before the end of the month. Choose the units and a date, and Livery Ledger works out how many models a day it takes.</p>${units.length ? `<button type="button" class="primary" data-pj-new>+ New project</button>` : `<p class="hint">Add some units to a ledger first.</p>`}</section>`}`;
+    }
+    function edit(p){
+      const picked = new Set(p ? p.units : []), soon = isoDay(new Date(Date.now() + 30 * DAY_MS));
+      const inGroup = a => units.filter(u => u.armyId === a.id);
+      const d = modal(p ? "Edit project" : "New project", `
+        <div class="wgrid">
+          <label class="span2">Name<input id="pj-name" maxlength="80" value="${esc(p ? p.name : "")}" placeholder="e.g. Finish the 2nd Company"></label>
+          <label>Finish by<input id="pj-date" type="date" value="${esc(p ? p.date : soon)}"></label>
+        </div>
+        <fieldset class="pj-units"><legend>Units in it <span class="hint" id="pj-n"></span></legend>
+          ${units.length > 8 ? `<input type="search" id="pj-q" placeholder="Search your units" aria-label="Search your units">` : ""}
+          <div class="pj-groups">${groups.filter(a => inGroup(a).length).map(a => `<div class="pj-g" data-g="${esc(a.id)}">
+            <label class="pj-gh"><input type="checkbox" data-pj-all="${esc(a.id)}"> <strong>${esc(isPool(a) ? `${factionName(a.faction)} (not in a ledger)` : a.name)}</strong></label>
+            ${inGroup(a).map(u => `<label class="pj-u" data-name="${esc(String(u.name || "").toLowerCase())}"><input type="checkbox" data-pj-u="${esc(u.id)}"${picked.has(u.id) ? " checked" : ""}> ${esc(u.name || u.datasheet || "Unit")} <small>${unitDone(u)}/${+u.count || 0} painted</small></label>`).join("")}
+          </div>`).join("")}</div>
+        </fieldset>
+        <div class="row-actions"><button type="submit" class="primary">${p ? "Save project" : "Add project"}</button>${p ? `<button type="button" class="danger" id="pj-del">Delete</button>` : ""}<span class="msg" id="pj-msg" role="status"></span></div>`, "wide");
+      const sync = () => {
+        d.querySelectorAll("[data-pj-all]").forEach(c => { const us = [...d.querySelectorAll(`[data-g="${CSS.escape(c.dataset.pjAll)}"] [data-pj-u]`)]; c.checked = us.length && us.every(x => x.checked); c.indeterminate = !c.checked && us.some(x => x.checked); });
+        const n = d.querySelectorAll("[data-pj-u]:checked").length; $("pj-n").textContent = n ? `(${plural(n, "unit")})` : "";
+      };
+      sync();
+      d.addEventListener("change", e => {
+        const all = e.target.closest("[data-pj-all]");
+        if(all) d.querySelectorAll(`[data-g="${CSS.escape(all.dataset.pjAll)}"] [data-pj-u]`).forEach(c => c.checked = all.checked);
+        sync();
+      });
+      const q = d.querySelector("#pj-q");
+      if(q) q.addEventListener("input", () => { const v = q.value.trim().toLowerCase(); d.querySelectorAll(".pj-u").forEach(l => l.hidden = v && !l.dataset.name.includes(v)); d.querySelectorAll(".pj-g").forEach(g => g.hidden = !g.querySelector(".pj-u:not([hidden])")); });
+      d.querySelector("form").addEventListener("submit", async e => {
+        e.preventDefault();
+        const name = $("pj-name").value.trim(), date = $("pj-date").value, ids = [...d.querySelectorAll("[data-pj-u]:checked")].map(c => c.dataset.pjU);
+        if(!name){ $("pj-msg").textContent = "Give the project a name."; $("pj-name").focus(); return; }
+        if(!/^\d{4}-\d{2}-\d{2}$/.test(date)){ $("pj-msg").textContent = "Choose a date to finish by."; $("pj-date").focus(); return; }
+        if(!ids.length){ $("pj-msg").textContent = "Tick the units in it."; return; }
+        const row = {id: p ? p.id : entryKey(), name, date, units: ids.slice(0, 300)};
+        try { await saveProjects(p ? myProjects().map(x => x.id === p.id ? row : x) : myProjects().concat(row)); d.close(); flash(p ? "Project saved." : `Added ${name}.`); draw(); }
+        catch(err){ console.error(err); $("pj-msg").textContent = "Couldn't save: " + errText(err); }
+      });
+      if(p) armButton($("pj-del"), "Press again to delete", async () => { try { await saveProjects(myProjects().filter(x => x.id !== p.id)); d.close(); flash("Project deleted."); draw(); } catch(err){ $("pj-msg").textContent = "Couldn't delete it: " + errText(err); } });
+      $("pj-name").focus();
+    }
+    draw();
+    onApp(e => {
+      if(e.target.closest("[data-pj-new]")) edit(null);
+      const b = e.target.closest("[data-pj-edit]"); if(b) edit(myProjects().find(p => p.id === b.dataset.pjEdit));
+    });
   }
 
   /* ---------- Livery tab pages ---------- */
@@ -3521,7 +3610,7 @@
   }
   async function viewLiveryActivity(){
     view.name = "liv-activity"; document.title = "Painting activity · Livery Ledger";
-    app.innerHTML = `${tabHead("Livery Ledger", "Painting activity", "Models you've marked painted across all your ledgers, month by month.", "")}
+    app.innerHTML = `${tabHead("Livery Ledger", "Painting activity", "Models you've marked painted across all your ledgers, month by month.", `<a class="btn primary" href="#/livery/year">Your ${new Date().getFullYear()} in review</a>`)}
       ${livTabs("activity")}
       <section class="activity panel" id="activity" aria-labelledby="act-h"><h2 class="act-title" id="act-h">Painting activity</h2><p class="loading">Adding up your painting…</p></section>`;
     try { const [us, as] = await Promise.all([store.listAllUnits(), store.listArmies()]); actArmies = as; if($("activity")) drawActivity(us); }
@@ -3529,17 +3618,104 @@
   }
 
 
+  /* ---------- year in review ----------
+     A year of painting: models painted, time at the desk, the busiest month, units finished, and the factions,
+     paints and colours that got the most use (weighted by models painted that year). Shareable as a picture. */
+  function yearOf(units, armies, Y){
+    const byArmy = Object.fromEntries(armies.map(a => [a.id, a])), inY = e => e.d.startsWith(Y);
+    const months = Array.from({length: 12}, (_, i) => ({key: `${Y}-${String(i + 1).padStart(2, "0")}`, n: 0}));
+    const days = new Set(), fac = new Map(), paints = new Map(), colours = new Map(), finished = [];
+    let models = 0, mins = 0;
+    const add = (m, k, n) => { if(k) m.set(k, (m.get(k) || 0) + n); };
+    units.forEach(u => {
+      const a = byArmy[u.armyId]; if(!a) return;
+      const n = (u.log || []).filter(inY).reduce((t, e) => { days.add(e.d); months[+e.d.slice(5, 7) - 1].n += e.n; return t + e.n; }, 0);
+      mins += (u.tlog || []).filter(inY).reduce((t, e) => t + e.m, 0);
+      const last = (u.log || []).slice(-1)[0];
+      if(u.status === "done" && last && inY(last)) finished.push({u, a, d: last.d});
+      if(!n) return;
+      models += n; add(fac, a.faction, n);
+      const sc = a.scheme || {}, recipes = (sc.recipes || []).filter(r => (u.recipes || []).includes(r.id));
+      new Set([...Object.values(u.slotPaints || {}), ...Object.values(sc.slotPaints || {}), ...recipes.flatMap(r => r.steps.map(st => st.p))].filter(Boolean)).forEach(p => add(paints, p, n));
+      ["armour", "secondary", "trim"].forEach((k, i) => add(colours, (ART.hexOk(u[k]) ? u[k] : (sc.colors || {})[k] || "").toLowerCase(), n * (3 - i)));
+    });
+    const top = (m, k) => [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, k);
+    const busiest = months.reduce((b, m) => m.n > b.n ? m : b, months[0]);
+    return {Y, models, mins, days: days.size, months, busiest: busiest.n ? busiest : null, finished: finished.sort((a, b) => b.d.localeCompare(a.d)),
+      factions: top(fac, 4), paints: top(paints, 6), colours: top(colours, 6).map(c => c[0]).filter(h => ART.hexOk(h))};
+  }
+  const monthName = key => new Date(key + "-01T12:00:00").toLocaleDateString("en-GB", {month: "long"});
+  async function viewLiveryYear(year){
+    const [{armies}, all, raw] = await Promise.all([liveryData(), store.listAllUnits(), store.listArmies(), PU.load()]);
+    const me = store.session ? store.session.user.id : null, groups = armies.concat(raw.filter(a => isPool(a) && (!me || !a.owner || a.owner === me)));
+    const units = all.filter(u => unitOwned(u) && groups.some(a => a.id === u.armyId));
+    const now = String(new Date().getFullYear()), years = [...new Set([now, ...units.flatMap(u => (u.log || []).map(e => e.d.slice(0, 4)))])].sort().reverse();
+    const Y = years.includes(year) ? year : now, R = yearOf(units, groups, Y);
+    view.name = "liv-year"; document.title = `${Y} in review · Livery Ledger`;
+    const maxM = Math.max(1, ...R.months.map(m => m.n));
+    app.innerHTML = `${tabHead("Livery Ledger", `Your ${Y} in painting`, Y === now ? "The year so far: what you painted, when, and with what." : "What you painted, when, and with what.",
+        `${years.length > 1 ? `<label class="yr-pick"><span class="sr-only">Year</span><select id="yr-y">${years.map(y => `<option${y === Y ? " selected" : ""}>${y}</option>`).join("")}</select></label>` : ""}${R.models ? `<button type="button" class="primary" id="yr-share">Share your year</button>` : ""}`)}
+      ${livTabs("activity")}
+      ${R.models ? `
+      <div class="war-stats yr-stats">
+        <div class="wstat ready"><b>${num(R.models)}</b><span>Models painted</span></div>
+        <div class="wstat"><b>${R.mins ? hm(R.mins) : "–"}</b><span>At the painting desk</span>${R.mins ? "" : `<small>Use the timer to track it</small>`}</div>
+        <div class="wstat"><b>${R.days}</b><span>${R.days === 1 ? "Day" : "Days"} painting</span></div>
+        <div class="wstat"><b>${R.finished.length}</b><span>Units finished</span></div>
+      </div>
+      <div class="yr-grid">
+        <section class="panel yr-card" aria-labelledby="yr-m"><h2 id="yr-m">Month by month</h2>
+          ${R.busiest ? `<p class="yr-say">Your busiest month was <strong>${esc(monthName(R.busiest.key))}</strong>, with ${plural(R.busiest.n, "model")}.</p>` : ""}
+          <div class="yr-bars" role="img" aria-label="${esc(R.months.map(m => `${monthName(m.key)}: ${m.n}`).join(", "))}">${R.months.map(m => `<span class="yr-bar${R.busiest && m.key === R.busiest.key ? " top" : ""}"><i style="height:${Math.round(m.n / maxM * 100)}%"></i><small>${monthName(m.key).slice(0, 1)}</small></span>`).join("")}</div>
+        </section>
+        <section class="panel yr-card" aria-labelledby="yr-f"><h2 id="yr-f">Factions</h2>
+          <ul class="yr-list">${R.factions.map(([f, n]) => `<li>${soloBadge(factionBadge(f, 28), 28)}<span>${esc(factionName(f))}</span><b>${plural(n, "model")}</b></li>`).join("")}</ul>
+        </section>
+        <section class="panel yr-card" aria-labelledby="yr-p"><h2 id="yr-p">Most-used paints</h2>
+          ${R.paints.length ? `<ul class="yr-list">${R.paints.map(([p]) => { const d2 = PU.describe(p); return `<li>${PU.swatch(p)}<span>${esc(d2.name)}${d2.meta ? `<small>${esc(d2.meta)}</small>` : ""}</span></li>`; }).join("")}</ul>` : `<p class="hint">Pick paints for your colours or write recipes, and the ones you use most show here.</p>`}
+        </section>
+        <section class="panel yr-card" aria-labelledby="yr-c"><h2 id="yr-c">Your colours</h2>
+          <div class="yr-sws">${R.colours.map(h => `<span class="yr-sw" style="background:${esc(h)}" title="${esc(cname(h))}"><small>${esc(cname(h))}</small></span>`).join("")}</div>
+        </section>
+      </div>
+      ${R.finished.length ? `<section class="war-sec" aria-labelledby="yr-u"><div class="sec-h"><h2 id="yr-u">Units finished</h2></div>
+        <ul class="un-rows">${R.finished.slice(0, 24).map(({u, a, d}) => { const keep = PROF; PROF = P.profileFor(a.faction); const b = soloBadge(unitBadge(u, a.scheme, 40), 40); PROF = keep;
+          return `<li><a href="#/army/${esc(a.id)}/unit/${esc(u.id)}">${b}<span class="lb-name"><span>${esc(u.name || "Unit")}</span><small>${esc(isPool(a) ? factionName(a.faction) : a.name)}</small></span><span class="un-next"><small>Finished</small>${esc(dayText(d))}</span></a></li>`; }).join("")}</ul></section>` : ""}`
+      : `<section class="panel war-empty"><h2>Nothing painted in ${Y} yet</h2><p class="sub">Mark models as painted in your ledgers and your year adds up here: models, time, busiest month, and the paints and colours you used most.</p></section>`}`;
+    const ys = $("yr-y"); if(ys) ys.addEventListener("change", () => { location.hash = `#/livery/year/${ys.value}`; });
+    const sb = $("yr-share"); if(sb) sb.addEventListener("click", () => shareDialog(`Share your ${Y}`, `my-${Y}-in-painting`, `Your ${Y} in painting`, () => yearImage(R)));
+  }
+  // The year as a picture: 1080×1350, like the unit share picture.
+  function yearImage(R){
+    const W = 1080, H = 1350, c = document.createElement("canvas"); c.width = W; c.height = H;
+    const g = c.getContext("2d"), F = (w, px) => `${w} ${px}px system-ui, -apple-system, "Segoe UI", sans-serif`;
+    const bg = g.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, "#0f1a15"); bg.addColorStop(1, "#0b0f12"); g.fillStyle = bg; g.fillRect(0, 0, W, H);
+    g.fillStyle = "#4ade80"; g.font = F(700, 30); g.fillText("LIVERY LEDGER", 70, 110);
+    g.fillStyle = "#f1f5f4"; g.font = F(800, 76); g.fillText(`My ${R.Y} in painting`, 70, 200);
+    g.fillStyle = "#4ade80"; g.font = F(800, 220); g.fillText(num(R.models), 64, 430);
+    g.fillStyle = "#cfd8d4"; g.font = F(600, 40); g.fillText(R.models === 1 ? "model painted" : "models painted", 72, 490);
+    const stat = (x, big, small) => { g.fillStyle = "#f1f5f4"; g.font = F(800, 64); g.fillText(big, x, 620); g.fillStyle = "#9aa7a3"; g.font = F(500, 30); g.fillText(small, x, 664); };
+    stat(70, R.mins ? hm(R.mins) : "–", "at the desk"); stat(420, String(R.days), R.days === 1 ? "day painting" : "days painting"); stat(760, String(R.finished.length), R.finished.length === 1 ? "unit finished" : "units finished");
+    let y = 780;
+    if(R.busiest){ g.fillStyle = "#9aa7a3"; g.font = F(500, 32); g.fillText("Busiest month", 70, y); g.fillStyle = "#f1f5f4"; g.font = F(700, 44); g.fillText(`${monthName(R.busiest.key)}: ${plural(R.busiest.n, "model")}`, 70, y + 54); y += 130; }
+    if(R.factions.length){ g.fillStyle = "#9aa7a3"; g.font = F(500, 32); g.fillText("Factions", 70, y); g.fillStyle = "#f1f5f4"; g.font = F(700, 40);
+      let t = R.factions.map(([f]) => factionName(f)).join(" · "); while(g.measureText(t).width > W - 140 && t.includes(" · ")) t = t.slice(0, t.lastIndexOf(" · ")); g.fillText(t, 70, y + 52); y += 130; }
+    if(R.colours.length){ R.colours.forEach((h, i) => { g.fillStyle = h; g.beginPath(); g.arc(110 + i * 110, y + 40, 42, 0, Math.PI * 2); g.fill(); g.strokeStyle = "rgba(255,255,255,.25)"; g.lineWidth = 3; g.stroke(); }); }
+    g.fillStyle = "#6b7a76"; g.font = F(600, 26); g.fillText("liveryledger.co.za", 70, H - 60);
+    return new Promise((res, rej) => c.toBlob(b => b ? res(b) : rej(new Error("Couldn't make the picture.")), "image/jpeg", .9));
+  }
+
   /* ---------- Livery: paints and recipes across every ledger ---------- */
   const RECIPE_TECHS = ["Prime","Basecoat","Layer","Shade / wash","Contrast","Dry brush","Edge highlight","Highlight","Glaze","Technical","Varnish","Other"];
   const RECIPE_AREAS = ["Armour", "Secondary", "Trim", "Robes / cloth", "Weapons / metal", "Skin", "Lenses", "Base", "Other"];
   let paintsTab = "recipes";
   async function viewLiveryPaints(){
     view.name = "liv-paints"; document.title = "Paints & recipes · Livery Ledger";
-    let armies = [], units = [], library = null, libMsg = "", ownedList = [], editing = null, q = "", delArmed = "";
+    let armies = [], units = [], library = null, libMsg = "", ownedList = [], editing = null, q = "", delArmed = "", matchFor = "";
     app.innerHTML = `${tabHead("Livery Ledger", "Paints &amp; recipes", "Your recipes, the paints on your shelf and what you still need, across all your ledgers.", "")}
       ${livTabs("paints")}
       <div class="seg pp-tabs" role="group" aria-label="Section" id="pp-tabs">
-        <button type="button" data-pt="recipes">Recipes</button><button type="button" data-pt="owned">My paints</button><button type="button" data-pt="buy">To buy <span class="buy-badge" id="pp-buy" hidden></span></button>
+        <button type="button" data-pt="recipes">Recipes</button><button type="button" data-pt="owned">My paints</button><button type="button" data-pt="buy">To buy <span class="buy-badge" id="pp-buy" hidden></span></button><button type="button" data-pt="match">Match a paint</button>
       </div>
       <div id="pp-body" class="pp-body"><p class="hint">Loading…</p></div>`;
     const seq = view.seq, left = () => view.seq !== seq || !$("pp-body");
@@ -3607,13 +3783,37 @@
         PU.picker($("op-add"), {owned: () => owned(), extra: () => [], onPick: () => {}});
         $("op-add").addEventListener("keydown", e => { if(e.key === "Enter"){ e.preventDefault(); addOwned(); } });
         const oq = $("op-q"); if(oq) oq.addEventListener("input", () => { q = oq.value; const pos = oq.selectionStart; draw(); const n = $("op-q"); if(n){ n.focus(); n.setSelectionRange(pos, pos); } });
+      } else if(paintsTab === "match"){
+        drawMatch(body);
       } else {
         body.innerHTML = `
           <p class="hint">Paints you've marked low or empty, then the ones your ledgers' colours and recipes use that aren't in <em>My paints</em>.</p>
-          ${buy.length ? `<ul class="buy">${buy.map(it => `<li>${PU.swatch(it.label)}<span class="b-n">${paintLine(it.label)}<small>${it.low ? (it.low === "empty" ? "Empty" : "Running low") : `For ${esc(it.why.slice(0, 3).join(", "))}${it.why.length > 3 ? ` and ${it.why.length - 3} more` : ""}`}</small></span><button type="button" class="btn-sm" data-pa="${it.low ? "restocked" : "got"}" data-p="${esc(it.label)}">${it.low ? "Bought more" : "I have it"}</button></li>`).join("")}</ul>
+          ${buy.length ? `<ul class="buy">${buy.map(it => `<li>${PU.swatch(it.label)}<span class="b-n">${paintLine(it.label)}<small>${it.low ? (it.low === "empty" ? "Empty" : "Running low") : `For ${esc(it.why.slice(0, 3).join(", "))}${it.why.length > 3 ? ` and ${it.why.length - 3} more` : ""}`}</small>${!it.low ? (m => m ? `<small class="b-have">You have ${esc(m.brand)} ${esc(m.name)}, a ${esc(m.match.toLowerCase())}. <button type="button" class="linkish" data-pa="match" data-p="${esc(it.label)}">Compare</button></small>` : "")(PU.nearestOf(it.label, ownedList, 1)[0]) : ""}</span><button type="button" class="btn-sm" data-pa="${it.low ? "restocked" : "got"}" data-p="${esc(it.label)}">${it.low ? "Bought more" : "I have it"}</button></li>`).join("")}</ul>
             <div class="row-actions"><button type="button" class="btn-sm" data-pa="copy-buy">Copy list</button><span class="hint" id="buy-msg" role="status"></span></div>`
           : `<div class="empty">${armies.length ? "You have every paint your ledgers need." : "Start a ledger and pick your colours to see what to buy."}</div>`}`;
       }
+    }
+    /* Match a paint: the closest paints you own, then the nearest in each other brand. */
+    function drawMatch(body){
+      const p = matchFor ? PU.find(matchFor) : null, mine = p ? PU.nearestOf(matchFor, ownedList, 5) : [];
+      // Other brands: the ones you don't have (those are listed above), worded the same way.
+      const other = p ? PU.similar(matchFor, 10).filter(c => !isOwned(c.label)).map(c => c.match === "Common swap" ? c : {...c, match: PU.matchWord(c.d)}) : [];
+      const have = p && isOwned(matchFor);
+      const row = c => `<li>${PU.swatch(c.label)}<span class="b-n">${paintLine(c.label)}</span><span class="pm-m${c.d < 6 ? " close" : ""}">${esc(c.match)}</span>${isOwned(c.label) ? `<span class="own ok">Owned</span>` : ""}</li>`;
+      body.innerHTML = `
+        <p class="hint">Pick a paint to find the closest ones on your shelf, and the nearest in other brands. Handy when a recipe calls for a paint you don't have.</p>
+        <div class="add-paint"><span class="pwrap-host"><input id="pm-q" placeholder="A paint, e.g. Macragge Blue" aria-label="Paint to match" value="${esc(p ? p.label : matchFor)}"></span><button type="button" class="primary" data-pa="match-go">Match</button></div>
+        ${matchFor && !p ? `<p class="hint">That paint isn't in the catalogue, so there's no colour to match. Pick one from the list as you type.</p>` : ""}
+        ${p ? `<div class="pm-pick">${PU.swatch(p.label)}<span class="b-n">${paintLine(p.label)}</span>${have ? `<span class="own ok">You own this</span>` : ""}</div>
+          <h3 class="em-h">On your shelf</h3>
+          ${mine.length ? `<p class="pm-say">You have <strong>${esc(mine[0].brand)} ${esc(mine[0].name)}</strong>, a ${esc(mine[0].match.toLowerCase())}.</p><ul class="buy pm-list">${mine.map(row).join("")}</ul>`
+            : `<p class="hint">${ownedList.length ? "Nothing you own is close to it." : "Add the paints you own under My paints to see your closest ones here."}</p>`}
+          <h3 class="em-h">Other brands</h3>
+          ${other.length ? `<ul class="buy pm-list">${other.map(row).join("")}</ul>` : `<p class="hint">No close match in other brands.</p>`}` : ""}`;
+      const inp = $("pm-q");
+      PU.picker(inp, {owned: () => owned(), extra: () => [], onPick: label => { matchFor = label; draw(); }});
+      inp.addEventListener("keydown", e => { if(e.key === "Enter" && !e.defaultPrevented){ e.preventDefault(); matchFor = inp.value.trim(); draw(); } });
+      if(!p) inp.focus();
     }
     function drawEditor(body){
       const r = editing;
@@ -3678,6 +3878,8 @@
         catch(err){ $("re-msg").textContent = "Couldn't save: " + errText(err); b.disabled = false; }
       }
       else if(act === "add-owned") addOwned();
+      else if(act === "match") { matchFor = b.dataset.p; paintsTab = "match"; draw(); }
+      else if(act === "match-go") { matchFor = $("pm-q").value.trim(); draw(); }
       else if(act === "rm-owned") { try { ownedList = await store.setPaints(ownedList.filter(p => p !== b.dataset.p)); if(paintLevels()[b.dataset.p]) await setPaintLevel(b.dataset.p, null); draw(); } catch(err){ flash("Couldn't save: " + errText(err)); } }
       else if(act === "level" || act === "restocked") {
         const p = b.dataset.p, next = act === "restocked" ? null : {"": "low", low: "empty", empty: null}[paintLevels()[p] || ""];
@@ -4116,6 +4318,8 @@
      ============================================================ */
   const LOGO_DROP = `<svg viewBox="0 0 64 64" width="34" height="34" aria-hidden="true"><path d="M32 3.5 55 10.5V29c0 14.6-9.6 25.5-23 31.5C18.6 54.5 9 43.6 9 29V10.5Z" fill="#3ddc84"/><path d="M32 17.5s-9 10.4-9 17.2a9 9 0 0 0 18 0c0-6.8-9-17.2-9-17.2Z" fill="#f2f6f3" stroke="#06080a" stroke-width="3" stroke-linejoin="round"/></svg>`;
   const LOGO_SWORDS = `<svg viewBox="0 0 64 64" width="34" height="34" aria-hidden="true"><path d="M32 3.5 55 10.5V29c0 14.6-9.6 25.5-23 31.5C18.6 54.5 9 43.6 9 29V10.5Z" fill="#ec5a5f"/><g stroke-linecap="round" stroke-linejoin="round"><g stroke="#06080a"><path d="M22 17.5 38 39M42 17.5 26 39" stroke-width="7"/><path d="M33.5 42.5 42.5 35.5M30.5 42.5 21.5 35.5" stroke-width="6"/></g><path d="M22 17.5 38 39M42 17.5 26 39" stroke="#f2f6f3" stroke-width="3.4"/><path d="M33.5 42.5 42.5 35.5M30.5 42.5 21.5 35.5" stroke="#cdd5d1" stroke-width="2.6"/></g></svg>`;
+  // Community: the same shield, in gold (it belongs to both tools), with two painters.
+  const LOGO_COMMUNITY = `<svg viewBox="0 0 64 64" width="34" height="34" aria-hidden="true"><path d="M32 3.5 55 10.5V29c0 14.6-9.6 25.5-23 31.5C18.6 54.5 9 43.6 9 29V10.5Z" fill="#f5b83d"/><g transform="translate(32 33) scale(.82) translate(-32.5 -34.5)" stroke="#06080a" stroke-width="3.4" stroke-linejoin="round"><circle cx="40" cy="22.5" r="5" fill="#cdd5d1"/><path d="M31 42.5c0-6.2 4-10.2 9-10.2s9 4 9 10.2Z" fill="#cdd5d1"/><circle cx="27" cy="25" r="6.2" fill="#f2f6f3"/><path d="M16 46.5c0-7.4 4.8-12 11-12s11 4.6 11 12Z" fill="#f2f6f3"/></g></svg>`;
   // A feature's picture: img/shots/<name>.webp when it's been added, otherwise a drawing made from the app's own parts.
   const shot = (name, alt, art) => `<figure class="shot" data-shot="${name}"><div class="shot-art" aria-hidden="true">${art}</div><img src="img/shots/${name}.webp" alt="${esc(alt)}" loading="lazy" decoding="async"></figure>`;
   const paintName = l => String(l || "").replace(/^Citadel\s+/, "").replace(/\s*\([^)]*\)\s*$/, "");
@@ -6240,6 +6444,111 @@ Redemptor Dreadnought (210 points)</pre>
       try { localStorage.setItem("ll-detail-open", JSON.stringify(detailOpen)); } catch(err){}
     };
     $("detail-body").addEventListener("toggle", onDetailToggle, true);
+    /* ---------- painting journal ----------
+       Dated notes on a unit, newest first, each with a photo from its gallery if you like. */
+    function journalHtml(u){
+      const shots = new Set(u.photos || []), list = (u.journal || []).slice().reverse();
+      return `${canWrite ? `<div class="jn-add">
+          <label class="sr-only" for="jn-t">A note for your painting journal</label>
+          <textarea id="jn-t" rows="2" maxlength="1000" placeholder="What did you try? e.g. A new edge highlight on the armour, a bit too bright"></textarea>
+          <div class="jn-bar"><input type="date" id="jn-d" value="${isoDay(new Date())}" aria-label="Date of the note">
+            ${(u.photos || []).length < S.MAX_PHOTOS ? `<label class="btn btn-sm jn-ph-add">Add a photo<input type="file" id="jn-f" accept="image/*" hidden></label>` : ""}<span class="hint" id="jn-fn"></span>
+            <button type="button" class="primary btn-sm" data-jn-add="${esc(u.id)}">Add note</button></div>
+          <span class="msg" id="jn-msg" role="status"></span></div>` : ""}
+        ${list.length ? `<ol class="jn-list">${list.map(e => { const src = e.p && shots.has(e.p) ? photoSrc(e.p) : "";
+          return `<li><div class="jn-top"><time datetime="${esc(e.d)}">${esc(dayText(e.d))}</time>${canWrite ? `<button type="button" class="btn-sm jn-del" data-jn-del="${esc(e.id)}" aria-label="Delete the note from ${esc(dayText(e.d))}">Delete</button>` : ""}</div>
+            ${e.t ? `<p>${esc(e.t)}</p>` : ""}${src ? `<button type="button" class="jn-ph" data-show="${esc(src)}" aria-label="Show the photo from ${esc(dayText(e.d))}"><img src="${esc(src)}" alt="" loading="lazy"></button>` : ""}</li>`; }).join("")}</ol>`
+          : `<p class="hint">${canWrite ? "Jot down what you tried and how it went. Over time it shows how the unit came along." : "No notes yet."}</p>`}`;
+    }
+    async function addJournal(id){
+      let u = units.find(x => x.id === id); if(!u || busy) return;
+      const t = $("jn-t").value.trim(), d = $("jn-d").value, f = $("jn-f") && $("jn-f").files[0];
+      if(!t && !f){ $("jn-msg").textContent = "Write a note or add a photo first."; $("jn-t").focus(); return; }
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(d)){ $("jn-msg").textContent = "Choose a date."; $("jn-d").focus(); return; }
+      busy = true; $("jn-msg").textContent = f ? "Adding the photo…" : "Saving…";
+      try {
+        let p = "";
+        if(f){ const before = new Set(u.photos || []); u = await store.addUnitPhoto(army.id, u, f); p = (u.photos || []).find(x => !before.has(x)) || ""; units = units.map(x => x.id === u.id ? u : x); }
+        const row = await store.saveUnit(army.id, mergeUnit(u, {journal: [...(u.journal || []), {id: S.newId(), d, t, p}]}), u.id, null, false, u);
+        units = units.map(x => x.id === row.id ? row : x); busy = false; render(); openDetail(row.id); toast("Note added");
+      } catch(err){ busy = false; console.error(err); if($("jn-msg")) $("jn-msg").textContent = "Couldn't save the note: " + errText(err); }
+    }
+    async function delJournal(b){
+      const u = units.find(x => x.id === $("detail").dataset.unit); if(!u || busy) return;
+      if(!b.classList.contains("armed")){ b.classList.add("armed"); b.textContent = "Press again"; setTimeout(() => { if(b.isConnected){ b.classList.remove("armed"); b.textContent = "Delete"; } }, 3000); return; }
+      busy = true;
+      try { const row = await store.saveUnit(army.id, mergeUnit(u, {journal: (u.journal || []).filter(e => e.id !== b.dataset.jnDel)}), u.id, null, false, u); units = units.map(x => x.id === row.id ? row : x); render(); openDetail(row.id); toast("Note deleted"); }
+      catch(err){ toast("Couldn't delete the note: " + errText(err)); }
+      finally { busy = false; }
+    }
+
+    /* ---------- scheme lab ----------
+       Try other colours on a unit without changing it: up to three schemes side by side, each with its own
+       picture, suggestions to try, and "Use this scheme" to save it to the unit. */
+    const LAB_SUGGEST = [["darker-trim", "Darker trim"], ["metal-trim", "Metallic trim"], ["spot", "A spot colour for details"], ["lighter", "Lighter armour"], ["swap", "Swap armour and secondary"]];
+    const hexToHsl = hex => { const n = parseInt(hex.slice(1), 16), r = (n >> 16 & 255) / 255, g = (n >> 8 & 255) / 255, b = (n & 255) / 255, mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2;
+      if(mx === mn) return [0, 0, l]; const d = mx - mn, s2 = l > .5 ? d / (2 - mx - mn) : d / (mx + mn);
+      const h = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; return [h * 60, s2, l]; };
+    const hslToHex = (h, s2, l) => { const k = n => (n + h / 30) % 12, a = s2 * Math.min(l, 1 - l), f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+      return "#" + [f(0), f(8), f(4)].map(x => Math.round(Math.max(0, Math.min(1, x)) * 255).toString(16).padStart(2, "0")).join(""); };
+    async function openLab(id){
+      const u = units.find(x => x.id === id); if(!u) return;
+      await PU.load();
+      const keys = COLOR_IDS.filter(k => !PAULDRONS.includes(k) && !(k === "helmet" || k === "lens" ? headOf(u) === "none" : false));
+      const w = withColours(u), start = Object.fromEntries(keys.map(k => [k, {hex: w[k], paint: w.slotPaints[k] || ""}]));
+      const schemes = [{name: "As it is", c: JSON.parse(JSON.stringify(start))}, {name: "Scheme B", c: JSON.parse(JSON.stringify(start))}];
+      const apis = [];
+      const pic = v => { const x = {...w}; keys.forEach(k => { x[k] = v.c[k].hex; }); return soloBadge(unitBadge(x, scheme, 150), 150); };
+      const nearest = hex => PU.nearestHex(hex, {labels: ownedList});
+      const toPaint = hex => { const p = nearest(hex); return p ? {hex: p.hex, paint: p.label} : {hex, paint: ""}; };
+      function suggest(i, how){
+        const v = schemes[i].c, set = (k, val) => { if(v[k]){ v[k] = val; apis[i][k].set(val); } };
+        const [h, sat, l] = hexToHsl(v.armour.hex);
+        if(how === "darker-trim" && v.trim){ const [th, ts, tl] = hexToHsl(v.trim.hex); set("trim", toPaint(hslToHex(th, ts, tl * .55))); }
+        else if(how === "metal-trim"){ const warm = h < 70 || h > 330; const p = PU.nearestHex(warm ? "#a8acb0" : "#c9a449", {labels: ownedList, metal: true}); if(p) set("trim", {hex: p.hex, paint: p.label}); }
+        else if(how === "spot"){ const spot = toPaint(hslToHex((h + 180) % 360, Math.max(.6, sat), .5)); set("emblem", spot); set("lens", spot); }
+        else if(how === "lighter"){ set("armour", toPaint(hslToHex(h, sat, l + (1 - l) * .3))); }
+        else if(how === "swap" && v.secondary){ const a = v.armour; set("armour", v.secondary); set("secondary", a); }
+        const pv = $("lab-pic-" + i); if(pv) pv.innerHTML = pic(schemes[i]);
+      }
+      const changed = i => keys.some(k => schemes[i].c[k].hex.toLowerCase() !== start[k].hex.toLowerCase() || (schemes[i].c[k].paint || "") !== (start[k].paint || ""));
+      const d = modal(`Scheme lab: ${esc(u.name)}`, `<p class="sub">Try other colours side by side. Nothing changes on ${esc(u.name)} until you press <strong>Use this scheme</strong>.</p>
+        <div class="lab-grid" id="lab-grid"></div>`, "wide lab");
+      function draw(){
+        apis.length = 0;
+        $("lab-grid").innerHTML = schemes.map((v, i) => `<section class="lab-col" aria-labelledby="lab-h-${i}">
+          <div class="lab-head"><h3 id="lab-h-${i}">${esc(v.name)}</h3>${i ? `<button type="button" class="btn-sm" data-lab-rm="${i}" aria-label="Remove ${esc(v.name)}">Remove</button>` : ""}</div>
+          <div class="lab-pic" id="lab-pic-${i}">${pic(v)}</div>
+          <label class="lab-sug"><span class="sr-only">Try a suggestion on ${esc(v.name)}</span><select data-lab-sug="${i}"><option value="">Try a suggestion…</option>${LAB_SUGGEST.map(([k, l]) => `<option value="${k}">${esc(l)}</option>`).join("")}</select></label>
+          <div class="lab-slots">${keys.map(k => `<div class="lab-slot"><span class="lab-k">${esc(slotLabel(k))}</span><span data-lab-slot="${i}:${k}"></span></div>`).join("")}</div>
+          <button type="button" class="primary btn-sm lab-use" data-lab-use="${i}">Use this scheme</button>
+        </section>`).join("") + (schemes.length < 3 ? `<button type="button" class="lab-more" data-lab-add>+ Add a scheme to compare</button>` : "");
+        schemes.forEach((v, i) => {
+          apis[i] = {};
+          keys.forEach(k => {
+            const host = $("lab-grid").querySelector(`[data-lab-slot="${i}:${k}"]`);
+            apis[i][k] = PU.slot(host, {label: `${slotLabel(k)} (${v.name})`, value: v.c[k], owned: () => owned, mine: () => ownedList, plain: PLAIN,
+              swatches: () => keys.map(x => v.c[x]), onChange: val => { v.c[k] = val; const pv = $("lab-pic-" + i); if(pv) pv.innerHTML = pic(v); }});
+          });
+        });
+      }
+      draw();
+      d.addEventListener("change", e => { const s2 = e.target.closest("[data-lab-sug]"); if(!s2 || !s2.value) return; const how = s2.value; s2.value = ""; suggest(+s2.dataset.labSug, how); });
+      d.addEventListener("click", async e => {
+        if(e.target.closest("[data-lab-add]")){ schemes.push({name: `Scheme ${"ABC"[schemes.length]}`, c: JSON.parse(JSON.stringify(start))}); draw(); const b = d.querySelector(`[data-lab-sug="${schemes.length - 1}"]`); if(b) b.focus(); return; }
+        const rm = e.target.closest("[data-lab-rm]"); if(rm){ schemes.splice(+rm.dataset.labRm, 1); schemes.forEach((v, i) => { if(i) v.name = `Scheme ${"ABC"[i]}`; }); draw(); return; }
+        const use = e.target.closest("[data-lab-use]"); if(!use || busy) return;
+        const i = +use.dataset.labUse;
+        if(!changed(i)){ toast(i ? "That's the same as the unit's colours now. Change something first." : "These are the unit's colours already."); return; }
+        const v = schemes[i].c, hexes = Object.fromEntries(keys.map(k => [k, v[k].hex])), sp = {...(u.slotPaints || {})};
+        keys.forEach(k => { if(v[k].paint) sp[k] = v[k].paint; else delete sp[k]; });
+        busy = true; use.disabled = true;
+        try { const row = await store.saveUnit(army.id, mergeUnit(u, {...hexes, slotPaints: sp}), u.id, null, false, u); units = units.map(x => x.id === row.id ? row : x); d.close(); render(); openDetail(row.id); toast(`New colours saved on ${u.name}`); }
+        catch(err){ use.disabled = false; toast("Couldn't save the colours: " + errText(err)); }
+        finally { busy = false; }
+      });
+    }
+
     function openDetail(id){
       const found = units.find(x => x.id === id); if(!found) return;
       const u = withColours(found);
@@ -6274,6 +6583,7 @@ Redemptor Dreadnought (210 points)</pre>
           ${box("painting", "Painting", `<div class="stage-list">${STAGES.map(([k, l]) => `<span class="${(u.stages || []).includes(k) ? "on" : ""}">${l}</span>`).join("")}</div>
             <p class="prose" style="margin-top:10px">${u.painted} of ${plural(u.count, "model")} painted</p>
             ${unitMins(u) || canWrite ? `<p class="pt-line"><span>Painting time <b>${hm(unitMins(u))}</b></span>${canWrite ? (t => `<button type="button" class="btn-sm${t && t.unitId === u.id ? " on" : ""}" data-timer="${esc(u.id)}">${t && t.unitId === u.id ? "Stop timer" : "Start timer"}</button>`)(getTimer()) : ""}</p>` : ""}`)}
+          ${(u.journal || []).length || canWrite ? box("journal", `Painting journal${(u.journal || []).length ? ` <small class="dsec-n">${u.journal.length}</small>` : ""}`, journalHtml(u)) : ""}
           ${recipesOf(u).map(r => box("recipes", `Recipe · ${esc(r.name)}${r.area ? " · " + esc(r.area) : ""}`, stepsHtml(r), false)).join("")}
           ${sec("Rank", [["Rank", esc(tier.name)], ["Who", esc(tier.note)]], "rank")}
           ${u.head === "none" ? sec(esc(PROF.legends.head), [["Head", "None (vehicle or monster)"]], "head")
@@ -6285,7 +6595,7 @@ Redemptor Dreadnought (210 points)</pre>
           ${sec("Weapons", [["Melee", esc(u.melee)], ["Ranged", esc(u.ranged)], ...xaRows(u, "weapons")], "weapons")}
           ${u.paints ? box("paintnotes", "Paint notes", `<p class="prose">${esc(u.paints)}</p>`) : ""}
           ${u.notes ? box("notes", "Notes", `<p class="prose">${esc(u.notes)}</p>`) : ""}
-          ${canWrite ? `<section class="row-actions"><button type="button" class="primary" data-edit="${esc(u.id)}">Edit unit</button><button type="button" data-dup="${esc(u.id)}">Duplicate</button><button type="button" class="danger" data-del="${esc(u.id)}">Delete</button></section>` : ""}
+          ${canWrite ? `<section class="row-actions"><button type="button" class="primary" data-edit="${esc(u.id)}">Edit unit</button><button type="button" data-lab="${esc(u.id)}">Scheme lab</button><button type="button" data-dup="${esc(u.id)}">Duplicate</button><button type="button" class="danger" data-del="${esc(u.id)}">Delete</button></section>` : ""}
         </div></div>`;
       $("detail").showModal(); $("detail").scrollTop = 0;
     }
@@ -6532,6 +6842,9 @@ Redemptor Dreadnought (210 points)</pre>
       if(tm){ const t = getTimer(), u = units.find(x => x.id === tm.dataset.timer); if(t && t.unitId === tm.dataset.timer) stopTimer(); else if(u) startTimer(army.id, u); return; }
       const bo = e.target.closest("[data-bought]");
       if(bo){ markBought(bo.dataset.bought); return; }
+      const jna = e.target.closest("[data-jn-add]"); if(jna){ addJournal(jna.dataset.jnAdd); return; }
+      const jnd = e.target.closest("[data-jn-del]"); if(jnd){ delJournal(jnd); return; }
+      const lb = e.target.closest("[data-lab]"); if(lb){ openLab(lb.dataset.lab); return; }
       const cmp = e.target.closest("[data-compare]"), shr = e.target.closest("[data-share-unit]");
       if(cmp || shr){
         const u = units.find(x => x.id === (cmp || shr).dataset[cmp ? "compare" : "shareUnit"]); if(!u) return;
@@ -6574,6 +6887,7 @@ Redemptor Dreadnought (210 points)</pre>
     }
     $("detail").addEventListener("click", onDetailClick);
     async function onDetailChange(e){
+      if(e.target.id === "jn-f"){ const f = e.target.files[0]; $("jn-fn").textContent = f ? f.name : ""; return; }
       const inp = e.target.closest("[data-addphoto]"); if(!inp) return;
       const files = [...(inp.files || [])]; inp.value = "";
       let u = units.find(x => x.id === inp.dataset.addphoto); if(!u || !files.length || busy) return;

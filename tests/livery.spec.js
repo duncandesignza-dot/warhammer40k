@@ -275,3 +275,130 @@ test("community: logged out, it asks you to log in, and there's no header link",
   await expect(page.locator(".top-comm")).toHaveCount(0);
   await expect(page.locator("#authdlg[open], dialog[open]")).toContainText("Log in to see the community.");
 });
+
+test("paint matcher: the closest paints you own come first, then other brands, and To buy says when you have one that will do", async ({page}) => {
+  await seed(page);
+  await page.evaluate(() => localStorage.setItem("livery-paints-v1", JSON.stringify(["Vallejo Royal Blue", "Citadel Abaddon Black (Base)"])));
+  await open(page, "#/livery/paints");
+  await page.click('[data-pt="buy"]');
+  const row = page.locator('.buy li:has-text("Macragge Blue")');
+  await expect(row.locator(".b-have")).toContainText("You have Vallejo Royal Blue, a very close match.");
+  await row.locator('[data-pa="match"]').click();
+  await expect(page.locator('[data-pt="match"]')).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".pm-pick")).toContainText("Macragge Blue");
+  await expect(page.locator(".pm-say")).toHaveText("You have Vallejo Royal Blue, a very close match.");
+  await expect(page.locator(".pm-list").nth(1)).toContainText("Green Stuff World");
+  // Match another by typing it.
+  await page.fill("#pm-q", "Citadel Abaddon Black (Base)");
+  await page.keyboard.press("Escape");
+  await page.click('[data-pa="match-go"]');
+  await expect(page.locator(".pm-pick")).toContainText("You own this");
+});
+
+test("painting journal: add dated notes, with a photo, and delete one", async ({page}) => {
+  await seed(page);
+  await open(page, "#/army/a1/unit/u2");
+  await page.fill("#jn-t", "Edge highlight on the armour, a bit too bright");
+  await page.fill("#jn-d", "2026-09-20");
+  await page.click("[data-jn-add]");
+  await expect(page.locator(".jn-list li")).toHaveCount(1);
+  await expect(page.locator(".jn-list li").first()).toContainText("20 Sept 2026");
+  await page.fill("#jn-t", "Glazed it back down");
+  await page.setInputFiles("#jn-f", {name: "wip.png", mimeType: "image/png", buffer: Buffer.from(PNG.split(",")[1], "base64")});
+  await expect(page.locator("#jn-fn")).toHaveText("wip.png");
+  await page.click("[data-jn-add]");
+  await expect(page.locator(".jn-list li")).toHaveCount(2);
+  await expect(page.locator(".jn-list li").first().locator(".jn-ph img")).toBeVisible();
+  const u = (await saved(page)).units.find(x => x.id === "u2");
+  expect(u.journal.map(e => e.t)).toEqual(["Edge highlight on the armour, a bit too bright", "Glazed it back down"]);
+  expect(u.journal[1].p).toBe(u.photos[0]);
+  // Newest first; delete takes two presses.
+  await page.locator(".jn-list li").nth(1).locator("[data-jn-del]").click();
+  await page.locator(".jn-list li").nth(1).locator("[data-jn-del]").click();
+  await expect(page.locator(".jn-list li")).toHaveCount(1);
+  expect((await saved(page)).units.find(x => x.id === "u2").journal.map(e => e.t)).toEqual(["Glazed it back down"]);
+});
+
+test("scheme lab: compare schemes side by side, try a suggestion, and use one", async ({page}) => {
+  await seed(page);
+  await open(page, "#/army/a1/unit/u2");
+  await page.click("[data-lab]");
+  const lab = page.locator("dialog.lab[open]");
+  await expect(lab.locator(".lab-col")).toHaveCount(2);
+  await lab.locator("[data-lab-add]").click();
+  await expect(lab.locator(".lab-col")).toHaveCount(3);
+  await expect(lab.locator("[data-lab-add]")).toHaveCount(0);
+  await lab.locator('[data-lab-rm="2"]').click();
+  // The first is the unit as it is: using it changes nothing.
+  await lab.locator('[data-lab-use="0"]').click();
+  await expect(page.locator("#toast")).toContainText("These are the unit's colours already.");
+  const before = (await saved(page)).units.find(x => x.id === "u2");
+  // The Ultramarines already have gold trim, so that suggestion changes nothing; a spot colour does.
+  await lab.locator('[data-lab-sug="1"]').selectOption("metal-trim");
+  await expect(lab.locator(".lab-col").nth(1).locator(".lab-slot", {hasText: "Trim"})).toContainText("Retributor Armour");
+  await lab.locator('[data-lab-sug="1"]').selectOption("spot");
+  await expect(lab.locator(".lab-col").nth(1).locator(".lab-slot", {hasText: "Emblem"})).not.toContainText("Corax White");
+  await expect(lab.locator(".lab-col").nth(0).locator(".lab-slot", {hasText: "Emblem"})).toContainText("Corax White");
+  await lab.locator('[data-lab-use="1"]').click();
+  await expect(lab).toHaveCount(0);
+  await expect(page.locator("#toast")).toContainText("New colours saved on Intercessor Squad");
+  const after = (await saved(page)).units.find(x => x.id === "u2");
+  expect(after.slotPaints.emblem).toMatch(/^Citadel /);
+  expect(after.slotPaints.emblem).not.toMatch(/Corax White/);
+  expect(after.emblem).not.toBe(before.emblem || "");
+});
+
+test("projects: pick units and a date, and see what's left and how many models a day", async ({page}) => {
+  await seed(page);
+  await open(page, "#/livery/projects");
+  await expect(page.locator(".war-empty")).toContainText("No projects yet");
+  await page.click(".war-empty [data-pj-new]");
+  await page.fill("#pj-name", "Finish the 2nd Company");
+  const date = new Date(Date.now() + 10 * 864e5).toISOString().slice(0, 10);
+  await page.fill("#pj-date", date);
+  await page.click("dialog[open] [type=submit]");
+  await expect(page.locator("#pj-msg")).toHaveText("Tick the units in it.");
+  await page.check('[data-pj-all="a1"]');
+  await expect(page.locator("#pj-n")).toHaveText("(4 units)");
+  await page.click("dialog[open] [type=submit]");
+  // The Captain's painted; 4 Intercessors, 5 Terminators and a Redemptor to go.
+  const card = page.locator(".ep");
+  await expect(card.locator("h3")).toHaveText("Finish the 2nd Company");
+  await expect(card.locator(".ep-sum")).toHaveText("10 models to paint, 10 days to go, 1 a day");
+  expect(JSON.parse(await page.evaluate(() => localStorage.getItem("ll-settings"))).projects[0]).toMatchObject({name: "Finish the 2nd Company", date, units: ["u1", "u2", "u3", "u4"]});
+  // It's on the Overview too.
+  await open(page, "#/livery");
+  await expect(page.locator("#ov-proj .ep h3")).toHaveText("Finish the 2nd Company");
+  // Change it, then delete it.
+  await open(page, "#/livery/projects");
+  await page.click("[data-pj-edit]");
+  await page.uncheck('[data-pj-u="u3"]');
+  await page.click("dialog[open] [type=submit]");
+  await expect(page.locator(".ep .ep-sum")).toHaveText("5 models to paint, 10 days to go, about one every 2 days");
+  await page.click("[data-pj-edit]");
+  await page.click("#pj-del"); await page.click("#pj-del");
+  await expect(page.locator(".war-empty")).toBeVisible();
+});
+
+test("year in review: models, time, busiest month, factions and units finished, and a picture to share", async ({page}) => {
+  const Y = new Date().getFullYear();
+  await seed(page, `const u = id => db.units.find(x => x.id === id);
+    u("u2").log = [{d: "${Y}-03-05", n: 4}, {d: "${Y}-03-09", n: 2}]; u("u1").log = [{d: "${Y}-05-01", n: 1}]; u("u1").tlog = [{d: "${Y}-05-01", m: 90}];
+    u("u6").log = [{d: "${Y - 1}-11-02", n: 1}];`);
+  await open(page, "#/livery/activity");
+  await page.click(`a[href="#/livery/year"]`);
+  await expect(page.locator("h1")).toHaveText(`Your ${Y} in painting`);
+  await expect(page.locator(".yr-stats .wstat b")).toHaveText(["7", "1h 30m", "3", "1"]);
+  await expect(page.locator(".yr-say")).toHaveText("Your busiest month was March, with 6 models.");
+  await expect(page.locator("#yr-f + .yr-list li")).toHaveCount(1);
+  await expect(page.locator("#yr-f + .yr-list")).toContainText("Ultramarines");
+  await expect(page.locator('section:has(#yr-u) li')).toContainText("Captain");
+  // Last year too, from the year picker.
+  await page.selectOption("#yr-y", String(Y - 1));
+  await expect(page).toHaveURL(new RegExp(`#/livery/year/${Y - 1}$`));
+  await expect(page.locator(".yr-stats .wstat b").first()).toHaveText("1");
+  await page.selectOption("#yr-y", String(Y));
+  await page.click("#yr-share");
+  await expect(page.locator("#sh-box img")).toHaveAttribute("src", /^blob:/);
+  await expect(page.locator("#sh-acts a[download]")).toHaveAttribute("download", `my-${Y}-in-painting.jpg`);
+});
