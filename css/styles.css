@@ -1956,3 +1956,17 @@ dialog.wdlg.xwide{max-width:min(1120px,calc(100vw - 24px))}
 .ev-res b{font-family:var(--mono)}
 .pp-rows{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
 .pp-rows li{display:flex;align-items:center;gap:12px;padding:10px 14px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface)}
+/* Armoury: your units by faction, with painting progress from Livery Ledger. */
+.ar-tools{margin:0 0 6px}.ar-tools input{width:100%;max-width:420px}
+.ar-fac{margin-top:26px}
+.ar-head{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:8px}
+.ar-title{flex:1;min-width:180px}.ar-title h2{margin:0}
+.ar-stats{margin:2px 0 0;color:var(--muted);font-size:.88rem}
+.ar-paintbar{min-width:200px;display:flex;flex-direction:column;gap:4px;font-size:.84rem}
+.ar-paintbar span{font-weight:700}.ar-paintbar small{color:var(--muted)}.ar-paintbar small a{color:inherit}
+.ar-paintbar .wbar i{background:var(--good)}
+.ar-meta{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:0 0 12px;font-size:.84rem;color:var(--muted)}
+.ar-meta .ar-chip{display:inline-flex;white-space:nowrap;align-items:center;gap:6px;padding:4px 10px;border:1px solid var(--line);border-radius:99px;color:var(--ink);text-decoration:none;background:var(--surface)}
+.ar-meta .ar-chip small{color:var(--muted);font-family:var(--mono)}
+.ar-paint{font-family:var(--mono)}.ar-paint.done{color:var(--good)}
+.full-army{border-style:dashed}
