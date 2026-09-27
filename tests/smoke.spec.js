@@ -3,7 +3,7 @@ const {test, expect, seed, open, noSidewaysScroll, mockSupabase} = require("./he
 
 const ROUTES = ["#/", "#/livery", "#/livery/ledgers", "#/livery/collection", "#/livery/paints", "#/livery/activity", "#/livery/new", "#/livery/new/ultramarines",
   "#/army/a1", "#/army/a1/colours", "#/army/a1/guide", "#/army/a1/unit/u2",
-  "#/war", "#/war/armies", "#/war/collection", "#/war/lists", "#/war/battles", "#/war/buy", "#/war/points", "#/war/datasheets", "#/war/events", "#/war/play", "#/war/list/l1/play", "#/war/list/l1/print", "#/war/army/a1", "#/war/army/a2", "#/war/list/l1", "#/war/new", "#/war/new/necrons",
+  "#/war", "#/war/armoury", "#/war/armies", "#/war/collection", "#/war/lists", "#/war/battles", "#/war/buy", "#/war/points", "#/war/datasheets", "#/war/events", "#/war/play", "#/war/list/l1/play", "#/war/list/l1/print", "#/war/army/a1", "#/war/army/a2", "#/war/list/l1", "#/war/new", "#/war/new/necrons",
   "#/settings", "#/shared", "#/nope"];
 const SIZES = {desktop: {width: 1366, height: 900}, phone: {width: 412, height: 915}, "small phone": {width: 320, height: 640}};
 
@@ -134,7 +134,7 @@ test("Help: the three tools, getting started, the words and questions, and a ⓘ
   await open(page, "#/help");
   await expect(page.locator("h1")).toHaveText("How it all works");
   await expect(page.locator(".hp-tool h3")).toHaveText(["Livery Ledger", "War Ledger", "Community Ledger"]);
-  await expect(page.locator(".hp-tool.war .hp-tabs li").first()).toContainText("Every unit you own, by faction");
+  await expect(page.locator(".hp-tool.war .hp-tabs li").nth(1)).toContainText("Every unit you own, by faction");
   await expect(page.locator("#g-supply-limit dt")).toHaveText("Supply limit");
   // From a ⓘ: straight to the word.
   await open(page, "#/war/list/l1");
