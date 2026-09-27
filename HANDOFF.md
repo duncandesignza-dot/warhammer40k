@@ -24,7 +24,7 @@ Cloudflare needed `"previews": {}` in `wrangler.jsonc` for the Workers Builds ch
 ## Current state (at handoff)
 
 - `main` has the datasheet eye on War's army and collection tables and in the unit editor (PR #42), and faction pictures on the new army pages.
-- Tests pass (74).
+- Tests pass (76).
 - **Next step:** pick something from "Ideas that came up but aren't done".
 
 ## How we've been working
@@ -42,7 +42,7 @@ Cloudflare needed `"previews": {}` in `wrangler.jsonc` for the Workers Builds ch
 
 ```bash
 python3 -m http.server 8765          # from the repo root, then open http://localhost:8765
-cd tests && npm ci && npx playwright test     # the whole suite (~1.5 min, 74 tests)
+cd tests && npm ci && npx playwright test     # the whole suite (~1.5 min, 76 tests)
 npx playwright test war.spec.js -g "import an army"   # one test
 ```
 
@@ -95,7 +95,7 @@ python3 tools/build_factions.py bsdata && python3 tools/build_sheets.py bsdata
 
 - **Routing:** hash routes in `route()`.
   - Livery: `#/livery`, `#/livery/{ledgers,collection,activity,paints,new}`, `#/army/<id>` (the ledger), `#/army/<id>/{colours,guide,unit/<uid>}`, `#/new/<faction>`.
-  - War: `#/war`, `#/war/{armies,collection,lists,battles,new}`, `#/war/new/<faction>`, `#/war/army/<id>`, `#/war/list/<id>`, `#/war/compare/<a>/<b>`.
+  - War: `#/war` (the Armies tab), `#/war/{lists,battles,new,collection}`, `#/war/armies` (redirects to `#/war`), `#/war/new/<faction>`, `#/war/army/<id>`, `#/war/list/<id>`, `#/war/compare/<a>/<b>`.
   - Shared: `#/shame`, `#/settings`, `#/shared`, `#/painter/<id>`, and `#/` (landing).
 - **Page lifecycle:**
   - `route()` queues: one page loads at a time, and only the newest address is opened, so a slow page can't draw over the one you went to. `routeNow()` does the work.
@@ -137,19 +137,21 @@ python3 tools/build_factions.py bsdata && python3 tools/build_sheets.py bsdata
   - `scheme.pool = true` means it's a holder army.
   - `scheme.rec` is the win–loss record shown on shared armies.
 - **Unit:** `{id, armyId, name, datasheet, role, count, points, ranged, melee, notes, fav, own, …}`, plus Livery's painting fields (colours, `stages`, `painted`, `built`, `photos`, `tlog`, …).
-  - **`own: "planned"`** means a War planning unit that isn't in Livery.
-  - Anything else counts as owned. Units made in War are planned by default. The editor's "I own this unit" and Select units "I own these" flip them to owned.
+  - Every unit in an army is owned. Units you don't own live only in lists (list-only entries, below).
+  - `own: "planned"` is old data: `movePlanned` (called from `warData` and `liveryData`) turns each planned unit into a list-only entry in the lists that used it, or into its army's "Wishlist" list, then deletes the unit.
 - **List:** `{id, armyId, name, kind: ""|"crusade", limit, size, detachments[], status, ptsAsOf, ignored[], units: [entry], rp?, from?}`.
 - **List entry:** either from the collection, or only in the list.
   - Collection unit: `{u: unitId, k, pts?}`. `pts` overrides the unit's points in this list.
-  - List-only unit: `{n, sheet, role, count, points, gear?, k}`.
+  - List-only unit (not owned): `{n, sheet, role, count, points, gear?, k}`. Shown with a "Not owned" tag; "I've bought this" (in the eye) and "Mark all as owned" (`ownEntries`) turn it into an army unit with the same `k`.
   - Either can also have `warlord`, `enh: {n, p}`, `lead: <k of the unit it leads>`, and Crusade `xp`, `hon`, `scar`, `cpx`, `cnote`.
 - **Game:** `{armyId, listId, date, opp, oppName, mission, result: w|l|d, us, them, mvp, took[], mfg, oppUser?, …}`.
 - **Settings:** in localStorage and on the account (`currency`, `listChecks`, …).
 
 ## Product decisions to keep
 
-- **Livery = what you own.** War = your Livery units plus anything you're planning. Don't show planned units in Livery; only a small blue "Planned" tag in War tables.
+- **An army is what you own**, in both tools (the same units). **A list is for testing**: units from your army plus datasheets you don't own, marked "Not owned", with "You own 3 of 4 units · 160 pts not owned" at the top.
+- War tabs: Armies (the overview, `#/war`), Army lists, Battles. The collection page still exists (header button) but isn't a tab.
+- The list builder's Add units opens on "Your units"; Datasheets is the second tab.
 - **War has no built/painted/battle-ready tracking.** It was removed on purpose so people can test armies they don't own. The fields are still stored and Livery owns them.
 - **Rules text stays out of the data.** Only numbers, profiles, and names of abilities, rules and keywords (the same choice as `build_factions.py`). Adding ability descriptions is possible but was deliberately not done.
 - **Faction rules:**
@@ -161,7 +163,7 @@ python3 tools/build_factions.py bsdata && python3 tools/build_sheets.py bsdata
   - Units are added from datasheets at their smallest size, and each row has a unit-size dropdown.
   - The row buttons are 👁 (datasheet, models, wargear, points), ⋯ (characters only), copy and ×.
 - **Import/export:**
-  - "Import an army" makes the army (planned units) and a list with the same detachment, warlord, enhancements and leaders.
+  - "Import an army" makes an empty army and a list of not-owned units with the same detachment, warlord, enhancements and leaders. "I own all of these" puts them in the army instead.
   - "Export list" writes New Recruit's tournament layout (`tests/fixtures/newrecruit-world-eaters.txt` is a real example), and "Paste a list" reads it back losslessly.
 - **Look:**
   - The dark UI has green for Livery and red for War.

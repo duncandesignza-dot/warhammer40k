@@ -90,6 +90,7 @@ button:focus-visible,.btn:focus-visible,.card:focus-visible,.fcard:focus-visible
 .msg{font-size:.84rem;color:var(--muted);min-height:1.3em;margin-top:8px}
 .msg.err{color:var(--bad)}
 .row-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.row-actions>.hint{margin:0;font-size:.84rem;color:var(--muted)}
 .note{font-size:.84rem;color:var(--muted);display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border:1px solid var(--line);border-radius:999px;background:var(--surface-2)}
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--idle);flex:none}
 .dot.on{background:var(--good);box-shadow:0 0 10px var(--good)} .dot.warn{background:var(--warn);box-shadow:0 0 10px rgba(251,191,36,.6)}
@@ -1389,6 +1390,9 @@ html[data-mode="war"] .bw-war{display:inline}
 /* New Recruit-style builder: the total stays in view, configuration sits in the roster */
 .lb-total{position:sticky;top:76px;z-index:3;display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:-20px -20px 14px;padding:14px 20px 12px;background:var(--surface-solid);border-bottom:1px solid var(--line);border-radius:18px 18px 0 0}
 .lb-total h2.ph{margin:0!important}
+/* How much of the list you own, with a quick way to mark the rest as bought. */
+.lb-own{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin:0 0 14px;font-size:.86rem;color:var(--muted)}
+.lb-own b{color:var(--ink)}
 .lb-sum{font-family:var(--mono);font-size:.82rem;color:var(--muted);margin-left:auto}.lb-sum b{font-size:1.05rem;color:var(--ink)}
 .lb-total.over .lb-sum,.lb-total.over .lb-sum b{color:var(--bad)}
 .lb-total .wbar{flex:1 0 100%;margin:0}
