@@ -1892,3 +1892,11 @@ dialog.wdlg.xwide{max-width:min(1120px,calc(100vw - 24px))}
 .pc-items{list-style:none;margin:10px 0 12px;padding:0;display:flex;flex-direction:column;gap:4px;font-size:.88rem}
 .pc-items li{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid var(--line);padding:4px 0}
 .pc-items span{font-family:var(--mono);color:var(--muted);white-space:nowrap}
+/* Opponent notes: what to watch for against each faction. */
+.on-list{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px}
+.on-list li{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;padding:12px 14px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface)}
+.on-list li>div{min-width:0}
+.on-list small{color:var(--muted);font-family:var(--mono);font-size:.74rem}
+.on-list p{margin:6px 0 0;font-size:.9rem;white-space:pre-line;overflow-wrap:anywhere}
+.opp-note{margin:0;padding:10px 12px;border-radius:var(--r);background:rgba(250,204,21,.08);border:1px solid rgba(250,204,21,.3);font-size:.88rem;white-space:pre-line}
+.opp-note b{display:block;margin-bottom:2px}

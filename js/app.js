@@ -202,6 +202,9 @@
     document.body.classList.toggle("no-points", settings.hidePoints);
     if(store.kind === "supabase" && store.session) await store.updateProfile({settings});
   }
+  // Your notes on each faction you play against, kept with the settings so they follow you.
+  const oppNotes = () => (settings.oppNotes && typeof settings.oppNotes === "object") ? settings.oppNotes : {};
+  const saveOppNote = (fid, text) => { const n = {...oppNotes()}; text = String(text || "").trim().slice(0, 600); if(text) n[fid] = text; else delete n[fid]; return saveSettings({oppNotes: n}); };
   // "Sam Smith" → SS, "Sam" → SA; "?" with no name.
   const initialsOf = name => { const bits = String(name || "").split(/[\s._-]+/).filter(Boolean); return bits.length ? (bits[0][0] + (bits.length > 1 ? bits[bits.length - 1][0] : bits[0].slice(1, 2))).toUpperCase() : "?"; };
   function acct(){
@@ -2519,6 +2522,7 @@
         <label class="span3">Army list<select id="w-gl"></select></label>
         <label class="span2">Opponent's faction${factionSelect("w-go", seed.opp || "", "Not sure / other")}</label>
         <label><span>Opponent <span class="opt">(optional)</span></span><input id="w-gp" maxlength="60" value="${esc(seed.oppName || "")}" placeholder="Name"></label>
+        <p class="span3 opp-note" id="w-gon" aria-live="polite" hidden></p>
         <label class="span3" id="w-gf-l" hidden><span>Tag a friend <span class="opt">(optional)</span></span><select id="w-gf"><option value="">No one</option></select><small class="hint" id="w-gf-h">They'll see this battle and can add it to their own record.</small></label>
         <label class="span3"><span>Mission <span class="opt">(optional)</span></span><input id="w-gm" maxlength="80" value="${esc(seed.mission || "")}"></label>
       </div>
@@ -2549,6 +2553,9 @@
         <label>Marked for Greatness<select id="w-gmfg"><option value="">None</option>${rows.map(x => `<option value="${esc(x.k)}"${same && seed.mfg === x.k ? " selected" : ""}>${esc(x.name)}</option>`).join("")}</select></label>`;
     };
     $("w-ga").addEventListener("change", () => { fill(); crFill(); }); $("w-gl").addEventListener("change", crFill); fill(); crFill();
+    // Your notes on the faction you faced, as a reminder.
+    const oppNote = () => { const t = oppNotes()[$("w-go").value], el = $("w-gon"); el.hidden = !t; el.innerHTML = t ? `<b>Your notes on ${esc(factionName($("w-go").value))}</b> ${esc(t)}` : ""; };
+    $("w-go").addEventListener("change", oppNote); oppNote();
     // Online: painters you follow can be tagged as the opponent.
     if(store.listTagged && store.session) friendsList().then(fs => {
       if(!d.open) return;
@@ -2766,6 +2773,31 @@
         <thead><tr><th scope="col">Unit</th><th scope="col" class="n">Picked</th><th scope="col" class="n">Won</th></tr></thead>
         <tbody>${rows.slice(0, 10).map(([name, v]) => `<tr><th scope="row">${name}</th><td class="n">${v.length}</td><td class="n">${plural(recordOf(v).w, "game")}</td></tr>`).join("")}</tbody></table></div></section>` : "";
     }
+    // Your notes on each faction you've faced (and any others you've written about), with your record against them.
+    function notesPanel(gs){
+      const notes = oppNotes(), faced = group(gs.filter(g => g.opp && FBY[g.opp]), g => g.opp, k => k);
+      const ids = [...faced.map(f => f[0]), ...Object.keys(notes).filter(k => FBY[k] && !faced.some(f => f[0] === k))];
+      const recOf = k => { const f = faced.find(x => x[0] === k); return f ? recText(recordOf(f[1])) : ""; };
+      return `<section class="war-sec opp-notes" aria-labelledby="on-h"><div class="sec-h"><h2 id="on-h">Opponent notes</h2>
+          <div class="sec-acts"><select id="on-add" aria-label="Add notes for a faction"><option value="">+ Notes for another faction…</option>${FACTIONS.filter(f => !ids.includes(f.id)).map(f => `<option value="${esc(f.id)}">${esc(f.name)}</option>`).join("")}</select></div></div>
+        ${ids.length ? `<ul class="on-list">${ids.map(k => `<li><div><strong>${esc(factionName(k))}</strong>${recOf(k) ? ` <small>${recOf(k)} against them</small>` : ""}
+            <p>${notes[k] ? esc(notes[k]) : `<span class="hint">No notes yet. What should you watch for next time?</span>`}</p></div>
+            <button type="button" class="btn-sm" data-on-edit="${esc(k)}" aria-label="Edit your notes on ${esc(factionName(k))}">Edit</button></li>`).join("")}</ul>`
+          : `<p class="hint">Jot down what to watch for against each faction. The note shows when you log a battle against them.</p>`}
+      </section>`;
+    }
+    function editNote(fid){
+      const d = modal(`Your notes on ${esc(factionName(fid))}`, `
+        <label>Notes<textarea id="on-text" rows="5" maxlength="600" placeholder="e.g. Deep strikes a lot: screen your backfield. Kill the character first.">${esc(oppNotes()[fid] || "")}</textarea></label>
+        <p class="hint">Shown when you log a battle against ${esc(factionName(fid))}.</p>
+        <div class="row-actions"><button type="submit" class="primary">Save notes</button></div>`);
+      d.querySelector("form").addEventListener("submit", async ev => {
+        ev.preventDefault();
+        try { await saveOppNote(fid, $("on-text").value); d.close(); flash("Notes saved."); draw(); }
+        catch(err){ console.error(err); flash("Couldn't save: " + errText(err)); }
+      });
+      $("on-text").focus();
+    }
     // How each unit does: the games it was in (the list's units as the list is now, or the units that
     // took part in a Crusade battle) and how many of those were won. Only lists you logged a game with count.
     function unitsTable(gs){
@@ -2809,9 +2841,11 @@
           ${mvpTable(gs)}
           ${unitsTable(gs)}
         </div>
+        ${notesPanel(gs)}
         <section class="war-sec"><div class="sec-h"><h2>History</h2></div>${gameRows(gs, D)}</section>`
         : `<section class="panel war-empty"><h2>No battles yet</h2><p class="sub">After a game, log the result here. War Ledger keeps each army's record, and shows it on Shared armies when you share that army.</p>${D.warMissing ? "" : `<button type="button" class="primary" data-log="${esc(armyF)}">Log a battle</button>`}</section>`}`;
       $("wb-army").addEventListener("change", e => { armyF = e.target.value; draw(); });
+      if($("on-add")) $("on-add").addEventListener("change", e => { const v = e.target.value; e.target.value = ""; if(v) editNote(v); });
       wireMarginChart();
     }
     draw(); loadTagged();
@@ -2821,6 +2855,7 @@
       if(th){ try { localStorage.setItem(TAG_HIDE, JSON.stringify([...tagHidden(), th.dataset.tagHide].slice(-200))); } catch(err){} tagged = tagged.filter(x => x.id !== th.dataset.tagHide); draw(); return; }
       const b = e.target.closest("[data-unit]"), u = b && D.units.find(x => x.id === b.dataset.unit);
       if(u){ openUnit(armyById(D, u.armyId), u, again, {armies: D.armies, pools: D.pools}); return; }
+      const on = e.target.closest("[data-on-edit]"); if(on){ editNote(on.dataset.onEdit); return; }
       warClicks(e, D, again);
     });
   }

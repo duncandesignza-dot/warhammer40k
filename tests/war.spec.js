@@ -712,3 +712,28 @@ test("the points check shows every list the latest points change, flags ones ove
   expect(d.units.find(u => u.id === "u4").points).toBe(195);
   expect(d.lists.find(l => l.id === "l2").units[1].points).toBe(160);
 });
+
+test("opponent notes: written on Battles, shown when you log a battle against that faction", async ({page}) => {
+  await seed(page);
+  await open(page, "#/war/battles");
+  const panel = page.locator(".opp-notes");
+  await expect(panel.locator(".on-list strong")).toHaveText(["Necrons", "Orks", "T'au Empire"]);
+  await expect(panel.locator('li:has-text("Necrons") small')).toHaveText("1–0 against them");
+  await page.click('[aria-label="Edit your notes on Necrons"]');
+  await page.fill("#on-text", "Reanimation: finish units off.");
+  await page.click("dialog[open] [type=submit]");
+  await expect(panel.locator('li:has-text("Necrons") p')).toHaveText("Reanimation: finish units off.");
+  // A faction you haven't faced yet.
+  await page.selectOption("#on-add", "drukhari");
+  await page.fill("#on-text", "Fast raiders: screen the objectives.");
+  await page.click("dialog[open] [type=submit]");
+  await expect(panel.locator(".on-list strong")).toHaveText(["Necrons", "Orks", "T'au Empire", "Drukhari"]);
+  await expect(panel.locator('li:has-text("Drukhari") p')).toHaveText("Fast raiders: screen the objectives.");
+  // Remembered with your settings.
+  expect(JSON.parse(await page.evaluate(() => localStorage.getItem("ll-settings"))).oppNotes.necrons).toBe("Reanimation: finish units off.");
+  await page.click("[data-log]");
+  await expect(page.locator("#w-gon")).toBeHidden();
+  await page.selectOption("#w-go", "necrons");
+  await expect(page.locator("#w-gon")).toContainText("Your notes on Necrons");
+  await expect(page.locator("#w-gon")).toContainText("Reanimation: finish units off.");
+});
