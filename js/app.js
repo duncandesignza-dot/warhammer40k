@@ -281,6 +281,7 @@
         <a role="menuitem" href="#/shame">Pile of shame</a>
         <a role="menuitem" href="#/community">Community Ledger</a>
         <a role="menuitem" href="#/settings">Settings</a>
+        <a role="menuitem" href="#/help">Help</a>
         ${installable() ? `<button type="button" role="menuitem" data-install>Install app</button>` : ""}
         <hr>
         <button type="button" role="menuitem" data-logout>Log out</button>
@@ -576,7 +577,9 @@
     lastHash = location.hash;
     if(view.cleanup){ try { view.cleanup(); } catch(e){} view.cleanup = null; }
     view.seq = (view.seq || 0) + 1;   // pages still loading from before can tell they've been left
-    const parts = (location.hash.replace(/^#\/?/, "") || "").split("/").filter(Boolean);
+    // "#/help#g-detachment": the page, then a place on it.
+    const raw = location.hash.replace(/^#\/?/, "") || "", anchor = raw.includes("#") ? raw.slice(raw.indexOf("#") + 1) : "";
+    const parts = raw.split("#")[0].split("/").filter(Boolean);
     // War Ledger pages are red, Livery Ledger's own pages green; shared pages keep the last one used.
     // Old links to the profile page now open Livery Ledger's overview.
     if(parts[0] === "profile"){ history.replaceState(null, "", "#/livery"); lastHash = location.hash; parts.splice(0, parts.length, "livery"); }
@@ -618,6 +621,7 @@
         if(store.kind === "supabase" && !store.session){ await viewLanding(); setTimeout(() => openAuth("in", "Log in to see your pile of shame."), 0); }
         else await viewShame();
       }
+      else if(parts[0] === "help") viewHelp(anchor);
       else if(parts[0] === "settings"){
         if(store.kind === "supabase" && !store.session){ await viewLanding(); setTimeout(() => openAuth("in", "Log in to change your settings."), 0); }
         else await viewSettings();
@@ -1071,11 +1075,16 @@
     app.innerHTML = `
       ${profileHead({war: true,
         stats: [[facs.length, facs.length === 1 ? "Faction" : "Factions"], [num(mine.length), mine.length === 1 ? "Unit" : "Units"], [num(all.points), "Points"], [`${pct(paintedAll, all.models)}%`, "Painted"]],
-        actions: `<button type="button" class="btn btn-sm primary" data-coll-add>+ Add unit</button><a class="btn btn-sm" href="#/war/new">+ New army</a><button type="button" class="btn btn-sm" data-import-army>Import an army</button><a class="btn btn-sm" href="#/war/datasheets">Datasheets</a><a class="btn btn-sm" href="#/war/events">Events</a>${settingsBtn}`})}
+        actions: `<button type="button" class="btn btn-sm primary" data-coll-add>+ Add unit</button><a class="btn btn-sm" href="#/war/new">+ New army</a><button type="button" class="btn btn-sm" data-import-army>Import an army</button><a class="btn btn-sm phone-only" href="#/war/datasheets">Datasheets</a><a class="btn btn-sm phone-only" href="#/war/events">Events</a>${settingsBtn}`})}
       ${warTabs("")}
       ${missingBanner(D)}
       <div id="wd-tag"></div>
       ${D.armies.length || mine.length ? `
+      ${startCard("war", "Getting started with War Ledger", [
+        {done: D.armies.length > 0, label: "Add an army", href: "#/war/new", hint: "Pick its faction and give it a name."},
+        {done: mine.length > 0, label: "Add the units you own", href: D.armies[0] ? `#/war/army/${D.armies[0].id}` : "#/war/new", hint: "One at a time, or paste an army list."},
+        {done: D.lists.length > 0, label: "Make an army list", href: "#/war/lists", hint: "Pick units for a game, including ones you don't own yet."},
+        {done: D.games.length > 0, label: "Play it and log the battle", href: "#/war/play", hint: "Take it to the table on Game day, then log the result."}])}
       ${forceStatus(mine)}
       <div class="war-filters ar-tools"><input type="search" id="ar-q" placeholder="Search your units" aria-label="Search your units" value="${esc(q || "")}"></div>
       ${facs.map(f => { const t = sumUp(f.us), p = paintedOf(f.us), rec = recordOf(f.gs), lists = D.lists.filter(l => f.armies.some(a => a.id === l.armyId) && l.status !== "archived").length;
@@ -1897,8 +1906,8 @@
     const groups = D.armies.map(a => [a, D.lists.filter(l => l.armyId === a.id).sort((x, y) => (x.status === "archived") - (y.status === "archived"))]);
     app.innerHTML = `
       <section class="page-head war-head">
-        <div><p class="eyebrow">War Ledger</p><h1>Army lists</h1><p class="sub">Each army's full force, and the lists you build from it to try out: units you own plus any you don't yet. A Crusade force is the Order of Battle you grow over a campaign.</p></div>
-        <div class="war-actions">${D.warMissing ? "" : `${D.armies.length ? `<button type="button" class="primary" data-new-list="">+ New list</button><button type="button" data-new-list="" data-kind="crusade">+ New Crusade force</button>` : ""}<a class="btn" href="#/war/new">+ New army</a><button type="button"${D.armies.length ? "" : ` class="primary"`} data-import-army>Import a list</button><a class="btn" href="#/war/points">Points check</a>`}</div>
+        <div><p class="eyebrow">War Ledger</p><h1>Army lists</h1><p class="sub">Each army's full force, and the lists you build from it to try out: units you own plus any you don't yet. A Crusade force is the Order of Battle you grow over a campaign. ${infoBtn("crusade")}</p></div>
+        <div class="war-actions">${D.warMissing ? "" : `${D.armies.length ? `<button type="button" class="primary" data-new-list="">+ New list</button>` : ""}<a class="btn" href="#/war/new">+ New army</a><button type="button"${D.armies.length ? "" : ` class="primary"`} data-import-army>Import a list</button><a class="btn" href="#/war/points">Points check</a>`}</div>
       </section>
       ${warTabs("lists")}
       ${missingBanner(D)}
@@ -1933,7 +1942,7 @@
       app.innerHTML = `
         <div class="crumbs"><a href="#/war">War Ledger</a> / <a href="#/war/lists">Army lists</a> / Points check</div>
         <section class="page-head war-head">
-          <div><p class="eyebrow">War Ledger</p><h1>Points check</h1><p class="sub">${dataBuilt() ? `Datasheet points were last updated ${esc(dayText(dataBuilt()))}. ` : ""}Lists whose points differ from the latest datasheets, and lists over their limit.</p></div>
+          <div><p class="eyebrow">War Ledger</p><h1>Points check ${infoBtn("points-check")}</h1><p class="sub">${dataBuilt() ? `Datasheet points were last updated ${esc(dayText(dataBuilt()))}. ` : ""}Lists whose points differ from the latest datasheets, and lists over their limit.</p></div>
           ${upd.length > 1 ? `<div class="war-actions"><button type="button" class="primary" data-latest-all>Update all ${upd.length} lists</button></div>` : ""}
         </section>
         ${warTabs("lists")}
@@ -1985,10 +1994,10 @@
     const built = (window.LEDGER_FACTIONS || {}).built;
     return `
       <div class="wgrid">
-        <label class="span2">Battle size<select id="w-lsz">${BATTLE_SIZES.map(z => `<option value="${z.id}"${size === z.id ? " selected" : ""}>${esc(z.name)} (${num(z.pts)} points)</option>`).join("")}<option value="custom"${size === "custom" ? " selected" : ""}>Custom points</option><option value=""${!size ? " selected" : ""}>No points limit</option></select></label>
+        <label class="span2"><span>Battle size ${infoBtn("battle-size")}</span><select id="w-lsz">${BATTLE_SIZES.map(z => `<option value="${z.id}"${size === z.id ? " selected" : ""}>${esc(z.name)} (${num(z.pts)} points)</option>`).join("")}<option value="custom"${size === "custom" ? " selected" : ""}>Custom points</option><option value=""${!size ? " selected" : ""}>No points limit</option></select></label>
         <label>Points limit<input id="w-ll" type="number" min="0" max="20000" step="250" inputmode="numeric" value="${l.limit || ""}" placeholder="No limit"></label>
       </div>
-      <fieldset class="wfs"><legend>Detachments</legend>
+      <fieldset class="wfs"><legend>Detachments ${infoBtn("detachment")}</legend>
         <div id="w-dets">${dets.map((v, i) => detRow(v, i)).join("")}</div>
         <datalist id="w-det-dl">${known.map(([v, l]) => `<option value="${esc(v)}" label="${esc(l)}">`).join("")}</datalist>
         <button type="button" class="btn-sm" id="w-det-add"${dets.length >= 4 ? " hidden" : ""}>+ Add another detachment</button>
@@ -2027,15 +2036,15 @@
     detachments: [...d.querySelectorAll(".w-det")].map(x => x.value.trim()).filter(Boolean), status: d.querySelector("#w-lst").value, ptsAsOf: d.querySelector("#w-lpd").value});
   // What a list is for: one game, or a Crusade force's Order of Battle.
   const kindHint = kind => kind === "crusade" ? "The points limit is your supply limit. Battles you log with this force add experience to its units and requisition points to the force."
-    : "A list is what you take to a game, picked from your collection.";
-  const kindField = kind => `<label>Type<select id="w-lk"><option value="">Army list for games</option><option value="crusade"${kind === "crusade" ? " selected" : ""}>Crusade force (Order of Battle)</option></select></label>
+    : "What you take to one game: units you own, plus any you don't yet. Most players want this.";
+  const kindField = kind => `<label><span>What's it for? ${infoBtn("crusade")}</span><select id="w-lk"><option value="">An army list for games</option><option value="crusade"${kind === "crusade" ? " selected" : ""}>A Crusade force for a campaign</option></select></label>
       <p class="hint" id="w-lk-hint">${kindHint(kind)}</p>`;
   const wireKind = d => { const k = d.querySelector("#w-lk"); k.addEventListener("change", () => { d.querySelector("#w-lk-hint").textContent = kindHint(k.value); }); };
   function openNewList(D, armyId, kind){
     if(!D.armies.length){ flash("Create an army first."); return; }
     if(D.warMissing){ flash("Run supabase/features.sql in Supabase to turn on army lists."); return; }
     const first = D.armies.find(a => a.id === armyId) || D.armies[0];
-    const d = modal(kind === "crusade" ? "New Crusade force" : "New army list", `
+    const d = modal(kind === "crusade" ? "New Crusade force" : "New list", `
       <label>Army<select id="w-la">${D.armies.map(a => `<option value="${esc(a.id)}"${a.id === first.id ? " selected" : ""}>${esc(a.name)} (${esc(factionName(a.faction))})</option>`).join("")}</select></label>
       ${kindField(kind)}
       <label>Name<input id="w-ln" maxlength="80" placeholder="e.g. Club night 2,000"></label>
@@ -2091,10 +2100,10 @@
     function configRow(){
       const size = sizeOf(list), dets = list.detachments || [], all = factionDets(army.faction);
       return `<div class="lb-config">
-        <label>Battle size<select id="lb-bs">${BATTLE_SIZES.map(z => `<option value="${z.id}"${size === z.id ? " selected" : ""}>${esc(z.name)} · ${num(z.pts)} pts</option>`).join("")}<option value="custom"${size === "custom" ? " selected" : ""}>Custom points</option><option value=""${!size ? " selected" : ""}>No points limit</option></select></label>
+        <label><span>Battle size ${infoBtn("battle-size")}</span><select id="lb-bs">${BATTLE_SIZES.map(z => `<option value="${z.id}"${size === z.id ? " selected" : ""}>${esc(z.name)} · ${num(z.pts)} pts</option>`).join("")}<option value="custom"${size === "custom" ? " selected" : ""}>Custom points</option><option value=""${!size ? " selected" : ""}>No points limit</option></select></label>
         ${size === "custom" ? `<label>Points limit<input id="lb-lim" type="number" min="0" max="20000" step="250" inputmode="numeric" value="${list.limit || ""}"></label>` : ""}
-        ${dets.length > 1 ? `<div class="lb-dets"><span class="lb-dl">Detachments</span><span>${esc(detText(list))} <button type="button" class="linkish" data-details>Change</button></span></div>`
-          : `<label>Detachment<select id="lb-det"><option value="">None chosen</option>${all.map(d => `<option value="${esc(d.n)}"${dets[0] === d.n ? " selected" : ""}>${esc(d.n)}${d.dp ? ` · ${d.dp} DP` : ""}</option>`).join("")}${dets[0] && !all.some(d => d.n === dets[0]) ? `<option selected>${esc(dets[0])}</option>` : ""}</select></label>`}
+        ${dets.length > 1 ? `<div class="lb-dets"><span class="lb-dl">Detachments ${infoBtn("detachment")}</span><span>${esc(detText(list))} <button type="button" class="linkish" data-details>Change</button></span></div>`
+          : `<label><span>Detachment ${infoBtn("detachment")}</span><select id="lb-det"><option value="">None chosen</option>${all.map(d => `<option value="${esc(d.n)}"${dets[0] === d.n ? " selected" : ""}>${esc(d.n)}${d.dp ? ` · ${d.dp} DP` : ""}</option>`).join("")}${dets[0] && !all.some(d => d.n === dets[0]) ? `<option selected>${esc(dets[0])}</option>` : ""}</select></label>`}
       </div>`;
     }
     // The datasheets to add from, grouped by role, with how many of each are already in the list.
@@ -2111,7 +2120,7 @@
       if(!listChecksOn()) return "";
       const hidden = new Set(list.ignored || []), all = listChecks(list, s, army.faction), shown = all.filter(c => !hidden.has(c.id)), nHid = all.length - shown.length;
       if(!all.length) return "";
-      return `<section class="panel tc" aria-labelledby="tc-h"><h2 class="ph" id="tc-h">Things to check${shown.length ? ` <span class="tc-n">${shown.length}</span>` : ""}</h2>
+      return `<section class="panel tc" aria-labelledby="tc-h"><h2 class="ph" id="tc-h">Things to check ${infoBtn("things-to-check")}${shown.length ? ` <span class="tc-n">${shown.length}</span>` : ""}</h2>
         ${shown.length ? `<p class="hint">Suggestions only. Nothing here stops you using this list.</p>
         <ul class="tc-list">${shown.map(c => `<li><div><strong>${esc(c.text)}</strong>${c.more ? ` <small>${esc(c.more)}</small>` : ""}${c.items ? `<ul class="tc-items">${c.items.map(t => `<li>${esc(t)}</li>`).join("")}</ul>` : ""}</div>${c.act ? `<button type="button" class="btn-sm primary" data-latest>${esc(c.act)}</button>` : ""}<button type="button" class="btn-sm" data-hide-check="${esc(c.id)}" aria-label="Hide: ${esc(c.text)}">Hide</button></li>`).join("")}</ul>`
           : `<p class="hint">Nothing new to check.</p>`}
@@ -2170,7 +2179,7 @@
             ${addTab === "sheets" ? `
             <div class="lb-dfilters"><input type="search" id="lb-dq" placeholder="Search ${esc(factionName(army.faction))} datasheets" aria-label="Search datasheets" value="${esc(dq)}">
               <select id="lb-dr" aria-label="Role"><option value="">All roles</option>${ROLE_ORDER.filter(r => sheetsOf(army.faction).some(sh => roleOf(sh) === r)).map(r => `<option${dRole === r ? " selected" : ""}>${esc(r)}</option>`).join("")}</select>
-              <label class="chk"><input type="checkbox" id="lb-dl"${dLegends ? " checked" : ""}><span>Legends</span></label></div>
+              <label class="chk"><input type="checkbox" id="lb-dl"${dLegends ? " checked" : ""}><span>Legends</span> ${infoBtn("legends")}</label></div>
             <div id="lb-dlist">${sheetRows(s)}</div>` : `
             <p class="hint lb-note">The ${esc(factionName(army.faction))} units you own: this army's first, then your other ${esc(factionName(army.faction))} armies. For ones you don't own, add them from Datasheets.</p>
             <input type="search" id="lb-q" placeholder="Search your ${esc(factionName(army.faction))} units" aria-label="Search your units" value="${esc(q)}">
@@ -2211,16 +2220,16 @@
       const cs = crusadeState(list, D), us = s.rows.filter(x => !x.gone).map(x => [x, crUnit(x, cs)]), cp = us.reduce((a, [, c]) => a + c.cp, 0);
       const bar = c => c.next == null ? "" : `<span class="cr-bar" aria-hidden="true"><i style="width:${pctOf(c.xp - c.from, c.next - c.from)}%"></i></span>`;
       return `<section class="war-stats cr-stats" aria-label="Crusade">
-          <div class="wstat"><b>${cs.rp}</b><span>Requisition points</span><small><button type="button" class="linkish" data-rp>Spend or add</button></small></div>
+          <div class="wstat"><b>${cs.rp}</b><span>Requisition points ${infoBtn("requisition")}</span><small><button type="button" class="linkish" data-rp>Spend or add</button></small></div>
           <div class="wstat"><b>${cs.gs.length}</b><span>${cs.gs.length === 1 ? "Battle" : "Battles"}</span><small>${victories(cs.rec.w)}</small></div>
-          <div class="wstat"><b>${cp}</b><span>Crusade points</span><small>From honours and scars</small></div>
+          <div class="wstat"><b>${cp}</b><span>Crusade points ${infoBtn("crusade-points")}</span><small>From honours and scars</small></div>
           <div class="wstat"><b>${us.filter(([, c]) => c.idx >= 2).length}</b><span>Battle-hardened or better</span><small>of ${plural(us.length, "unit")}</small></div>
         </section>
         ${checks}
-        <section class="panel cr-ob" aria-labelledby="ob-h"><h2 class="ph" id="ob-h">Order of Battle</h2>
+        <section class="panel cr-ob" aria-labelledby="ob-h"><h2 class="ph" id="ob-h">Order of Battle ${infoBtn("order-of-battle")}</h2>
           <p class="hint">Each battle logged with this force gives the units that took part 1 XP, 3 more to the one Marked for Greatness, and the force 1 requisition point. Choose a unit to add battle honours, scars or experience.</p>
           ${us.length ? `<div class="wt-scroll"><table class="wtable wt-cards cr-t">
-            <thead><tr><th scope="col">Unit</th><th scope="col">Rank</th><th scope="col" class="n">XP</th><th scope="col" class="n">Battles</th><th scope="col" class="n">Honours</th><th scope="col" class="n">Scars</th><th scope="col" class="n">Crusade pts</th></tr></thead>
+            <thead><tr><th scope="col">Unit</th><th scope="col">Rank</th><th scope="col" class="n">XP ${infoBtn("xp")}</th><th scope="col" class="n">Battles</th><th scope="col" class="n">Honours ${infoBtn("honours")}</th><th scope="col" class="n">Scars</th><th scope="col" class="n">Crusade pts</th></tr></thead>
             <tbody>${us.map(([x, c]) => `<tr><th scope="row"><button type="button" class="linkish" data-cr="${x.i}">${esc(x.name)}</button>${c.hon.length || c.scar.length ? `<small>${esc([...c.hon.map(h => h.n), ...c.scar.map(n => "Scar: " + n)].join(" · "))}</small>` : ""}</th>
               <td class="wt-sub"><span class="cr-rank r${c.idx}">${esc(c.rank)}</span></td>
               <td class="n" data-label="XP">${c.xp}${bar(c)}</td><td class="n" data-label="Battles">${c.battles}${c.mfg ? ` <small title="Marked for Greatness">★${c.mfg}</small>` : ""}</td>
@@ -2355,13 +2364,13 @@
       const lsh = sheetByName(sheetFaction(army.faction, rowSheetName(x)), rowSheetName(x)), canLead = r => lsh && lsh.ld && lsh.ld.includes(rowSheetName(r));
       const leadGroups = lsh && lsh.ld ? [["Can lead", bodies.filter(canLead)], ["Other units", bodies.filter(r => !canLead(r))]].filter(g => g[1].length) : [["", bodies]];
       const d = modal(`${esc(x.name)}: warlord and enhancement`, `
-        <label class="chk"><input type="checkbox" id="w-ewl"${x.warlord ? " checked" : ""}><span>Warlord of this list</span></label>
-        <fieldset class="wfs"><legend>Enhancement</legend>
+        <label class="chk"><input type="checkbox" id="w-ewl"${x.warlord ? " checked" : ""}><span>Warlord of this list</span> ${infoBtn("warlord")}</label>
+        <fieldset class="wfs"><legend>Enhancement ${infoBtn("enhancement")}</legend>
           <div class="wgrid"><label class="span2">Name<input id="w-een" maxlength="80" list="w-een-dl" value="${esc(x.enh ? x.enh.n : "")}" placeholder="None"></label>
           <label>Points<input id="w-eep" type="number" min="0" max="999" inputmode="numeric" value="${x.enh && x.enh.p ? x.enh.p : ""}"></label></div>
           <datalist id="w-een-dl">${[...opts.map(o => o[0]), ...Object.keys(known).filter(n => !labels[n]).sort()].filter((n, j, a) => a.indexOf(n) === j).map(n => `<option value="${esc(n)}"${labels[n] ? ` label="${esc(labels[n])}"` : ""}>`).join("")}</datalist>
         </fieldset>
-        <label>Leading<select id="w-eld"><option value="">Not leading a unit</option>${leadGroups.map(([label, rs]) => { const opts = rs.map(r => { const other = s.rows.find(o => o.lead === r.k && o.i !== i && !o.gone); return `<option value="${esc(r.k)}"${x.lead === r.k ? " selected" : ""}>${esc(r.name)}${other ? ` (led by ${esc(other.name)})` : ""}</option>`; }).join(""); return label ? `<optgroup label="${esc(label)}">${opts}</optgroup>` : opts; }).join("")}</select></label>
+        <label><span>Leading ${infoBtn("leader")}</span><select id="w-eld"><option value="">Not leading a unit</option>${leadGroups.map(([label, rs]) => { const opts = rs.map(r => { const other = s.rows.find(o => o.lead === r.k && o.i !== i && !o.gone); return `<option value="${esc(r.k)}"${x.lead === r.k ? " selected" : ""}>${esc(r.name)}${other ? ` (led by ${esc(other.name)})` : ""}</option>`; }).join(""); return label ? `<optgroup label="${esc(label)}">${opts}</optgroup>` : opts; }).join("")}</select></label>
         <div class="row-actions"><button type="submit" class="primary">Save</button></div>`);
       // Fill in the points for a known enhancement, unless you've typed your own.
       let autoP = x.enh && known[x.enh.n] === x.enh.p ? String(x.enh.p || "") : null;
@@ -2799,9 +2808,10 @@
     const D = await warData();
     let prefs = {};
     try { prefs = JSON.parse(localStorage.getItem("ll-ds-prefs") || "{}") || {}; } catch(e){}
-    fid = fid || (FBY[prefs.f] ? prefs.f : "") || (D.armies[0] || {}).faction || "space-marines";
+    // No faction until you choose one (or open a faction's address): the page explains itself first.
+    fid = fid || "";
     let q = "", role = "", legends = false, sort = ["name", "low", "high"].includes(prefs.sort) ? prefs.sort : "name";
-    view.name = "war-datasheets"; document.title = `${factionName(fid)} datasheets · War Ledger`;
+    view.name = "war-datasheets"; document.title = fid ? `${factionName(fid)} datasheets · War Ledger` : "Datasheets · War Ledger";
     const roleOf = sh => ROLE_ORDER.includes(sh.r) ? sh.r : "Other";
     const sizes = sh => sh.ms && sh.ms[1] > sh.ms[0] ? `${sh.ms[0]}–${sh.ms[1]} models` : plural(minModels(sh), "model");
     const from = sh => sheetPts(sh, minModels(sh));
@@ -2811,16 +2821,23 @@
       </section>
       ${warTabs("datasheets")}
       <div class="war-filters ds-filters">
-        ${factionSelect("dsp-f", fid, "").replace("<select ", `<select aria-label="Faction" class="ds-f" `)}
+        ${factionSelect("dsp-f", fid, "Choose a faction").replace("<select ", `<select aria-label="Faction" class="ds-f" `)}
         <input type="search" id="dsp-q" placeholder="Search datasheets" aria-label="Search datasheets">
         <select id="dsp-r" aria-label="Role"><option value="">All roles</option></select>
         <select id="dsp-s" aria-label="Sort"><option value="name"${sort === "name" ? " selected" : ""}>Name</option><option value="low"${sort === "low" ? " selected" : ""}>Points (fewest first)</option><option value="high"${sort === "high" ? " selected" : ""}>Points (most first)</option></select>
-        <label class="chk"><input type="checkbox" id="dsp-l"><span>Legends</span></label>
+        <label class="chk"><input type="checkbox" id="dsp-l"><span>Legends</span> ${infoBtn("legends")}</label>
       </div>
       <p class="hint" id="dsp-n" aria-live="polite"></p>
       <div id="dsp-out"></div>`;
+    // Before a faction is chosen the other filters wait, and a panel says what the page is for.
+    function ready(){ ["dsp-q", "dsp-r", "dsp-s", "dsp-l"].forEach(id => $(id).disabled = !fid); }
     function fillRoles(){ $("dsp-r").innerHTML = `<option value="">All roles</option>${ROLE_ORDER.filter(r => sheetsOf(fid).some(sh => roleOf(sh) === r)).map(r => `<option${r === role ? " selected" : ""}>${esc(r)}</option>`).join("")}`; }
     function draw(){
+      if(!fid){
+        $("dsp-n").textContent = "";
+        $("dsp-out").innerHTML = `<section class="panel war-empty"><h2>Browse any faction's datasheets</h2><p class="sub">Choose a faction above to see every datasheet it has, with its points and unit sizes. Open one for its full profile and weapons, and add it to one of your army lists to try it before you buy it.</p></section>`;
+        return;
+      }
       const all = sheetsOf(fid).filter(sh => (legends || !sh.t) && (!role || roleOf(sh) === role) && (!q || sh.n.toLowerCase().includes(q)));
       const by = {name: (a, b) => a.n.localeCompare(b.n), low: (a, b) => (from(a) ?? 1e9) - (from(b) ?? 1e9) || a.n.localeCompare(b.n), high: (a, b) => (from(b) ?? -1) - (from(a) ?? -1) || a.n.localeCompare(b.n)}[sort];
       $("dsp-n").textContent = `${plural(all.length, "datasheet")}${q || role ? " match" : ""}`;
@@ -2850,8 +2867,8 @@
         } catch(err){ console.error(err); flash("Couldn't add it: " + errText(err)); }
       });
     }
-    fillRoles(); draw();
-    $("dsp-f").addEventListener("change", e => { fid = e.target.value; role = ""; try { localStorage.setItem("ll-ds-prefs", JSON.stringify({f: fid, sort})); } catch(err){} history.replaceState(null, "", "#/war/datasheets/" + fid); lastHash = location.hash; document.title = `${factionName(fid)} datasheets · War Ledger`; fillRoles(); draw(); });
+    fillRoles(); ready(); draw();
+    $("dsp-f").addEventListener("change", e => { fid = e.target.value; ready(); role = ""; try { localStorage.setItem("ll-ds-prefs", JSON.stringify({f: fid, sort})); } catch(err){} history.replaceState(null, "", "#/war/datasheets" + (fid ? "/" + fid : "")); lastHash = location.hash; document.title = fid ? `${factionName(fid)} datasheets · War Ledger` : "Datasheets · War Ledger"; fillRoles(); draw(); });
     $("dsp-q").addEventListener("input", e => { q = e.target.value.trim().toLowerCase(); draw(); });
     $("dsp-r").addEventListener("change", e => { role = e.target.value; draw(); });
     $("dsp-s").addEventListener("change", e => { sort = e.target.value; try { localStorage.setItem("ll-ds-prefs", JSON.stringify({f: fid, sort})); } catch(err){} draw(); });
@@ -2980,7 +2997,7 @@
     const gearOf = x => x.u ? [x.u.ranged, x.u.melee].filter(Boolean).join(", ") : (x.e.gear || "");
     const total = side => st.vp.reduce((a, r) => a + (+r[side] || 0), 0);
     const scored = () => st.vp.some(r => r[0] != null || r[1] != null);
-    const stepper = (id, label, v, min, max) => `<div class="gd-step"><span class="gd-l" id="${id}-l">${label}</span>
+    const stepper = (id, label, v, min, max, info) => `<div class="gd-step"><span class="gd-l"><span id="${id}-l">${label}</span>${info ? " " + infoBtn(info) : ""}</span>
       <div class="gd-ctl" role="group" aria-labelledby="${id}-l"><button type="button" class="btn-sm" data-step="${id}" data-d="-1" aria-label="${label}: one less"${v <= min ? " disabled" : ""}>−</button>
       <output id="${id}" aria-live="polite">${v}</output><button type="button" class="btn-sm" data-step="${id}" data-d="1" aria-label="${label}: one more"${v >= max ? " disabled" : ""}>+</button></div></div>`;
     function draw(){
@@ -2998,11 +3015,11 @@
           ${note ? `<p class="opp-note"><b>Your notes on ${esc(factionName(st.opp))}</b> ${esc(note)}</p>` : ""}
           <div class="gd-steps">
             ${stepper("gd-round", "Round", st.round, 1, PLAY_ROUNDS)}
-            ${stepper("gd-cp0", "Your CP", st.cp[0], 0, 99)}
+            ${stepper("gd-cp0", "Your CP", st.cp[0], 0, 99, "cp")}
             ${stepper("gd-cp1", "Their CP", st.cp[1], 0, 99)}
           </div>
         </section>
-        <section class="panel gd-score" aria-labelledby="gd-sh"><h2 class="ph" id="gd-sh">Victory Points</h2>
+        <section class="panel gd-score" aria-labelledby="gd-sh"><h2 class="ph" id="gd-sh">Victory Points ${infoBtn("vp")}</h2>
           <table class="gd-t"><thead><tr><th scope="col">Round</th><th scope="col">You</th><th scope="col">Them</th></tr></thead>
           <tbody>${st.vp.map((r, i) => `<tr${i + 1 === st.round ? ` class="now"` : ""}><th scope="row">${i + 1}</th>
             <td><input type="number" min="0" max="99" inputmode="numeric" data-vp="${i}:0" value="${r[0] ?? ""}" aria-label="Your points in round ${i + 1}"></td>
@@ -3129,7 +3146,7 @@
       const byArmy = D.armies.map(a => [a, rows.filter(r => r.army.id === a.id)]).filter(g => g[1].length);
       app.innerHTML = `
         <section class="page-head war-head">
-          <div><p class="eyebrow">War Ledger</p><h1>To buy</h1><p class="sub">${rows.length ? `${plural(rows.reduce((a, r) => a + r.want, 0), "unit")} you don't own yet, from your army lists · ${plural(models, "model")} · ${ptsText(total)}` : "Units your lists use that you don't own yet show here."}</p></div>
+          <div><p class="eyebrow">War Ledger</p><h1>To buy ${infoBtn("not-owned")}</h1><p class="sub">${rows.length ? `${plural(rows.reduce((a, r) => a + r.want, 0), "unit")} you don't own yet, from your army lists · ${plural(models, "model")} · ${ptsText(total)}` : "Units your lists use that you don't own yet show here."}</p></div>
         </section>
         ${warTabs("buy")}
         ${rows.length ? byArmy.map(([a, rs]) => `<section class="war-sec buy-sec" aria-labelledby="buy-${esc(a.id)}">
@@ -3412,6 +3429,7 @@
         actions: armies.length ? `<a class="btn btn-sm" href="#/livery/collection">${LIST_ICON}Your collection<span class="count">${num(tot.units)}</span></a>${shameBtn()}${settingsBtn}` : ""})}
       ${livTabs("")}
       <div id="paint-status"></div>
+      <div id="ov-start"></div>
       <div id="ov-proj"></div>
       <div id="ov-events"></div>
       <div id="ov-next"></div>
@@ -3427,6 +3445,12 @@
       const ps = $("paint-status"); if(ps) ps.innerHTML = paintStatus(us.filter(u => armies.some(a => a.id === u.armyId)));
       drawUpNext(us.filter(u => unitOwned(u) && armies.some(a => a.id === u.armyId)), armies);
       drawProjects(us.filter(unitOwned));
+      const st = $("ov-start"), mineU = us.filter(u => unitOwned(u) && armies.some(a => a.id === u.armyId)), a0 = armies[0];
+      if(st && a0) st.innerHTML = startCard("livery", "Getting started with Livery Ledger", [
+        {done: true, label: "Start a ledger", href: "#/livery/new", hint: "Pick your faction."},
+        {done: armies.some(a => !a.scheme.wonly), label: "Choose your colours", href: `#/army/${a0.id}/colours`, hint: "Start from the official scheme, then make it yours."},
+        {done: mineU.length > 0, label: "Add your units", href: `#/army/${a0.id}`, hint: "One at a time, or paste your army list."},
+        {done: mineU.some(u => (u.stages || []).length), label: "Tick off a painting stage", href: `#/army/${a0.id}`, hint: "Built, primed, basecoat and on: watch the progress climb."}]);
       store.listLists().catch(() => []).then(lists => drawEventPaint(lists, us)).catch(err => console.error(err));
       const box = $("act-sum"); if(!box) return;
       const A = activityOf(us), goal = getGoal();
@@ -3476,7 +3500,7 @@
     const today = isoDay(new Date());
     const evs = eventData().evs.filter(e => e.mine && e.date >= today && lists.some(l => l.id === e.mine.listId)).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 3);
     if(!evs.length){ box.innerHTML = ""; return; }
-    box.innerHTML = `<section class="war-sec" aria-labelledby="ep-h"><div class="sec-h"><h2 id="ep-h">Before your events</h2><a href="#/war/events">Events</a></div>
+    box.innerHTML = `<section class="war-sec" aria-labelledby="ep-h"><div class="sec-h"><h2 id="ep-h">Before your events ${infoBtn("before-events")}</h2><a href="#/war/events">Events</a></div>
       <div class="ep-grid">${evs.map(ev => { const l = lists.find(x => x.id === ev.mine.listId);
         return goalCard({id: ev.id, title: ev.name, date: ev.date, line: `Taking <a href="#/war/list/${esc(l.id)}">${esc(l.name)}</a>`, j: paintJob(l, units), doneText: "Ready for the table.",
           empty: "None of the units in this list are in your collection yet.", missing: m => `${plural(m, "unit")} in the list ${m === 1 ? "isn't" : "aren't"} in your collection yet.`}); }).join("")}</div></section>`;
@@ -3561,7 +3585,7 @@
   async function viewLiveryLedgers(){
     view.name = "liv-ledgers"; document.title = "Ledgers · Livery Ledger";
     const {armies, sum} = await liveryData();
-    app.innerHTML = `${tabHead("Livery Ledger", "Your ledgers", "Every army you're painting, and how far along it is.", newLedgerBtn())}
+    app.innerHTML = `${tabHead("Livery Ledger", "Your ledgers", `Every army you're painting, and how far along it is. ${infoBtn("ledger")}`, newLedgerBtn())}
       ${livTabs("ledgers")}
       ${armies.length ? `<h2 class="sr-only">Ledgers</h2><div class="ledgers">${armies.map(a => ledgerCard(a, sum)).join("")}</div>` : livEmpty()}`;
   }
@@ -5411,7 +5435,7 @@ Redemptor Dreadnought (210 points)</pre>
     const opt = (v, cur, label) => `<option value="${esc(v)}"${String(v) === String(cur) ? " selected" : ""}>${esc(label)}</option>`;
     app.innerHTML = `
       <div class="crumbs">${isWar() ? `<a href="#/war">War Ledger</a>` : `<a href="#/livery">Livery Ledger</a>`} / Settings</div>
-      <section class="page-head"><p class="eyebrow">${me ? esc(me.email) : "This browser"}</p><h1>Settings</h1></section>
+      <section class="page-head"><p class="eyebrow">${me ? esc(me.email) : "This browser"}</p><h1>Settings</h1><p class="sub">Your name and picture, how points and prices show, list checks, backups of your data, and your account. Need a hand? See <a href="#/help">Help</a>.</p></section>
       <div class="settings">
         ${me ? `<section class="panel set-sec">
           <h2>Profile</h2>
@@ -5769,7 +5793,7 @@ Redemptor Dreadnought (210 points)</pre>
             </div>
           </div>
           <div class="panel">
-            <h2 class="ph">Ranks</h2>
+            <h2 class="ph">Ranks ${infoBtn("ranks")}</h2>
             <p class="hint">Ranks group your units, such as ${esc(draft.scheme.tiers.slice(0, 3).map(t => t.name).join(", ").replace(/, ([^,]*)$/, " and $1"))}, so you can paint some a little differently from the rest of the army. Each rank has a colour for the ${esc(PROF.head)}; a unit starts with its rank's colour, and you can still change it per unit.</p>
             <div class="tiers" id="s-tiers"></div>
             <div class="row-actions" style="margin-top:10px"><button type="button" class="btn-sm" id="s-addtier">Add rank</button></div>
@@ -6753,7 +6777,7 @@ Redemptor Dreadnought (210 points)</pre>
             <div class="meta">${esc(u.datasheet || "Unit")}${u.role ? " · " + esc(u.role) : ""} · ${plural(u.count, "model")}${u.points ? " · " + num(u.points) + "\u00a0pts" : ""}</div>
             ${u.own === "planned" ? `<p class="plan-note">${PLANNED_TAG}<span>Not bought yet. Plan its colours now; it counts towards your totals once you buy it.</span>${canWrite ? `<button type="button" class="btn-sm" data-bought="${esc(u.id)}">I bought it</button>` : ""}</p>` : ""}</div>
           <div class="row">${img ? soloBadge(unitBadge(u, scheme, 64), 64) : ""}<span class="row-end">${starBtn(u, true)}<span class="pill s-${esc(u.status)}">${esc(u.status === "done" ? "Painted" : stageLabel(u))}</span></span></div>
-          ${box("painting", "Painting", `<div class="stage-list">${STAGES.map(([k, l]) => `<span class="${(u.stages || []).includes(k) ? "on" : ""}">${l}</span>`).join("")}</div>
+          ${box("painting", `Painting ${infoBtn("stages")}`, `<div class="stage-list">${STAGES.map(([k, l]) => `<span class="${(u.stages || []).includes(k) ? "on" : ""}">${l}</span>`).join("")}</div>
             <p class="prose" style="margin-top:10px">${u.painted} of ${plural(u.count, "model")} painted</p>
             ${unitMins(u) || canWrite ? `<p class="pt-line"><span>Painting time <b>${hm(unitMins(u))}</b></span>${canWrite ? (t => `<button type="button" class="btn-sm${t && t.unitId === u.id ? " on" : ""}" data-timer="${esc(u.id)}">${t && t.unitId === u.id ? "Stop timer" : "Start timer"}</button>`)(getTimer()) : ""}</p>` : ""}`)}
           ${(u.journal || []).length || canWrite ? box("journal", `Painting journal${(u.journal || []).length ? ` <small class="dsec-n">${u.journal.length}</small>` : ""}`, journalHtml(u)) : ""}
@@ -7698,6 +7722,294 @@ Redemptor Dreadnought (210 points)</pre>
   /* ============================================================
      Dialogs, auth, start
      ============================================================ */
+  /* ---------- getting started ----------
+     A short checklist for someone new, on the Livery Overview and the Armoury. It goes once every step is done,
+     or when hidden (remembered with the settings). steps: [{done, label, href, hint}]. */
+  function startCard(tool, title, steps){
+    if((settings.startHide || {})[tool] || steps.every(x => x.done)) return "";
+    const n = steps.filter(x => x.done).length;
+    return `<section class="panel start-card" data-start-card="${tool}" aria-labelledby="st-${tool}">
+      <div class="st-head"><div><h2 id="st-${tool}">${esc(title)}</h2><small>${n} of ${steps.length} done</small></div><button type="button" class="btn-sm" data-start-hide="${tool}">Hide this</button></div>
+      <ol class="st-steps">${steps.map((x, i) => `<li class="${x.done ? "done" : ""}"><span class="st-n" aria-hidden="true">${x.done ? "✓" : i + 1}</span><span><a href="${x.href}">${esc(x.label)}</a>${x.done ? `<span class="sr-only"> (done)</span>` : ""}<small>${esc(x.hint)}</small></span></li>`).join("")}</ol>
+    </section>`;
+  }
+  document.addEventListener("click", async e => {
+    const b = e.target.closest("[data-start-hide]"); if(!b) return;
+    const card = b.closest("[data-start-card]");
+    try { await saveSettings({startHide: {...(settings.startHide || {}), [b.dataset.startHide]: true}}); if(card) card.remove(); flash("Hidden. Help has the same steps whenever you need them."); }
+    catch(err){ flash("Couldn't save that: " + errText(err)); }
+  });
+
+  /* ---------- help ----------
+     What each of the three tools is for and what's in it, how to get started, the glossary and common questions.
+     #/help#g-<word> opens it at that word (the ⓘ notes link here). */
+  function viewHelp(anchor){
+    view.name = "help"; document.title = "Help · Livery Ledger";
+    const tipOf = sel => (TIPS.find(t => t[0] === sel) || [])[1] || "";
+    const tabList = (tabs, base) => `<ul class="hp-tabs">${tabs.map(([k, l]) => `<li><a href="#/${base}${k ? "/" + k : ""}">${esc(l)}</a><span>${esc(tipOf(`.war-tabs a[href="#/${base}${k ? "/" + k : ""}"]`))}</span></li>`).join("")}</ul>`;
+    const tool = (cls, logo, name, what, tabs, base) => `<section class="panel hp-tool ${cls}" aria-labelledby="hp-${cls}">
+        <h3 id="hp-${cls}"><span class="lps-ico">${logo}</span>${name}</h3><p>${what}</p>${tabList(tabs, base)}</section>`;
+    app.innerHTML = `
+      <section class="page-head">
+        <p class="eyebrow">Help</p>
+        <h1>How it all works</h1>
+        <p class="sub">Livery Ledger is three tools in one account: one for painting, one for playing and one for the club. Here's what each does, how to get started and what the words mean.</p>
+      </section>
+      <nav class="hp-nav" aria-label="On this page"><a href="#/help#h-tools">The three tools</a><a href="#/help#h-start">Getting started</a><a href="#/help#h-words">What the words mean</a><a href="#/help#h-faq">Questions</a></nav>
+
+      <section class="war-sec" id="h-tools" aria-labelledby="h-tools-h"><div class="sec-h"><h2 id="h-tools-h">The three tools</h2></div>
+        <p class="hint">Switch between them at the top of any page. They share the same account and the same armies: an army you add in one shows up in the others.</p>
+        <div class="hp-tools">
+          ${tool("liv", LOGO_DROP, "Livery Ledger", "For painting. Plan your army's colours, write paint recipes and track every unit from bare plastic to varnished.", LIV_TABS, "livery")}
+          ${tool("war", LOGO_SWORDS, "War Ledger", "For playing. Keep everything you own in the Armoury, build army lists (with units you don't own yet, too), play on Game day and log every battle.", WAR_TABS, "war")}
+          ${tool("comm", LOGO_COMMUNITY, "Community Ledger", "For the club, run by the Eastern Cape Warlords. Club and national events to sign up for, and armies other players have shared.", COMM_TABS, "community")}
+        </div>
+      </section>
+
+      <section class="war-sec" id="h-start" aria-labelledby="h-start-h"><div class="sec-h"><h2 id="h-start-h">Getting started</h2></div>
+        <div class="hp-tools">
+          <section class="panel hp-steps"><h3>If you paint</h3><ol>
+            <li><a href="#/livery/new">Start a ledger</a>: pick your faction.</li>
+            <li>Choose your colours: start from the official scheme and change anything you like.</li>
+            <li>Add your units one at a time, or paste your army list.</li>
+            <li>Tick off each painting stage as you go. Write recipes for the steps you repeat.</li></ol></section>
+          <section class="panel hp-steps"><h3>If you play</h3><ol>
+            <li><a href="#/war/new">Add an army</a>, or paste a list with Import an army.</li>
+            <li>Add the units you own. They show in your Armoury.</li>
+            <li>Make an army list for a game, with units you own and any you don't yet.</li>
+            <li>Play it on Game day, then log the battle to build each army's record.</li></ol></section>
+          <section class="panel hp-steps"><h3>For the club</h3><ol>
+            <li>See what's on under <a href="#/community">Community Ledger</a>.</li>
+            <li>On an event, press I'm going and choose your list.</li>
+            <li>Livery Ledger then shows what's left to paint before the day.</li>
+            <li>Share an army so others can see your colours and progress.</li></ol></section>
+        </div>
+      </section>
+
+      <section class="war-sec" id="h-words" aria-labelledby="h-words-h"><div class="sec-h"><h2 id="h-words-h">What the words mean</h2></div>
+        <div class="hp-gloss">${GLOSS_GROUPS.map(([g, title]) => `<section class="panel hp-g" aria-labelledby="hg-${g}"><h3 id="hg-${g}">${esc(title)}</h3><dl>${Object.entries(GLOSSARY).filter(([, v]) => v.g === g).map(([k, v]) => `<div class="hp-w" id="g-${esc(k)}"><dt>${esc(v.t)}</dt><dd>${esc(v.d)}</dd></div>`).join("")}</dl></section>`).join("")}</div>
+      </section>
+
+      <section class="war-sec" id="h-faq" aria-labelledby="h-faq-h"><div class="sec-h"><h2 id="h-faq-h">Questions</h2></div>
+        <div class="lp-faq-list">
+          ${[["Is it free?", "Yes. Every feature is free to use."],
+             ["Why is my army a 'ledger' in one place and an 'army' in another?", "It's the same army. Livery Ledger calls it a ledger, because it's the record of how you're painting it; War Ledger calls it an army. Add units in either and they show in both."],
+             ["Do I need to own the models to make a list?", "No. Army lists can include units you don't own yet, straight from the datasheets. They're marked Not owned and add up on the To buy tab."],
+             ["Who can see my armies?", "Only you, until you share one. A shared army can be seen by anyone with its link, and by logged-in players on Shared armies. Lists and battles are always private."],
+             ["What's the difference between an army list and a Crusade force?", "An army list is for one game at a time. A Crusade force is kept from game to game in a campaign, and its units gain experience and upgrades as they fight."],
+             ["Can I use it on my phone?", "Yes. It works in your phone's browser, and you can install it from the account menu so it opens like an app."],
+             ["How do I keep a copy of my data?", "Settings has Download all my data, and each ledger can be exported as a backup you can bring back later."],
+             ["Who runs it?", "The Eastern Cape Warlords, a Warhammer 40,000 club. It's an unofficial fan tool and isn't endorsed by Games Workshop."]]
+            .map(([q, a]) => `<details class="lp-q"><summary>${esc(q)}</summary><p>${esc(a)}</p></details>`).join("")}
+        </div>
+      </section>`;
+    // Opened at a word or section: scroll to it (after the page settles) and light it up for a moment.
+    if(anchor) setTimeout(() => { const el = document.getElementById(anchor); if(!el) return; el.scrollIntoView({block: "center"}); el.classList.add("hp-hit"); setTimeout(() => el.classList.remove("hp-hit"), 2200); }, 50);
+  }
+
+  /* ---------- the glossary, and ⓘ buttons ----------
+     Short explanations of words people may not know, shown by a small ⓘ beside them (a tap works on phones,
+     where tooltips don't) and listed in full on the Help page. g: which group the Help page puts it in. */
+  const GLOSSARY = {
+    // The tools
+    ledger: {g: "tools", t: "Ledger", d: "A ledger is one army's painting record in Livery Ledger: its colour scheme, recipes and every unit's painting progress. The same army shows in War Ledger's Armoury, ready to build lists from."},
+    armoury: {g: "tools", t: "Armoury", d: "Everything you own in War Ledger, by faction: each unit's points, how much of it is painted and how many of your lists use it."},
+    "not-owned": {g: "tools", t: "Units you don't own", d: "Army lists can include units you don't own yet, straight from the datasheets, so you can try them before you buy. They're marked Not owned, and add up on the To buy tab."},
+    "things-to-check": {g: "tools", t: "Things to check", d: "Friendly notes on a list, like going over the points, having no warlord or a leader with nothing to lead. They never stop you using the list, and you can turn them off in Settings."},
+    "points-check": {g: "tools", t: "Points check", d: "Games Workshop changes units' points from time to time. Points check shows how the latest points change each of your lists, so you're not caught out at an event."},
+    "before-events": {g: "tools", t: "Before your events", d: "For each event you've said you're going to, what's still to paint in the list you're taking, how many days are left and how many models a day that needs."},
+    // Playing Warhammer 40,000
+    datasheet: {g: "play", t: "Datasheet", d: "A unit's rules: its models' profiles, weapons, abilities and keywords, and what it costs in points."},
+    "battle-size": {g: "play", t: "Battle size", d: "How big the game is. Incursion is 1,000 points, Strike Force 2,000 (the usual size) and Onslaught 3,000."},
+    detachment: {g: "play", t: "Detachment", d: "The set of army rules you choose for a list, like Gladius Task Force. It gives the army its special rules, and the enhancements your characters can take."},
+    enhancement: {g: "play", t: "Enhancement", d: "An upgrade from your detachment that one character can take, for extra points. Each enhancement can only be taken once in a list."},
+    warlord: {g: "play", t: "Warlord", d: "The character who commands your army. Every list needs one."},
+    leader: {g: "play", t: "Leading a unit", d: "Some characters can join a unit and lead it. Their datasheet says which units they can lead, and War Ledger checks the one you pick is one of those."},
+    legends: {g: "play", t: "Legends", d: "Older datasheets Games Workshop no longer supports for matched play. They're hidden unless you tick Legends."},
+    cp: {g: "play", t: "Command Points (CP)", d: "What you spend on Stratagems during a game. Each player usually gains 1 in their Command phase."},
+    vp: {g: "play", t: "Victory Points (VP)", d: "What you score from the mission, such as holding objectives. The player with the most at the end wins."},
+    // Crusade
+    crusade: {g: "crusade", t: "Crusade", d: "Warhammer 40,000's campaign mode. You keep the same force from game to game, and its units gain experience, ranks, honours and scars as they fight."},
+    "order-of-battle": {g: "crusade", t: "Order of Battle", d: "Your whole Crusade force. You pick your army for each game from it, and its points can't go over the supply limit."},
+    "supply-limit": {g: "crusade", t: "Supply limit", d: "The most points your Order of Battle can hold. It's the Crusade force's points limit, and can grow as you spend requisition points."},
+    requisition: {g: "crusade", t: "Requisition points", d: "What a Crusade force earns by playing: 1 per battle. Spend them on things like raising the supply limit, adding units or removing a battle scar."},
+    xp: {g: "crusade", t: "Experience and ranks", d: "Each battle a unit fights gives it 1 experience (XP), and 3 more if it's Marked for Greatness. It rises through the ranks: Battle-ready, Blooded (6 XP), Battle-hardened (16), Heroic (31) and Legendary (51). Usually only characters go past Battle-hardened."},
+    mfg: {g: "crusade", t: "Marked for Greatness", d: "After each Crusade battle, pick one unit that did well. It gains 3 extra experience."},
+    honours: {g: "crusade", t: "Battle honours and scars", d: "Honours are upgrades units earn as they rank up, like a battle trait, a better weapon or a relic. Scars are lasting drawbacks from bad defeats."},
+    "crusade-points": {g: "crusade", t: "Crusade points", d: "1 for each battle honour, less 1 for each battle scar. They show how powerful a Crusade force has become."},
+    // Painting
+    stages: {g: "paint", t: "Painting stages", d: "Built, Primed, Basecoat, Shade, Highlight, Basing and Varnish. Tick each off as you go. A unit counts as painted once all its models are."},
+    ranks: {g: "paint", t: "Ranks", d: "Groups of units, like troops, sergeants, veterans and heroes, so each can have its own helmet or trim colour while the army keeps one scheme."},
+    recipe: {g: "paint", t: "Recipe", d: "The paints and steps for one area, like Prime, Basecoat, Shade, Layer and Highlight. Write it once and use it on any unit in any ledger."},
+    primer: {g: "paint", t: "Priming", d: "A first coat, usually sprayed, that paint sticks to. Black, grey and white are the usual choices."},
+    basecoat: {g: "paint", t: "Basecoat", d: "The solid main colour of an area, painted over the primer in thin coats."},
+    shade: {g: "paint", t: "Shade (wash)", d: "A thin, dark paint that runs into the recesses to add shadow and depth."},
+    highlight: {g: "paint", t: "Highlight", d: "A lighter colour on raised areas and edges, where light would catch."},
+    contrast: {g: "paint", t: "Contrast paints", d: "One-coat paints that basecoat and shade at once over a light primer. Other brands call them Speedpaints or Xpress Colours."},
+    "pile-of-shame": {g: "paint", t: "Pile of shame", d: "Kits you've bought but haven't started. Log them, and move one into a ledger when you start painting it."}
+  };
+  const GLOSS_GROUPS = [["tools", "The tools"], ["play", "Playing Warhammer 40,000"], ["crusade", "Crusade"], ["paint", "Painting"]];
+  // A small ⓘ that explains a word: <button> beside the word, opening a short note (see the handler below).
+  const infoBtn = k => GLOSSARY[k] ? `<button type="button" class="info-i" data-info="${k}" aria-label="What's ${esc(GLOSSARY[k].t.toLowerCase())}?" aria-expanded="false">i</button>` : "";
+  (function infoNotes(){
+    let pop = null, from = null;
+    function close(focus){ if(!pop) return; pop.remove(); pop = null; if(from){ from.setAttribute("aria-expanded", "false"); if(focus) from.focus(); } from = null; }
+    function open(b){
+      const g = GLOSSARY[b.dataset.info]; if(!g) return;
+      close(); from = b; b.setAttribute("aria-expanded", "true");
+      pop = document.createElement("div"); pop.className = "infopop"; pop.setAttribute("role", "dialog"); pop.setAttribute("aria-label", g.t);
+      pop.innerHTML = `<strong>${esc(g.t)}</strong><p>${esc(g.d)}</p><a href="#/help#g-${esc(b.dataset.info)}">More in Help</a>`;
+      (b.closest("dialog[open]") || document.body).appendChild(pop);
+      place();
+    }
+    // Beside its ⓘ, below it if there's room; it follows the ⓘ as the page scrolls, and closes once that's out of sight.
+    function place(){
+      if(!pop || !from) return;
+      if(!from.isConnected){ close(); return; }
+      const r = from.getBoundingClientRect(), p = pop.getBoundingClientRect();
+      if(r.bottom < 0 || r.top > innerHeight){ close(); return; }
+      let top = r.bottom + 8; if(top + p.height > innerHeight - 8) top = Math.max(8, r.top - p.height - 8);
+      pop.style.top = Math.round(top) + "px"; pop.style.left = Math.round(Math.max(8, Math.min(r.left + r.width / 2 - p.width / 2, innerWidth - p.width - 8))) + "px";
+    }
+    document.addEventListener("click", e => {
+      const b = e.target.closest("[data-info]");
+      if(b){ e.preventDefault(); e.stopPropagation(); if(from === b) close(); else open(b); return; }
+      if(pop && !pop.contains(e.target)) close();
+      else if(pop && e.target.closest("a")) close();
+    }, true);
+    document.addEventListener("keydown", e => { if(e.key === "Escape" && pop){ e.stopPropagation(); close(true); } }, true);
+    window.addEventListener("scroll", place, true);
+    window.addEventListener("resize", place);
+    window.addEventListener("hashchange", () => close());
+  })();
+
+  /* ---------- tooltips ----------
+     A short line about what a button, link or tab does, shown when you point at it (after a moment) or tab to it.
+     Text comes from the element's data-tip, then its title (moved into data-tip so the browser's own doesn't show
+     too), then TIPS below, which covers the tabs, the top bar and the main buttons without touching every template.
+     Not on touch screens: there, the ⓘ buttons explain things instead. */
+  const TIPS = [
+    // Top bar
+    ['.mode-switch a[href="#/livery"]', "Livery Ledger: plan your colours and track painting every army"],
+    ['.mode-switch a[href="#/war"]', "War Ledger: your armies, army lists and battles"],
+    [".top-comm", "Community Ledger: club and national events, and armies other players have shared"],
+    ["#b-bg", "Change the background picture"],
+    ["#b-acct", "Your account: every section, settings, help and log out"],
+    // War Ledger tabs
+    ['.war-tabs a[href="#/war"]', "Every unit you own, by faction, with points and painting"],
+    ['.war-tabs a[href="#/war/lists"]', "Lists for your games, with units you own and ones you don't"],
+    ['.war-tabs a[href="#/war/datasheets"]', "Every faction's datasheets, with points and profiles"],
+    ['.war-tabs a[href="#/war/play"]', "Game day: take a list to the table on your phone"],
+    ['.war-tabs a[href="#/war/battles"]', "Games you've logged, and each army's record"],
+    ['.war-tabs a[href="#/war/events"]', "Club and national events to sign up for with a list"],
+    ['.war-tabs a[href="#/war/buy"]', "Units your lists want that you don't own yet"],
+    // Livery Ledger tabs
+    ['.war-tabs a[href="#/livery"]', "Your painting at a glance: status, what's up next and deadlines"],
+    ['.war-tabs a[href="#/livery/ledgers"]', "A ledger is an army's colour scheme and painting record"],
+    ['.war-tabs a[href="#/livery/collection"]', "Every unit you own, across all your ledgers"],
+    ['.war-tabs a[href="#/livery/projects"]', "Painting goals with a finish date"],
+    ['.war-tabs a[href="#/livery/paints"]', "Your recipes, the paints you own and what to buy"],
+    ['.war-tabs a[href="#/livery/activity"]', "Models painted month by month, time at the desk and your goal"],
+    // Community Ledger tabs
+    ['.war-tabs a[href="#/community"]', "Events coming up and what's happening in the community"],
+    ['.war-tabs a[href="#/community/shared"]', "Armies other painters have shared"],
+    // War Ledger buttons
+    ["[data-coll-add]", "Add a unit you own to one of your armies"],
+    ['a[href="#/war/new"]', "Start a new army: pick its faction, then add your units"],
+    ["[data-import-army]", "Paste a list from the Warhammer 40,000 app, New Recruit or BattleScribe to add all its units"],
+    ["[data-new-list]", "Make a list: an army list for a game, or a Crusade force for a campaign"],
+    ['a[href="#/war/points"]', "See how the latest points change each of your lists"],
+    ['a[href$="/play"]', "Open the list at the table: rounds, Command Points, the score and datasheets"],
+    ["[data-log]", "Record a game: who you played, the mission, the score and your best unit"],
+    ["[data-import]", "Paste a list to add its units to this one"],
+    ["[data-export]", "Copy or download this list as text, to send to an opponent or organiser"],
+    ["[data-details]", "Change the list's name, points limit, battle size and detachment"],
+    ["#wl-more", "Print, duplicate, compare or delete this list"],
+    ["#wa-more", "Rename or delete this army, and more"],
+    ["[data-sheet-of], [data-view], [data-peek]", "See the datasheet: profiles, weapons and points"],
+    ["[data-opts]", "Warlord, enhancement and which unit this character leads"],
+    ["[data-dupe]", "Add another copy of this unit"],
+    ["[data-print]", "A clean copy to print or save as a PDF"],
+    ["[data-full-list]", "Make a list with every unit in this army"],
+    ["[data-rp]", "Spend requisition points, or add some you've earned"],
+    ["#cmp-swap", "Swap the two lists round"],
+    ["[data-ev-join]", "Say you're going, and choose the list you're taking"],
+    ["[data-ev-log]", "Log a battle you played at this event"],
+    ["[data-tag-add]", "Add this battle, logged by a friend against you, to your own record"],
+    ["[data-wstar], [data-star]", "Star it to keep it with your favourites"],
+    // Livery Ledger buttons
+    ["#b-add, #ro-add, #b-fab, [data-add-unit]", "Add a unit, with its datasheet, colours and painting stages"],
+    ["#b-list, [data-from-list]", "Paste an army list to add all its units at once"],
+    ["#b-select, #ro-sel", "Pick several units to set their stage, mark them painted or star them together"],
+    ["#b-share", "Share a read-only link to this ledger"],
+    ["#b-limit", "The points you're building this army to"],
+    ["#b-more", "Colours, the painting guide, backups and more"],
+    ["button.step[data-step]", "Tick off the next painting stage"],
+    ["[data-timer]", "Time your painting on this unit"],
+    ["[data-lab]", "Try other colour schemes on this unit, side by side, before changing anything"],
+    ["[data-compare]", "Wipe between the unit's first and latest photos"],
+    ["[data-share-unit]", "Make a picture of the finished unit to share"],
+    ["[data-jn-add]", "Save this note in the unit's painting journal"],
+    ['[data-pa="level"]', "Tap to mark it running low, again for empty. Low and empty paints go on your To buy list"],
+    ['[data-pa="got"]', "You have it: add it to My paints"],
+    ['[data-pa="match"]', "Compare it with the paints you own"],
+    ['[data-pt="recipes"]', "Your paint recipes, shared by all your ledgers"],
+    ['[data-pt="owned"]', "The paints on your shelf"],
+    ['[data-pt="buy"]', "Paints your colours and recipes need, and ones running low"],
+    ['[data-pt="match"]', "Find the closest paints to any paint, yours first"],
+    ["[data-pj-new]", "Set a goal: pick the units and a date to finish by"],
+    ["[data-pj-edit]", "Change or delete this project"],
+    ["#yr-share", "Make a picture of your year to share"],
+    ['a[href^="#/livery/year"]', "Your year of painting: models, time, busiest month and favourite paints"],
+    ['a[href="#/shame"]', "Kits you've bought but haven't started yet"],
+    ['a[href="#/livery/collection"]', "Every unit you own, across all your ledgers"],
+    ["[data-start]", "Take this kit off the pile and start painting it in a ledger"],
+    // Community Ledger buttons
+    ["[data-like]", "Like this army"],
+    ["[data-follow]", "Follow this painter to find their armies under Following"],
+    ['[data-show="following"]', "Only armies from painters you follow"],
+    ['[data-show="mine"]', "Only the armies you've shared"],
+    // Everywhere
+    ['a[href="#/settings"]', "Your name, picture, currency, backups and account"],
+    ['a[href="#/help"]', "What each tool does, what the words mean, and common questions"]
+  ];
+  (function tooltips(){
+    const box = document.createElement("div");
+    box.className = "tipbox"; box.id = "tipbox"; box.setAttribute("role", "tooltip"); box.hidden = true;
+    document.body.appendChild(box);
+    const ANY = ["[data-tip]", "button[title]", "a[title]", "label[title]", "span[title]", ...TIPS.map(t => t[0])].join(",");
+    let cur = null, timer = 0, touch = false;
+    function tipFor(target){
+      const el = target && target.closest ? target.closest(ANY) : null;
+      if(!el || el.closest("svg") || el.closest(".tipbox")) return null;
+      if(el.hasAttribute("title") && !el.dataset.tip){ el.dataset.tip = el.getAttribute("title"); el.removeAttribute("title"); }
+      if(!el.dataset.tip){ const r = TIPS.find(t => el.matches(t[0])); if(!r) return null; el.dataset.tip = r[1]; }
+      return el;
+    }
+    function place(){
+      if(!cur) return;
+      if(!cur.isConnected){ hide(); return; }
+      const r = cur.getBoundingClientRect(), b = box.getBoundingClientRect();
+      let top = r.top - b.height - 8; if(top < 8) top = r.bottom + 8;
+      box.style.top = Math.round(top) + "px";
+      box.style.left = Math.round(Math.max(8, Math.min(r.left + r.width / 2 - b.width / 2, innerWidth - b.width - 8))) + "px";
+    }
+    function show(el){ cur = el; (el.closest("dialog[open]") || document.body).appendChild(box); box.textContent = el.dataset.tip; box.hidden = false; if(!el.hasAttribute("aria-describedby")) el.setAttribute("aria-describedby", "tipbox"); place(); }
+    function hide(){ clearTimeout(timer); if(cur && cur.getAttribute("aria-describedby") === "tipbox") cur.removeAttribute("aria-describedby"); cur = null; box.hidden = true; }
+    document.addEventListener("pointerdown", e => { touch = e.pointerType === "touch"; hide(); }, true);
+    document.addEventListener("mouseover", e => {
+      if(touch) return;
+      const el = tipFor(e.target); if(el === cur) return;
+      hide(); if(el) timer = setTimeout(() => { if(el.isConnected && el.matches(":hover")) show(el); }, 450);
+    });
+    document.addEventListener("mouseout", e => { if(cur && !cur.contains(e.relatedTarget)) hide(); else if(!cur) clearTimeout(timer); });
+    document.addEventListener("focusin", e => { hide(); if(touch) return; const el = tipFor(e.target); if(el && el === e.target && el.matches(":focus-visible")) show(el); });
+    document.addEventListener("focusout", hide);
+    document.addEventListener("keydown", e => { if(e.key === "Escape") hide(); });
+    window.addEventListener("scroll", hide, true);
+    window.addEventListener("hashchange", hide);
+  })();
+
   // Dialogs that scroll inside (editor, paints) must never scroll as a whole; if a browser does it anyway, put it back.
   // Only the editor and paints dialogs: others (unit details, sign in, import) scroll normally.
   document.addEventListener("scroll", e => { const d = e.target; if(d && d.tagName === "DIALOG" && d.matches(".editdlg, .paintdlg") && (d.scrollTop || d.scrollLeft)){ d.scrollTop = 0; d.scrollLeft = 0; } }, true);

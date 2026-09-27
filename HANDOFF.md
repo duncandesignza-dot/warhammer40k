@@ -181,6 +181,13 @@ python3 tools/build_factions.py bsdata && python3 tools/build_sheets.py bsdata
   - The background picker (`.bgpick`) is moved into the top bar beside the profile menu (or the log in buttons) each time `setTop()` redraws it.
   - On the Community page `html[data-page="community"]` turns the accents gold (the `--brand` variables), neither side of the Livery/War switch is lit, and the header logo shows the two figures over "Livery Ledger". The saved mode (`ll-mode`) is left as it was.
 
+- **Helping people understand it:**
+  - **Tooltips** (`TIPS` and the `tooltips()` block): a styled line on hover (after 450ms) or keyboard focus, never on touch. Text comes from `data-tip`, then `title` (moved into `data-tip`), then the first matching `TIPS` selector, which covers the tabs, top bar and main buttons. Add a new button's tip there.
+  - **ⓘ notes** (`GLOSSARY`, `infoBtn(key)`, `infoNotes()`): a tap or click opens a short explanation with "More in Help". They work on phones. They sit beside jargon: battle size, detachment, warlord, enhancement, leading, Legends, Things to check, Points check, CP, VP, Crusade terms, painting stages, ranks, ledger, To buy and Before your events.
+  - **Help** (`#/help`, `viewHelp(anchor)`): the three tools with each tab explained (from `TIPS`), getting started, every `GLOSSARY` word grouped (`GLOSS_GROUPS`, each at `#/help#g-<key>`), and questions. It's linked from the account menu, the footer and every ⓘ. `routeNow` splits `#/page#anchor`.
+  - **Getting started** (`startCard(tool, title, steps)`): a four-step checklist on the Armoury and the Livery Overview, shown until every step is done or it's hidden (`settings.startHide`).
+  - Army lists has one **+ New list** button; its "What's it for?" choice makes an army list or a Crusade force.
+
 ## Data model (what's saved)
 
 - **Army:** `{id, faction, name, scheme, public, owner?}`.
@@ -202,7 +209,7 @@ python3 tools/build_factions.py bsdata && python3 tools/build_sheets.py bsdata
 ## Product decisions to keep
 
 - **An army is what you own**, in both tools (the same units). **A list is for testing**: units from your army plus datasheets you don't own, marked "Not owned", with "You own 3 of 4 units · 160 pts not owned" at the top.
-- War tabs: Armoury (`#/war`), Army lists, Datasheets, Play, Battles, Events, To buy (with a count). Phones' bottom bar has Armoury, Lists, Play, Battles and To buy; Datasheets and Events are buttons on the Armoury.
+- War tabs: Armoury (`#/war`), Army lists, Datasheets, Play, Battles, Events, To buy (with a count). Phones' bottom bar has Armoury, Lists, Play, Battles and To buy; Datasheets and Events are buttons on the Armoury, shown only on phones (`.phone-only`), since the tabs have them elsewhere.
 - **Armoury** (`viewWarDash`/`drawWarDash`): every unit you own by faction, with units, models, points, painting (read-only, from Livery's `painted`), how many lists use each unit and the faction's record. `#/war/collection` and `#/war/armies` redirect here.
 - **Army lists**: every army with its "Full army" card (`fullArmyCard`, opens `#/war/army/<id>`) then its lists. Army pages sit under Army lists; their More menu has "Make a list of the whole army".
 - Events are club or national events listed by hand in `js/data/events.js` (`window.LEDGER_EVENTS`): the owner asks for one to be added, and it's added there and pushed. Players can't add or edit events. Each needs an `id` that never changes (sign-ups are kept against it), `name`, `date` and `kind` (`club`/`national`), plus optional `place`, `notes` and an https `link`. Players sign up ("I'm going", or "I went" after) with a list and notes, kept in `settings.eventLog` (`myEvents`/`saveMyEvent`); the old player-made `settings.events` are dropped. An event's result is the battles logged with your list on its date.

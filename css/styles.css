@@ -2170,3 +2170,62 @@ a.cm-card:hover,a.cm-card:focus-visible{border-color:var(--brand-line)}
   body:has(.lp-dock) .site-foot{padding-bottom:120px}
 }
 @media (min-width:900px) and (prefers-reduced-motion:reduce){.lp-dock{transition:none}}
+/* Links to pages the tabs already have: only shown on a phone, where the tabs give way to the bottom bar
+   (which has no room for them). */
+.phone-only{display:none}
+@media (max-width:640px){body.has-botnav .phone-only{display:inline-flex}}
+/* Tooltips: a short line about what something does. */
+.tipbox{position:fixed;z-index:300;max-width:min(300px,calc(100vw - 16px));padding:7px 11px;border-radius:9px;background:rgba(13,17,20,.97);border:1px solid var(--line-strong);box-shadow:0 12px 30px -10px rgba(0,0,0,.85);color:var(--ink);font-size:.8rem;font-weight:500;line-height:1.35;letter-spacing:normal;text-transform:none;pointer-events:none;animation:tipin .12s ease-out}
+.tipbox[hidden]{display:none}
+@keyframes tipin{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.tipbox{animation:none}}
+/* ⓘ: a tap or click explains the word beside it. */
+.info-i{display:inline-grid;place-items:center;width:18px;height:18px;min-height:0;padding:0;margin:0 0 0 4px;border-radius:50%;border:1px solid var(--line-strong);background:transparent;color:var(--muted);font:italic 700 .72rem/1 Georgia,"Times New Roman",serif;letter-spacing:0;text-transform:none;vertical-align:.12em;cursor:pointer;flex:none}
+.info-i:hover,.info-i[aria-expanded="true"]{color:var(--ink);border-color:var(--brand-line);background:rgba(var(--brand-rgb),.12)}
+h1 .info-i{width:22px;height:22px;font-size:.85rem;vertical-align:.35em}
+.infopop{position:fixed;z-index:310;width:min(320px,calc(100vw - 16px));padding:12px 14px;border-radius:12px;background:rgba(13,17,20,.98);border:1px solid var(--brand-line);box-shadow:0 18px 44px -12px rgba(0,0,0,.9);color:var(--ink);font-size:.86rem;line-height:1.45;text-align:left;text-transform:none;letter-spacing:normal;font-family:var(--body, inherit)}
+.infopop strong{display:block;font-size:.92rem;margin-bottom:4px}
+.infopop p{margin:0 0 8px;color:var(--muted)}
+.infopop a{font-size:.82rem;font-weight:700;color:var(--brand)}
+/* Help */
+.hp-nav{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 8px}
+.hp-nav a{padding:7px 14px;border:1px solid var(--line-strong);border-radius:99px;background:var(--surface-2);color:var(--ink);font-size:.86rem;font-weight:700;text-decoration:none}
+.hp-nav a:hover,.hp-nav a:focus-visible{border-color:var(--brand-line)}
+.hp-tools{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:12px;align-items:start;margin-top:12px}
+.hp-tools>.panel,.hp-gloss>.panel{margin:0}
+.panel.hp-tool h3,.panel.hp-steps h3,.panel.hp-g h3{display:flex;align-items:center;gap:10px;margin:0 0 8px;font-family:var(--display);font-size:1.08rem;text-transform:none;letter-spacing:-.01em;color:var(--ink)}
+.hp-tool .lps-ico{opacity:1;filter:none}.hp-tool .lps-ico svg{width:30px;height:30px}
+.hp-tool>p{margin:0 0 12px;color:var(--muted)}
+.hp-tool.liv{border-color:rgba(61,220,132,.35)}.hp-tool.war{border-color:rgba(236,90,95,.35)}.hp-tool.comm{border-color:rgba(245,184,61,.35)}
+.hp-tabs{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.hp-tabs li{display:flex;flex-direction:column;gap:1px}
+.hp-tabs a{font-weight:700;color:var(--ink)}
+.hp-tabs span{font-size:.86rem;color:var(--muted)}
+.hp-steps ol{margin:0;padding-left:20px;display:grid;gap:6px;color:var(--muted)}
+.hp-steps a{color:var(--ink);font-weight:700}
+.hp-gloss{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px;align-items:start;margin-top:12px}
+.hp-g dl{margin:0;display:grid;gap:12px}
+.hp-w{scroll-margin-top:90px;border-radius:10px;padding:6px 8px;margin:-6px -8px;transition:background .6s}
+.hp-w dt{font-weight:700}
+.hp-w dd{margin:2px 0 0;color:var(--muted);font-size:.92rem}
+.hp-hit{background:rgba(var(--brand-rgb),.16)}
+.foot-links{margin:0 0 8px}
+.foot-links a{color:var(--ink);font-weight:600}
+/* Getting started */
+.start-card{margin:0 0 18px;border-color:var(--brand-line);background:radial-gradient(600px 240px at 0% 0%,rgba(var(--brand-rgb),.1),transparent 70%),var(--surface)}
+.st-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px}
+.panel.start-card h2{margin:0;font-family:var(--display);font-size:1.1rem;text-transform:none;letter-spacing:-.01em;color:var(--ink)}
+.st-head small{color:var(--muted);font-size:.84rem}
+.st-steps{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
+.st-steps li{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
+.st-steps li>span:last-child{display:flex;flex-direction:column;gap:2px;min-width:0}
+.st-steps a{font-weight:700;color:var(--ink)}
+.st-steps small{color:var(--muted);font-size:.82rem}
+.st-n{display:grid;place-items:center;flex:none;width:26px;height:26px;border-radius:50%;border:1px solid var(--brand-line);color:var(--brand);font-weight:800;font-size:.84rem}
+.st-steps li.done{opacity:.65}.st-steps li.done a{text-decoration:line-through}
+.st-steps li.done .st-n{background:var(--brand);color:var(--brand-ink);border-color:var(--brand)}
+/* The glossary is one word under another, whatever the site's general list styles say. */
+.hp-g dl{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;margin:0}
+.hp-g .hp-w{display:block}
+.hp-g dt{font-family:inherit;font-size:.95rem;font-weight:700;text-transform:none;letter-spacing:normal;color:var(--ink)}
+.hp-g dd{margin:2px 0 0;font-size:.9rem;color:var(--muted)}
