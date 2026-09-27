@@ -34,14 +34,12 @@ test("a unit can live in the collection without an army, and lists can use it", 
 });
 
 test("the collection works like the roster: a summary, quick filters and grouping", async ({page}) => {
-  await seed(page, `db.units.push({id: "u9", armyId: "a1", name: "Gladiator Lancer", datasheet: "Gladiator Lancer", role: "Vehicle", count: 1, points: 160, painted: 0, stages: [], own: "planned", fav: true});`);
+  await seed(page, `db.units.push({id: "u9", armyId: "a1", name: "Gladiator Lancer", datasheet: "Gladiator Lancer", role: "Vehicle", count: 1, points: 160, painted: 0, stages: [], fav: true});`);
   await open(page, "#/war/collection");
-  // The totals sit under the title, as on the roster. Every unit counts, owned or not, and nothing about painting shows.
+  // The totals sit under the title, as on the roster, and nothing about painting shows.
   await expect(page.locator(".page-head .sub")).toHaveText("7 units · 39 models · 1,070 pts".replace(/ pts/, "\u00a0pts"));
   await expect(page.locator(".wc-group thead").first()).toHaveText(/Unit\s*Role\s*Models\s*Points/);
   await expect(page.locator("main")).not.toContainText(/battle ready|Painted/i);
-  // A unit you don't own is marked Planned: it's in War Ledger for planning, not in Livery Ledger.
-  await expect(page.locator('.wc-group tr:has([data-unit="u9"]) .tag.plan')).toHaveText("Planned");
   const heads = () => page.locator(".wc-group h3").allInnerTexts();
   expect(await heads()).toEqual(["Ultramarines 2nd Company", "Hive Fleet Leviathan"]);
   const rows = () => page.locator(".wc-group tbody tr").count();
@@ -65,14 +63,24 @@ test("the collection works like the roster: a summary, quick filters and groupin
   expect(await heads()).toEqual(["Hive Fleet Leviathan"]);
 });
 
-test("lists and armies work with units you don't own: no readiness or ownership anywhere", async ({page}) => {
-  await seed(page, `db.units.push({id: "u9", armyId: "a1", name: "Gladiator Lancer", datasheet: "Gladiator Lancer", role: "Vehicle", count: 1, points: 160, painted: 0, stages: [], own: "planned"});`);
-  // A list entry pasted from a datasheet sits in the list like any other unit.
+test("an army is what you own; a list can try out units you don't, and marks them until you buy them", async ({page}) => {
+  await seed(page);
+  // Club night has a Gladiator Lancer from the datasheets: it's marked, and the list says how much you own.
   await open(page, "#/war/list/l1");
-  await expect(page.locator(".lr, [data-own], [data-bought]")).toHaveCount(0);
-  await expect(page.locator('.lb-in li:has-text("Gladiator Lancer")')).toContainText("1 model");
+  await expect(page.locator('.lb-in li:has-text("Gladiator Lancer") .tag.plan')).toHaveText("Not owned");
+  await expect(page.locator(".lb-own")).toContainText("You own 3 of 4 units");
+  await expect(page.locator(".lb-own b")).toHaveText("160\u00a0pts");
   await expect(page.locator(".war-stats")).not.toContainText(/battle ready|available/i);
-  // The army counts a planned unit like any other, with no readiness columns, filters, groups or batch actions.
+  // Add units opens on the units you own.
+  await expect(page.locator('[data-add-tab="coll"]')).toHaveAttribute("aria-pressed", "true");
+  // Bought it: it joins the army (and Livery Ledger), keeping its place in the list.
+  await page.click('.lb-in [aria-label="Datasheet, models and points for Gladiator Lancer"]');
+  await page.click("dialog[open] [data-bought]");
+  await expect(page.locator(".lb-own")).toHaveText("You own every unit in this list.");
+  const d = await saved(page), lancer = d.units.find(u => u.name === "Gladiator Lancer");
+  expect(lancer).toMatchObject({armyId: "a1", own: "owned", count: 1, points: 160});
+  expect(d.lists[0].units[3]).toMatchObject({u: lancer.id, k: "d"});
+  // The army has no readiness or ownership columns, filters or batch actions.
   await open(page, "#/war/army/a1");
   await expect(page.locator(".war-stats")).toContainText("5 units");
   await expect(page.locator(".wc-group thead").first()).toHaveText(/Unit\s*Role\s*Models\s*Points/);
@@ -80,17 +88,16 @@ test("lists and armies work with units you don't own: no readiness or ownership 
   expect(await page.locator("#wa-g option").allInnerTexts()).toEqual(["Nothing", "Role"]);
   expect(await page.locator("#wa-s option").allInnerTexts()).toEqual(["Name", "Points (most first)", "Models (most first)"]);
   await page.click("[data-select]");
-  await expect(page.locator('[data-bb="ready"], [data-bb="bought"]')).toHaveCount(0);
+  await expect(page.locator('[data-bb="ready"], [data-bb="bought"], [data-bb="own"]')).toHaveCount(0);
   await page.click('[data-bb="done"]');
-  // The unit editor asks only about the unit itself.
-  await page.click('.wtable [data-unit="u9"]');
+  // The unit editor asks only about the unit itself: an army's units are yours.
+  await page.click(`.wtable [data-unit="${lancer.id}"]`);
   await expect(page.locator("dialog[open] legend")).toHaveText(["Wargear"]);
-  await expect(page.locator("#w-own, #w-built, #w-painted, #w-ready, #w-bought")).toHaveCount(0);
+  await expect(page.locator("#w-owned, #w-own, #w-built, #w-painted, #w-ready, #w-bought")).toHaveCount(0);
   await page.keyboard.press("Escape");
-  // And the overview and settings don't mention it.
+  // The overview shows where the points go, and nothing about readiness.
   await open(page, "#/war");
   await expect(page.locator("main")).not.toContainText(/battle ready|Collection status/i);
-  // Instead it shows where the points go: every unit counts, owned or not (the planned Gladiator Lancer is a vehicle).
   await expect(page.locator(".war-comp .ws-rule")).toHaveText("1,070 pts across 39 models");
   expect(await page.locator(".war-comp .stack-key li").allTextContents()).toEqual(["295 ptsCharacters · 28%", "260 ptsBattleline · 24%", "160 ptsInfantry · 15%", "355 ptsVehicles · 33%"]);
   await open(page, "#/settings");
@@ -286,7 +293,7 @@ test("an army's current force can be grouped and sorted, and the choice is remem
 });
 
 test("select units on an army page: star, add to a list, move and delete", async ({page}) => {
-  await seed(page, `db.units.push({id: "u9", armyId: "a1", name: "Gladiator Lancer", datasheet: "Gladiator Lancer", role: "Vehicle", count: 1, points: 160, painted: 0, stages: [], own: "planned"});
+  await seed(page, `db.units.push({id: "u9", armyId: "a1", name: "Gladiator Lancer", datasheet: "Gladiator Lancer", role: "Vehicle", count: 1, points: 160, painted: 0, stages: []});
     db.lists.push({id: "l2", armyId: "a1", name: "Second list", limit: 1000, units: [], createdAt: "2026-09-02", updatedAt: "2026-09-02"});`);
   await open(page, "#/war/army/a1");
   await page.click("[data-select]");
@@ -338,7 +345,7 @@ test("export a list in New Recruit's tournament layout, and paste it back in wit
   expect(b.units.filter(x => x.lead != null).map(x => [x.n, b.units[x.lead].n])).toEqual(a.units.filter(x => x.lead != null).map(x => [x.n, a.units[x.lead].n]));
 });
 
-test("import an army: the faction is found, and the army, its planned units and a list to test are made", async ({page}) => {
+test("import an army: the faction is found, and the army and a list of units you don't own yet are made", async ({page}) => {
   const text = require("fs").readFileSync(require("path").join(__dirname, "fixtures/newrecruit-world-eaters.txt"), "utf8");
   await seed(page);
   await open(page, "#/war/new");
@@ -355,20 +362,33 @@ test("import an army: the faction is found, and the army, its planned units and 
   await expect(page.locator(".war-stats")).toContainText("1,995");
   const d = await saved(page), army = d.armies.find(a => a.name === "Butchers"), list = d.lists.find(l => l.armyId === army.id);
   expect(army.faction).toBe("world-eaters"); expect(army.scheme.limit).toBe(2000);
-  const units = d.units.filter(u => u.armyId === army.id);
-  expect(units).toHaveLength(17);
-  expect(units.every(u => u.own === "planned")).toBe(true);
+  // The army is what you own, so it starts empty; the list holds the units, not owned yet.
+  expect(d.units.filter(u => u.armyId === army.id)).toHaveLength(0);
+  expect(list.units).toHaveLength(17);
+  expect(list.units.every(e => !e.u && e.n && e.sheet)).toBe(true);
   expect(list).toMatchObject({name: "Butchers", limit: 2000, size: "strike", detachments: ["Berzerker Warband"]});
-  const name = e => units.find(u => u.id === e.u).name;
+  await expect(page.locator(".lb-own")).toContainText("You own 0 of 17 units");
+  const name = e => e.n;
   expect(list.units.filter(e => e.warlord).map(name)).toEqual(["Daemon Prince of Khorne"]);
   // Coward's Bane is Lord Invocatus's own weapon, not an enhancement.
   expect(list.units.filter(e => e.enh)).toEqual([]);
-  expect(units.find(u => u.name === "Lord Invocatus").melee).toBe("Bladed horn, Coward's Bane");
+  expect(list.units.find(e => e.n === "Lord Invocatus").gear).toBe("Bolt pistol, Bladed horn, Coward's Bane");
   expect(list.units.filter(e => e.lead).map(e => [name(e), name(list.units.find(x => x.k === e.lead))])).toEqual([["Khârn the Betrayer", "Khorne Berzerkers"],
     ["Lord Invocatus", "Khorne Berzerkers"], ["Master of Executions", "Khorne Berzerkers"], ["Slaughterbound", "Exalted Eightbound"], ["Slaughterbound", "Eightbound"]]);
-  // Planned units, so none of it shows in Livery Ledger.
+  // Nothing owned, so none of it shows in Livery Ledger.
   await open(page, "#/livery/ledgers");
   await expect(page.locator(".lcard h3")).not.toContainText(["Butchers"]);
+  // Bought the lot: every unit joins the army, leaders and warlord kept.
+  await open(page, `#/war/list/${list.id}`);
+  await page.click("[data-own-all]");
+  await expect(page.locator(".lb-own")).toHaveText("You own every unit in this list.");
+  const d2 = await saved(page), l2 = d2.lists.find(l => l.id === list.id);
+  expect(d2.units.filter(u => u.armyId === army.id)).toHaveLength(17);
+  expect(l2.units.every(e => e.u)).toBe(true);
+  expect(l2.units.filter(e => e.lead)).toHaveLength(5);
+  expect(d2.units.find(u => u.id === l2.units.find(e => e.warlord).u).name).toBe("Daemon Prince of Khorne");
+  await open(page, "#/livery/ledgers");
+  await expect(page.locator(".lcard h3")).toContainText(["Butchers"]);
 });
 
 test("build a list New Recruit style: battle size, detachment, datasheets, unit sizes and copies", async ({page}) => {
@@ -382,6 +402,7 @@ test("build a list New Recruit style: battle size, detachment, datasheets, unit 
   await expect.poll(async () => (await list()).detachments).toEqual(["Gladius Task Force"]);
   expect((await list())).toMatchObject({size: "incursion", limit: 1000});
   // Units come straight from the datasheets at their smallest size.
+  await page.click('[data-add-tab="sheets"]');
   await page.fill("#lb-dq", "intercessor squ");
   await expect(page.locator("#lb-dlist [data-sheet]").first()).toBeVisible();
   expect(await page.locator("#lb-dlist [data-sheet]").evaluateAll(bs => bs.map(b => b.dataset.sheet).every(n => /intercessor squ/i.test(n)))).toBe(true);
@@ -416,7 +437,7 @@ test("build a list New Recruit style: battle size, detachment, datasheets, unit 
 });
 
 test("wargear is picked from the datasheet: imported units can be changed, and anything else typed in", async ({page}) => {
-  await seed(page, `db.units.push({id: "u9", armyId: "a1", name: "Intercessor Squad", datasheet: "Intercessor Squad", role: "Battleline", count: 5, points: 80, painted: 0, stages: [], own: "planned", ranged: "Bolt Rifle, Bolt pistol", melee: "Close combat weapon"});`);
+  await seed(page, `db.units.push({id: "u9", armyId: "a1", name: "Intercessor Squad", datasheet: "Intercessor Squad", role: "Battleline", count: 5, points: 80, painted: 0, stages: [], ranged: "Bolt Rifle, Bolt pistol", melee: "Close combat weapon"});`);
   await open(page, "#/war/army/a1");
   await page.click('.wtable [data-unit="u9"]');
   // What the unit has shows as chips; the dropdown offers the rest of the datasheet's weapons.
@@ -496,6 +517,7 @@ test("the eye shows a unit's datasheet: models, weapons, abilities, rules and ke
   await expect.poll(async () => (await saved(page)).lists[0].units[1].pts).toBe(140);
   // A datasheet can be looked at before it's added.
   // (Deathstorm Drop Pod is a Legends datasheet, so Legends are shown first.)
+  await page.click('[data-add-tab="sheets"]');
   await page.fill("#lb-dq", "deathstorm");
   await page.check("#lb-dl");
   await page.click('[data-peek="Deathstorm Drop Pod"]');
@@ -595,11 +617,16 @@ test("the new army page can import from a list, with the faction and anything ty
   await expect(page.locator("#ia-lim")).toHaveValue("1000");
   await page.fill("#ia-text", "Marshal (80 points)\n  • Warlord\nCrusader Squad (150 points)");
   await expect(page.locator("#ia-go")).toHaveText("Import 2 units");
+  // Units you already have go straight into the army.
+  await page.check("#ia-own");
   await page.click("#ia-go");
   await expect(page).toHaveURL(/#\/war\/list\//);
   const db = await saved(page), army = db.armies.find(a => a.name === "Crusade of Sigismund");
   expect(army.faction).toBe("black-templars");
-  expect(db.units.filter(u => u.armyId === army.id).map(u => u.datasheet).sort()).toEqual(["Crusader Squad", "Marshal"]);
+  const mine = db.units.filter(u => u.armyId === army.id);
+  expect(mine.map(u => u.datasheet).sort()).toEqual(["Crusader Squad", "Marshal"]);
+  expect(mine.every(u => u.own === "owned")).toBe(true);
+  expect(db.lists.find(l => l.armyId === army.id).units.every(e => e.u)).toBe(true);
 });
 
 test("Army lists has Import a list, and the faction picker has a Back button", async ({page}) => {
@@ -610,5 +637,5 @@ test("Army lists has Import a list, and the faction picker has a Back button", a
   await page.click("dialog[open] [data-x]");
   await open(page, "#/war/new");
   await page.click(".war-actions a:has-text('Back')");
-  await expect(page).toHaveURL(/#\/war\/armies$/);
+  await expect(page).toHaveURL(/#\/war$/);
 });
