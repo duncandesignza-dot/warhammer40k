@@ -1,5 +1,5 @@
 // Livery Ledger: making a ledger, adding units, planned units and the colours prompt.
-const {test, expect, seed, saved, open} = require("./helpers");
+const {test, expect, seed, saved, open, mockSupabase} = require("./helpers");
 
 test("make a ledger and add a unit to it", async ({page}) => {
   await page.goto("/#/livery/new");
@@ -162,4 +162,116 @@ test("the ledger counts its units in the totals, leaving planned ones out", asyn
   await open(page, "#/army/a1");
   await expect(page.locator("#st-fin")).toHaveText("1 of 4 units finished");
   await expect(page.locator("#st-models")).toHaveText("17 models");
+});
+
+// A tiny photo, so there's something to compare and share.
+const PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+const dayFrom = n => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
+
+test("overview: before your events shows what's left to paint in your list, and up next shows starred and nearly done units", async ({page}) => {
+  await page.route("**/js/data/events.js", r => r.fulfill({contentType: "text/javascript", body: `window.LEDGER_EVENTS = ${JSON.stringify([{id: "gt", name: "Winter GT", date: dayFrom(2), kind: "national"}])};`}));
+  await seed(page, `db.units.find(u => u.id === "u3").fav = true;`);
+  await page.evaluate(() => localStorage.setItem("ll-settings", JSON.stringify({eventLog: {gt: {listId: "l1", notes: ""}}})));
+  await page.reload();
+  await open(page, "#/livery");
+  // Club night has the Captain (painted), 10 Intercessors (6 painted), a Redemptor (not painted) and a Gladiator Lancer you don't own.
+  const ep = page.locator(".ep");
+  await expect(ep.locator("h3")).toHaveText("Winter GT");
+  await expect(ep.locator(".ep-sum")).toHaveText("5 models to paint, 2 days to go, about 2.5 a day");
+  await expect(ep.locator(".ep-left li")).toHaveText([/Intercessor Squad\s*4 to go · next: shade/, /Redemptor Dreadnought\s*1 to go · next: built/]);
+  await expect(ep).toContainText("1 unit in the list isn't in your collection yet.");
+  // Up next: the starred Terminators, then the nearly done Intercessors, each with its next stage.
+  await expect(page.locator(".un-rows li")).toHaveCount(2);
+  await expect(page.locator(".un-rows li").nth(0)).toContainText("Terminator Squad");
+  await expect(page.locator(".un-rows li").nth(0).locator(".un-next")).toContainText("Basecoat");
+  await expect(page.locator(".un-rows li").nth(1)).toContainText("Intercessor Squad");
+  await expect(page.locator(".un-rows li").nth(1).locator(".un-next")).toContainText("Shade");
+  await expect(page.locator(".un-rows a").first()).toHaveAttribute("href", "#/army/a1/unit/u3");
+  // The event's card in War Ledger says what's still to paint too.
+  await open(page, "#/war/events");
+  await expect(page.locator(".ev-paint")).toContainText("5 models still to paint: about 2.5 a day.");
+});
+
+test("collection: select several units and set a painting stage, or star them, together", async ({page}) => {
+  await seed(page);
+  await open(page, "#/livery/collection");
+  await page.click("#ro-sel");
+  await expect(page.locator("#ro-bar")).toBeVisible();
+  await expect(page.locator("#rb-stage")).toBeDisabled();
+  await page.check('[data-rp="u4"]');
+  await page.check('[data-rp="u5"]');
+  await expect(page.locator("#rb-count")).toHaveText("2 selected");
+  await page.selectOption("#rb-stage", "primed");
+  await expect(page.locator("#toast")).toContainText("Set to Primed: 2 units.");
+  const db = await saved(page);
+  expect(db.units.find(u => u.id === "u4").stages).toEqual(["built", "primed"]);
+  expect(db.units.find(u => u.id === "u5").stages).toEqual(["built", "primed"]);
+  expect(db.units.find(u => u.id === "u3").stages).toEqual(["built", "primed"]);
+  // Still selected: star them, then leave selecting with Escape.
+  await page.click("#rb-star");
+  await expect(page.locator("#toast")).toContainText("Starred: 2 units.");
+  expect((await saved(page)).units.filter(u => u.fav).map(u => u.id).sort()).toEqual(["u4", "u5"]);
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#ro-bar")).toBeHidden();
+  await expect(page.locator('a.ro-row[href="#/army/a1/unit/u4"]')).toBeVisible();
+});
+
+test("paints: mark one running low, then empty, and it goes on the To buy list until you buy more", async ({page}) => {
+  await seed(page);
+  await page.evaluate(() => localStorage.setItem("livery-paints-v1", JSON.stringify(["Abaddon Black", "Macragge Blue"])));
+  await open(page, "#/livery/paints");
+  await page.click('[data-pt="owned"]');
+  const chip = page.locator('.ochip:has-text("Abaddon Black")');
+  await chip.locator("[data-pa=level]").click();
+  await expect(chip.locator(".oc-tag")).toHaveText("Low");
+  await expect(page.locator("[data-pa=level]:focus")).toHaveCount(1);
+  await page.click('[data-pt="buy"]');
+  const row = page.locator('.buy li:has-text("Abaddon Black")');
+  await expect(row).toContainText("Running low");
+  await page.click('[data-pt="owned"]');
+  await chip.locator("[data-pa=level]").click();
+  await expect(chip.locator(".oc-tag")).toHaveText("Empty");
+  expect(JSON.parse(await page.evaluate(() => localStorage.getItem("ll-settings"))).paintLow).toEqual({"Abaddon Black": "empty"});
+  await page.click('[data-pt="buy"]');
+  await expect(row).toContainText("Empty");
+  await row.locator("[data-pa=restocked]").click();
+  await expect(page.locator('.buy li:has-text("Abaddon Black")')).toHaveCount(0);
+  expect(JSON.parse(await page.evaluate(() => localStorage.getItem("ll-settings"))).paintLow).toEqual({});
+});
+
+test("unit photos: compare before and after, and make a picture of a finished unit to share", async ({page}) => {
+  await seed(page, `db.units.find(u => u.id === "u1").image = ${JSON.stringify(PNG)}; db.units.find(u => u.id === "u1").photos = [${JSON.stringify(PNG)}]; db.units.find(u => u.id === "u1").painted = 1;`);
+  await open(page, "#/army/a1/unit/u1");
+  await page.click("[data-compare]");
+  const ba = page.locator("dialog[open] .ba");
+  await expect(ba.locator("img")).toHaveCount(2);
+  await page.locator("#ba-r").fill("20");
+  await expect(ba).toHaveAttribute("style", /--x: ?20%/);
+  await page.click("dialog.wdlg[open] [data-x]");
+  await page.click("[data-share-unit]");
+  await expect(page.locator("#sh-box img")).toHaveAttribute("src", /^blob:/);
+  await expect(page.locator('#sh-acts a[download]')).toHaveAttribute("download", "captain-painted.jpg");
+  // A unit that isn't finished has no share button.
+  await open(page, "#/army/a1/unit/u2");
+  await expect(page.locator("[data-share-unit]")).toHaveCount(0);
+});
+
+test("community: in the header once you're logged in, with the events coming up", async ({page}) => {
+  await page.route("**/js/data/events.js", r => r.fulfill({contentType: "text/javascript", body: `window.LEDGER_EVENTS = ${JSON.stringify([{id: "gt", name: "Winter GT", date: dayFrom(5), kind: "national", place: "Cape Town"}, {id: "old", name: "Old", date: dayFrom(-5)}])};`}));
+  await mockSupabase(page);
+  await page.goto("/#/livery");
+  await page.click(".topnav .top-comm");
+  await expect(page).toHaveURL(/#\/community$/);
+  await expect(page.locator("h1")).toHaveText("Community");
+  await expect(page.locator(".topnav .top-comm")).toHaveAttribute("aria-current", "page");
+  await expect(page.locator(".cm-evs li")).toHaveCount(1);
+  await expect(page.locator(".cm-evs li")).toContainText("Winter GT");
+  await expect(page.locator('.cm-card[href="#/shared"]')).toBeVisible();
+});
+
+test("community: logged out, it asks you to log in, and there's no header link", async ({page}) => {
+  await mockSupabase(page, {signedIn: false});
+  await page.goto("/#/community");
+  await expect(page.locator(".top-comm")).toHaveCount(0);
+  await expect(page.locator("#authdlg[open], dialog[open]")).toContainText("Log in to see the community.");
 });

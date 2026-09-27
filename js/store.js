@@ -455,7 +455,17 @@
      Supabase
      ============================================================ */
   function SupaStore(){
-    const sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY);
+    // A request that gets no answer gives up instead of leaving the page waiting: 20 seconds to read, a minute to save.
+    const timedFetch = (input, init = {}) => {
+      const ctl = new AbortController(), own = init.signal, slow = /^(GET|HEAD)$/i.test(init.method || "GET") ? 20000 : 60000;
+      const t = setTimeout(() => ctl.abort(), slow);
+      if(own){ if(own.aborted) ctl.abort(); else own.addEventListener("abort", () => ctl.abort(), {once: true}); }
+      return fetch(input, {...init, signal: ctl.signal}).catch(e => {
+        if(ctl.signal.aborted && !(own && own.aborted)) throw Object.assign(new Error("Supabase took too long to answer. Check your connection and try again."), {code: "timeout"});
+        throw e;
+      }).finally(() => clearTimeout(t));
+    };
+    const sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY, {global: {fetch: timedFetch}});
     const A = CFG.ARMIES_TABLE || "armies", U = CFG.UNITS_TABLE || "units", B = CFG.BUCKET || "unit-images", R = CFG.RECIPES_TABLE || "recipes";
     const L = "lists", G = "games";
     // A table that hasn't been created yet (the optional ones in features.sql and recipes.sql).

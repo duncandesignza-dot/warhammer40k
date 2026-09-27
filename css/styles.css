@@ -46,9 +46,13 @@ a{color:inherit}
 .brand-mark{width:42px;height:42px;flex:none;filter:drop-shadow(0 0 14px rgba(var(--brand-rgb),.35));transition:transform .2s}
 .brand:hover .brand-mark{transform:rotate(-6deg) scale(1.04)}
 .brand-word b{font-weight:800;background:linear-gradient(100deg,var(--brand),var(--brand-2));-webkit-background-clip:text;background-clip:text;color:transparent}
-@media (max-width:560px){.brand{font-size:1.08rem;gap:8px}.brand-mark{width:32px;height:32px}.top-tools{flex-wrap:nowrap;gap:6px}.topbar-in{gap:8px}}
+@media (max-width:600px){.brand{font-size:1.08rem;gap:8px}.brand-mark{width:32px;height:32px}.top-tools{flex-wrap:nowrap;gap:6px}.topbar-in{gap:8px}}
 @media (max-width:380px){.brand-word{display:none}}
 .top-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+/* The header stays on one row (this comes after the rule above so it wins). */
+.top-tools{flex-wrap:nowrap}
+@media (min-width:601px) and (max-width:640px){.brand{font-size:1.15rem}.brand-mark{width:36px;height:36px}}
+@media (max-width:420px){.brand{font-size:1rem}}
 .who{font-family:var(--mono);font-size:.72rem;color:var(--muted);overflow-wrap:anywhere}
 
 /* type */
@@ -499,6 +503,11 @@ dialog.paintdlg[open]{display:flex}
 .ochip{display:inline-flex;align-items:center;gap:8px;padding:5px 6px 5px 10px;border:1px solid var(--line-strong);border-radius:99px;background:var(--surface-2);font-size:.82rem}
 .ochip button{border:0;background:transparent;padding:0 6px;font-size:1rem;line-height:1;color:var(--muted);border-radius:99px}
 .ochip button:hover:not(:disabled){color:var(--bad);background:rgba(248,113,113,.1)}
+.ochip .oc-lv{display:inline-flex;align-items:center;gap:8px;padding:0;font-size:inherit;color:inherit;border-radius:99px}
+.ochip .oc-lv:hover:not(:disabled){color:inherit;background:transparent;text-decoration:underline}
+.oc-tag{font-family:var(--mono);font-size:.62rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:1px 6px;border-radius:6px;color:var(--warn);background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid color-mix(in srgb,var(--warn) 35%,transparent)}
+.ochip.lv-empty .oc-tag{color:var(--bad);background:color-mix(in srgb,var(--bad) 12%,transparent);border-color:color-mix(in srgb,var(--bad) 35%,transparent)}
+.ochip.lv-low,.ochip.lv-empty{border-style:dashed}
 ul.buy{list-style:none;margin:0;padding:0;border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
 ul.buy li{display:flex;align-items:center;gap:12px;padding:10px 14px;border-top:1px solid var(--line)}
 ul.buy li:first-child{border-top:0}
@@ -909,6 +918,9 @@ button.lg,.btn.lg{padding:13px 22px;font-size:1rem;border-radius:12px}
 .ro-gh .btn-sm{margin-left:auto;flex:none}
 .ro-row{display:grid;grid-template-columns:76px minmax(0,1fr) 150px 76px 96px;gap:14px;align-items:center;padding:8px 14px 8px 10px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);text-decoration:none;color:inherit;transition:border-color .15s,background .15s}
 .ro-row:hover{border-color:var(--brand-line);background:rgba(var(--brand-rgb),.05)}
+.ro-pick{cursor:pointer}.ro-pick .ro-badge{position:relative}
+.ro-pick input[type=checkbox]{position:absolute;left:-2px;top:-2px;z-index:1;width:20px;height:20px;margin:0;accent-color:var(--brand)}
+.ro-pick.on{border-color:var(--brand);background:rgba(var(--brand-rgb),.08)}
 .ro-badge{display:grid;place-items:center}
 .ro-badge svg{width:76px;height:auto}
 .ro-name{min-width:0}
@@ -1954,10 +1966,14 @@ dialog.wdlg.xwide{max-width:min(1120px,calc(100vw - 24px))}
 .ev-warn{color:var(--warn,#facc15);font-size:.88rem}
 .ev-notes{white-space:pre-line;font-size:.9rem;color:var(--muted)}
 .ev-res b{font-family:var(--mono)}
+.ev-kind{margin:0 4px 0 0;vertical-align:1px}.ev-kind.national{color:var(--warn);background:color-mix(in srgb,var(--warn) 12%,transparent);border-color:color-mix(in srgb,var(--warn) 35%,transparent)}
+.ev-link a{font-size:.88rem}
+.ev-mine{margin-top:12px;padding-top:2px;border-top:1px solid var(--line)}
+.ev.going{border-color:color-mix(in srgb,var(--good) 40%,var(--line))}
 .pp-rows{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
 .pp-rows li{display:flex;align-items:center;gap:12px;padding:10px 14px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface)}
 /* Armoury: your units by faction, with painting progress from Livery Ledger. */
-.ar-tools{margin:0 0 6px}.ar-tools input{width:100%;max-width:420px}
+.ar-tools{margin:16px 0 6px}.ar-tools input[type=search]{width:100%;flex:1 1 100%}
 .ar-fac{margin-top:26px}
 .ar-head{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:8px}
 .ar-title{flex:1;min-width:180px}.ar-title h2{margin:0}
@@ -1970,3 +1986,62 @@ dialog.wdlg.xwide{max-width:min(1120px,calc(100vw - 24px))}
 .ar-meta .ar-chip small{color:var(--muted);font-family:var(--mono)}
 .ar-paint{font-family:var(--mono)}.ar-paint.done{color:var(--good)}
 .full-army{border-style:dashed}
+/* A page taking a moment to load: a bar along the top of the screen. */
+body.loading::before{content:"";position:fixed;top:0;left:0;right:0;height:3px;z-index:200;pointer-events:none;
+  background:linear-gradient(90deg,transparent,var(--brand) 40%,var(--brand-hi) 60%,transparent);background-size:50% 100%;background-repeat:no-repeat;
+  animation:loadbar 1.1s ease-in-out infinite}
+@keyframes loadbar{from{background-position:-50% 0}to{background-position:150% 0}}
+@media (prefers-reduced-motion:reduce){body.loading::before{animation:none;background:var(--brand);opacity:.7}}
+/* Before and after, and the share picture. */
+.media-acts{margin-top:10px}
+.ba{position:relative;overflow:hidden;border-radius:var(--r);border:1px solid var(--line);background:#000;aspect-ratio:4/5;width:min(100%,calc(70vh * .8));margin:0 auto;user-select:none;flex:none}
+.ba img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.ba-before{position:absolute;inset:0;clip-path:inset(0 calc(100% - var(--x)) 0 0)}
+.ba-line{position:absolute;top:0;bottom:0;left:var(--x);width:2px;margin-left:-1px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.4);pointer-events:none}
+.ba-tag{position:absolute;top:10px;font-family:var(--mono);font-size:.66rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;border-radius:6px;background:rgba(0,0,0,.6);color:#fff}
+.ba-tag.b{left:10px}.ba-tag.a{right:10px}
+.ba-r{width:100%;margin:12px 0 4px;accent-color:var(--brand)}
+.ba-pick{margin-top:6px}
+.share-img img{display:block;width:100%;max-width:420px;margin:0 auto;border-radius:var(--r);border:1px solid var(--line)}
+/* Livery overview: before your events, and up next. */
+.ep-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;align-items:start}
+.ep-grid>.panel{margin:0}
+.ep-top{display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap}
+.panel.ep .ep-top h3{margin:0;font-family:inherit;font-size:1.02rem;text-transform:none;letter-spacing:normal;color:var(--ink);font-weight:700}.ep-top small,.ep-left small{color:var(--muted);font-size:.84rem}
+.ep p{margin:8px 0 0}.ep .wbar{margin-top:12px}.ep .wbar i{background:var(--good)}
+.ep-sum{font-size:.92rem}.ep-sum b{font-weight:700}
+.ep-left{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:4px;font-size:.9rem}
+.ep-left li{display:flex;justify-content:space-between;gap:10px}
+.ep .ep-left+.hint,.ep .wbar+.ep-sum+.hint{margin-top:12px}
+.ev-paint{font-size:.88rem}
+.un-rows{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:8px}
+.un-rows a{display:flex;align-items:center;gap:12px;padding:8px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:inherit;text-decoration:none}
+.un-rows a:hover,.un-rows a:focus-visible{border-color:var(--brand-line)}
+.un-rows .lb-name{flex:1;min-width:0;display:flex;flex-direction:column;font-weight:600}
+.un-rows .lb-name small{color:var(--muted);font-weight:400;font-size:.82rem}
+.un-rows .star{display:inline-flex;vertical-align:-3px;margin-right:4px}
+.un-next{display:flex;flex-direction:column;align-items:flex-end;font-size:.86rem;font-weight:600;color:var(--brand);white-space:nowrap}
+.un-next small{font-family:var(--mono);font-size:.6rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:700}
+/* Community: in the header for logged-in players, and its page. */
+.top-comm{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:0 14px;border:1px solid var(--line-strong);border-radius:99px;background:var(--surface-2);color:var(--muted);font-size:.86rem;font-weight:700;text-decoration:none;transition:color .2s,border-color .2s,background .2s}
+.top-comm:hover,.top-comm[aria-current]{color:var(--ink);border-color:var(--brand-line)}
+.top-comm[aria-current]{background:rgba(var(--brand-rgb),.12)}
+@media (min-width:900px){.top-comm{min-height:54px;padding:0 18px;border-radius:16px;background:rgba(13,17,20,.72);font-family:var(--display);font-size:.95rem;font-weight:800}}
+@media (min-width:900px) and (max-width:1099px){.top-comm{width:54px}}
+@media (max-width:1099px){.top-comm{width:40px;padding:0;justify-content:center}.top-comm span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}}
+/* On a phone there isn't room in the header: Community is in the account menu. */
+@media (max-width:480px){.top-comm{display:none}}
+.cm-evs{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px}
+.cm-evs a{display:flex;align-items:center;gap:10px;padding:10px 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:inherit;text-decoration:none}
+.cm-evs a:hover,.cm-evs a:focus-visible{border-color:var(--brand-line)}
+.cm-evs .lb-name{flex:1;min-width:0;display:flex;flex-direction:column;font-weight:600}
+.cm-evs .lb-name small{color:var(--muted);font-weight:400;font-size:.82rem}
+.cm-going{font-size:.78rem;font-weight:700;color:var(--good);white-space:nowrap}
+.cm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-top:24px}
+.cm-grid>.panel{margin:0}
+.cm-card{display:flex;flex-direction:column;gap:8px;color:inherit;text-decoration:none}
+.panel.cm-card h2{margin:0;font-family:inherit;font-size:1.1rem;text-transform:none;letter-spacing:normal;color:var(--ink);font-weight:700}.cm-card .sub{margin:0}
+a.cm-card:hover,a.cm-card:focus-visible{border-color:var(--brand-line)}
+.cm-go{margin-top:auto;font-weight:700;color:var(--brand)}
+.cm-card .tag{align-self:flex-start;margin:auto 0 0}
+.cm-card.later{opacity:.8}

@@ -66,6 +66,7 @@ function supabaseMock(){
         if(op === "insert"){ const arr = (Array.isArray(payload) ? payload : [payload]).map(p => ({id: "x" + Math.random().toString(36).slice(2), owner: "u1", created_at: new Date().toISOString(), ...JSON.parse(JSON.stringify(p))})); rows().push(...arr); return {data: arr, error: null}; }
         if(op === "update"){ const hit = rows().filter(match); hit.forEach(r => Object.assign(r, JSON.parse(JSON.stringify(payload)))); return {data: hit, error: null}; }
         if(op === "delete"){ window.__db[t] = rows().filter(r => !match(r)); return {data: null, error: null}; }
+        (window.__reads = window.__reads || {})[t] = (window.__reads[t] || 0) + 1;   // reads of each table, for the cache test
         return {data: rows().filter(match), error: null};
       };
       const h = {get(_, k){

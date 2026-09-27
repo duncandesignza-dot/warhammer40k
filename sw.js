@@ -4,7 +4,7 @@
    - Photos and the Supabase library: saved once, then served from the device. */
 const SHELL = "ll-shell-v1", DATA = "ll-data-v1", MEDIA = "ll-media-v1";
 const CORE = ["./", "index.html", "css/styles.css", "js/config.js", "js/data/factions.js", "js/data/emblems.js",
-  "js/data/presets.js", "js/art.js", "js/paints.js", "js/store.js", "js/app.js", "img/logo.svg", "manifest.webmanifest"];
+  "js/data/presets.js", "js/data/events.js", "js/art.js", "js/paints.js", "js/store.js", "js/app.js", "img/logo.svg", "manifest.webmanifest"];
 
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(SHELL).then(c => Promise.all(CORE.map(u => c.add(u).catch(() => {})))).then(() => self.skipWaiting()));
