@@ -100,13 +100,14 @@
      Shared bits
      ============================================================ */
   const SKIN = "#c79a7e";
+  const capFirst = t => String(t || "").charAt(0).toUpperCase() + String(t || "").slice(1);
   // Head type: "helmet", "bare" (only where the faction has bare heads) or "none". Older saves used noHelmet.
   const headOf = u => { const h = ["helmet","bare","none"].includes(u.head) ? u.head : (u.noHelmet ? "bare" : "helmet"); return h === "bare" && !PROF.bare ? "helmet" : h; };
   const autoHead = role => PROF.noHeadRoles.includes(role) ? "none" : PROF.defaultHead;
   function unitBadge(u, scheme, size){
     const c = scheme.colors;
-    const tier = scheme.tiers[u.tier] || scheme.tiers[0];
-    // A unit looks like its army, with its rank's helmet colour.
+    const tier = scheme.tiers[0];
+    // A unit looks like its army.
     const v = {
       helmet: (tier && tier.color) || c.armour, lens: c.lens, armour: c.armour,
       secondary: c.secondary, trim: c.trim, emblem: c.emblem,
@@ -1164,7 +1165,7 @@
   function unitRow(army, sh, extra){
     const scheme = army.scheme, c = scheme.colors, role = sh ? sh.r : ((extra && extra.role) || "Infantry");
     const keep = PROF; PROF = P.profileFor(army.faction);
-    const tierIdx = (role === "Epic Hero" || role === "Character") ? Math.min(2, scheme.tiers.length - 1) : 0;
+    const tierIdx = 0;
     const def = sh ? sheetDefaults(sh) : {count: 1, points: 0};
     const row = {datasheet: sh ? sh.n : "", role, name: sh ? sh.n : "", count: def.count, points: def.points, stages: [], painted: 0, tier: tierIdx,
       helmet: scheme.tiers[tierIdx].color, head: autoHead(role), skin: c.skin, lens: c.lens, armour: c.armour, secondary: c.secondary, trim: c.trim, emblem: c.emblem, shape: "",
@@ -3847,7 +3848,7 @@
         const us = units.filter(u => u.armyId === a.id), used = new Set(us.flatMap(u => u.recipes || []));
         (a.scheme.recipes || []).filter(r => used.has(r.id)).forEach(r => r.steps.forEach(st => add(st.p, a.name)));
         Object.values(a.scheme.slotPaints || {}).forEach(p => add(p, a.name));
-        (a.scheme.tiers || []).forEach(t => add(t.paint, a.name));
+        add(((a.scheme.tiers || [])[0] || {}).paint, a.name);
         Object.values(a.scheme.xareas || {}).forEach(v => add(v && v.paint, a.name));
         us.forEach(u => (u.paintsUsed || []).forEach(p => add(p, a.name)));
       });
@@ -4489,10 +4490,10 @@
             <p class="eyebrow">Colour schemes</p>
             <h3>Your army's colours, area by area</h3>
             <p>Pick your faction and start from its official Citadel colours, or a known scheme like a successor chapter. Then make it yours: armour, trim, lenses and cloth, each pauldron, and extra areas for weapons and details.</p>
-            <ul class="lp-list"><li>${tick}Official colours for every faction</li><li>${tick}Rank colours for sergeants, veterans and heroes</li><li>${tick}A scheme lab to try other colours on a unit, side by side</li></ul>
+            <ul class="lp-list"><li>${tick}Official colours for every faction</li><li>${tick}A scheme lab to try other colours on a unit, side by side</li></ul>
           </div>
           ${shot("colours", "Choosing an army's colours in Livery Ledger", `<div class="ill ill-scheme">
-            <div class="ill-badges">${demo.tiers.map(t => `<div>${b(t.color, 92)}<small>${esc(t.name)}</small></div>`).join("")}</div>
+            <div class="ill-badges"><div>${b(demo.tiers[0].color, 92)}</div></div>
             <div class="ill-rows">${swatch("Armour", "armour")}${swatch("Trim", "trim")}${swatch("Markings", "secondary")}${swatch("Lenses", "lens")}</div>
           </div>`)}
         </article>
@@ -4788,7 +4789,7 @@ Redemptor Dreadnought (210 points)</pre>
           <div class="lp-cta-btns"><button type="button" class="primary" data-lp-mode="livery">See Livery Ledger</button>${me || !online ? `<a class="btn" href="#/livery">Open Livery Ledger</a>` : ""}</div>
         </div>
         <div class="lpw-art" aria-hidden="true">
-          <div class="ill-card"><div class="ill-badges">${demo.tiers.map(t => `<div>${b(t.color, 72)}<small>${esc(t.name)}</small></div>`).join("")}</div></div>
+          <div class="ill-card"><div class="ill-badges"><div>${b(demo.tiers[0].color, 72)}</div></div></div>
           <div class="ill-rows">${swatch("Armour", "armour")}${swatch("Trim", "trim")}${swatch("Lenses", "lens")}</div>
         </div>
       </section>
@@ -5007,7 +5008,7 @@ Redemptor Dreadnought (210 points)</pre>
     }));
   }
   /* ============================================================
-     Painting guide: one printable page with an army's colours, ranks, recipes, units and paints
+     Painting guide: one printable page with an army's colours, recipes, units and paints
      ============================================================ */
   async function viewGuide(armyId){
     view.name = "guide";
@@ -5035,8 +5036,7 @@ Redemptor Dreadnought (210 points)</pre>
     const XA = P.extrasFor(army.faction), xaAll = XA.details.concat(XA.weapons);
     const xa = Object.entries(scheme.xareas || {}).map(([id, v]) => ({label: (xaAll.find(a => a.id === id) || {label: id.slice(2)}).label, ...v}));
     const recipes = scheme.recipes || [];
-    const tierOf = u => scheme.tiers[u.tier] || scheme.tiers[0] || {};
-    const sorted = units.slice().sort((a, b) => (b.tier - a.tier) || String(a.name).localeCompare(String(b.name)));
+    const sorted = units.slice().sort((a, b) => String(a.name).localeCompare(String(b.name)));
     // The paints used on a unit (they go on the paint list too).
     const usedOf = u => (u.paintsUsed || []).map(p => { note(p); return esc(PU.shortName(p)); });
     const models = units.reduce((n, u) => n + (+u.count || 0), 0), done = units.reduce((n, u) => n + Math.min(+u.count || 0, +u.painted || 0), 0);
@@ -5064,13 +5064,6 @@ Redemptor Dreadnought (210 points)</pre>
           </tbody></table>
         </section>
 
-        <section class="g-sec">
-          <h2>Ranks <small>${esc(PROF.head)} colour</small></h2>
-          <table class="g-table"><tbody>
-            ${scheme.tiers.map(t => `<tr><th>${esc(t.name)}${t.note ? `<small>${esc(t.note)}</small>` : ""}</th><td>${paintCell(t.color, t.paint)}</td></tr>`).join("")}
-          </tbody></table>
-        </section>
-
         ${recipes.length ? `<section class="g-sec g-recipes">
           <h2>Recipes</h2>
           ${recipes.map(r => `<div class="g-recipe">
@@ -5083,12 +5076,12 @@ Redemptor Dreadnought (210 points)</pre>
         ${sorted.length ? `<section class="g-sec">
           <h2>Units</h2>
           <div class="g-scroll"><table class="g-table g-units">
-            <thead><tr><th>Unit</th><th>Models</th><th>Rank</th><th>Progress</th><th>Colours used</th></tr></thead>
+            <thead><tr><th>Unit</th><th>Models</th><th>Progress</th><th>Colours used</th></tr></thead>
             <tbody>${sorted.map(u => {
               const rs = (u.recipes || []).map(id => recipes.find(r => r.id === id)).filter(Boolean).map(r => r.name);
               const own = usedOf(u);
               return `<tr><td><strong>${esc(u.name)}</strong>${u.datasheet && u.datasheet !== u.name ? `<small>${esc(u.datasheet)}</small>` : ""}${rs.length ? `<small>Recipes: ${esc(rs.join(", "))}</small>` : ""}</td>
-                <td>${u.count}</td><td>${esc(tierOf(u).name || "")}</td>
+                <td>${u.count}</td>
                 <td>${u.painted}/${u.count}${u.status === "done" ? " ✓" : ""}</td>
                 <td>${own.length ? own.join(", ") : "—"}</td></tr>`;
             }).join("")}</tbody>
@@ -5371,8 +5364,8 @@ Redemptor Dreadnought (210 points)</pre>
           <h2>Display</h2>
           <label class="switch"><input type="checkbox" id="set-points" ${settings.hidePoints ? "checked" : ""}><span class="track" aria-hidden="true"><i></i></span><span>Hide points<small>For people who only paint: hides points on unit cards and ledger totals.</small></span></label>
           <div class="set-grid">
-            <label>Group units by<select id="set-group">${[["none", "Nothing"], ["role", "Role"], ["rank", "Rank"], ["status", "Status"]].map(([v, l]) => opt(v, listPrefs.group, l)).join("")}</select></label>
-            <label>Sort units by<select id="set-sort">${[["rank", "Rank"], ["name", "Name"], ["points", "Points"], ["progress", "Progress"], ["recent", "Recently changed"]].map(([v, l]) => opt(v, listPrefs.sort, l)).join("")}</select></label>
+            <label>Group units by<select id="set-group">${[["none", "Nothing"], ["role", "Role"], ["status", "Status"]].map(([v, l]) => opt(v, listPrefs.group === "rank" ? "role" : listPrefs.group, l)).join("")}</select></label>
+            <label>Sort units by<select id="set-sort">${[["rank", "Role"], ["name", "Name"], ["points", "Points"], ["progress", "Progress"], ["recent", "Recently changed"]].map(([v, l]) => opt(v, listPrefs.sort, l)).join("")}</select></label>
             <label>Background<select id="set-bg">${[["1", "Necrons and Ultramarines"], ["2", "Terminators"], ["3", "Orks and Blood Angels"], ["4", "Tyranids"], ["none", "None"]].map(([v, l]) => opt(v, bg, l)).join("")}</select></label>
           </div>
           <p class="hint">Grouping and sorting are where every ledger starts; you can still change them on each ledger.</p>
@@ -5707,16 +5700,15 @@ Redemptor Dreadnought (210 points)</pre>
             </div>
           </div>
           <div class="panel">
-            <h2 class="ph">Ranks ${infoBtn("ranks")}</h2>
-            <p class="hint">Ranks group your units, such as ${esc(draft.scheme.tiers.slice(0, 3).map(t => t.name).join(", ").replace(/, ([^,]*)$/, " and $1"))}, so you can paint some a little differently from the rest of the army. Each rank has a colour for the ${esc(PROF.head)}; a unit starts with its rank's colour, and you can still change it per unit.</p>
+            <h2 class="ph">${esc(capFirst(PROF.head))} colour</h2>
+            <p class="hint">Shown on your army's badge.</p>
             <div class="tiers" id="s-tiers"></div>
-            <div class="row-actions" style="margin-top:10px"><button type="button" class="btn-sm" id="s-addtier">Add rank</button></div>
           </div>
         </div>
         <div class="side">
           <div class="panel">
             <h2 class="ph">Preview</h2>
-            <div class="pv-tiers" id="s-preview"></div>
+            <div id="s-preview"></div>
           </div>
           <div class="panel">
             <div class="row-actions">
@@ -5732,7 +5724,8 @@ Redemptor Dreadnought (210 points)</pre>
     app.querySelectorAll("[data-signin]").forEach(b => b.addEventListener("click", openAuth));
 
     const sch = draft.scheme;
-    // Where each rank was when the page opened (null for a new one), so units follow their rank when one is deleted.
+    // No ranks: the army has one helmet colour (the first of any older ranks); units on other ranks join it.
+    sch.tiers = sch.tiers.slice(0, 1);
     let tierFrom = sch.tiers.map((t, i) => i);
     const suggested = suggestedIcons(f);
     let emq = "", emLimit = 90;
@@ -5748,29 +5741,19 @@ Redemptor Dreadnought (210 points)</pre>
       app.querySelectorAll(".ic[data-shape]").forEach(b => b.setAttribute("aria-pressed", b.dataset.shape === sch.shape));
     }
     function renderTiers(){
-      $("s-tiers").innerHTML = sch.tiers.map((t, i) => `
-        <div class="tier">
-          <label>Rank ${i + 1}<input data-tname="${i}" maxlength="40" value="${esc(t.name)}" placeholder="e.g. Veteran"></label>
-          <label>Colour<span data-tslot="${i}"></span></label>
-          <button type="button" class="btn-sm" data-tdel="${i}" ${sch.tiers.length < 2 ? "disabled" : ""} aria-label="Remove rank ${i + 1}">Remove</button>
-          <label class="full" style="grid-column:1/-1">Who uses it<input data-tnote="${i}" maxlength="80" value="${esc(t.note)}" placeholder="e.g. Sword Brethren"></label>
-        </div>`).join("");
-      $("s-addtier").disabled = sch.tiers.length >= 8;
-      $("s-tiers").querySelectorAll("[data-tslot]").forEach(h => {
-        const i = +h.dataset.tslot;
-        PU.slot(h, {...slotOpts, label: `Rank ${i + 1} colour`, value: {hex: sch.tiers[i].color, paint: sch.tiers[i].paint},
-          onChange: v => { sch.tiers[i].color = v.hex; sch.tiers[i].paint = v.paint; setupDirty = true; renderPreview(); }});
-      });
+      $("s-tiers").innerHTML = `<span data-tslot="0"></span>`;
+      PU.slot($("s-tiers").querySelector("[data-tslot]"), {...slotOpts, label: `${capFirst(PROF.head)} colour`, value: {hex: sch.tiers[0].color, paint: sch.tiers[0].paint},
+        onChange: v => { sch.tiers[0].color = v.hex; sch.tiers[0].paint = v.paint; setupDirty = true; renderPreview(); }});
     }
     function renderPreview(){
-      $("s-preview").innerHTML = sch.tiers.map(t => `<div class="pv-tier"><span class="rank-sw" style="background:${ART.hexOk(t.color) ? t.color : "#1f1f22"}" aria-hidden="true"></span><span><strong>${esc(t.name || "Rank")}</strong><small>${esc(t.note || cname(t.color) + " " + PROF.head)}</small></span></div>`).join("");
+      $("s-preview").innerHTML = `<div class="pv-badge">${tierBadge(sch, sch.tiers[0], 150)}</div>`;
       $("s-shapes").querySelectorAll("[data-shape]").forEach(b => { b.setAttribute("aria-pressed", b.dataset.shape === sch.shape); b.innerHTML = ART.shapeIcon(b.dataset.shape, sch.colors.emblem, 34) + esc(P.SHAPES.find(s => s[0] === b.dataset.shape)[1]); });
       renderCurrent();
       colorKeys().forEach(([k]) => slots[k].set({hex: sch.colors[k], paint: sch.slotPaints[k] || ""}));
       app.querySelectorAll("[data-style]").forEach(b => b.setAttribute("aria-pressed", b.dataset.style === sch.style));
       if($("s-split")){ $("s-split").checked = !!sch.splitPauldrons; app.querySelectorAll(".cfield.pd-when").forEach(el => el.hidden = !sch.splitPauldrons); }
     }
-    // Paint pickers for the army colours and rank colours.
+    // Paint pickers for the army colours and the helmet colour.
     const slotOpts = {
       owned: () => new Set(ownedList.map(PU.norm)), mine: () => ownedList, plain: PLAIN,
       swatches: () => colorKeys().map(([k]) => ({hex: sch.colors[k], paint: sch.slotPaints[k] || ""})).concat(sch.tiers.map(t => ({hex: t.color, paint: t.paint || ""})))
@@ -5855,14 +5838,12 @@ Redemptor Dreadnought (210 points)</pre>
       if(t.id !== "s-emq") setupDirty = true;
       if(t.id === "s-split"){ sch.splitPauldrons = t.checked; app.querySelectorAll(".cfield.pd-when").forEach(el => el.hidden = !t.checked); renderPreview(); return; }
       if(t.id === "s-emq"){ emq = t.value.trim(); emLimit = 90; renderIcons(); return; }
-      if(t.dataset.tname != null){ sch.tiers[+t.dataset.tname].name = t.value; renderPreview(); }
-      if(t.dataset.tnote != null){ sch.tiers[+t.dataset.tnote].note = t.value; renderPreview(); }
-      if(t.id === "s-reset" && t.checked){ const p = P.presetFor(f.id); Object.assign(sch, p); tierFrom = sch.tiers.map((x, i) => i); renderTiers(); renderPreview(); t.checked = false; $("s-msg").textContent = ""; }
+      if(t.id === "s-reset" && t.checked){ const p = P.presetFor(f.id); Object.assign(sch, p); sch.tiers = sch.tiers.slice(0, 1); tierFrom = sch.tiers.map((x, i) => i); renderTiers(); renderPreview(); t.checked = false; $("s-msg").textContent = ""; }
     }
     let armed = false;
     async function onClick(e){
       const t = e.target.closest("button"); if(!t) return;
-      if(t.dataset.shape || t.dataset.style || t.dataset.scheme || t.dataset.tdel != null || t.id === "s-addtier") setupDirty = true;
+      if(t.dataset.shape || t.dataset.style || t.dataset.scheme) setupDirty = true;
       if(t.dataset.scheme){
         // Keep rank names (they may have been edited) but recolour the standard ranks to match.
         const k = known[+t.dataset.scheme];
@@ -5878,8 +5859,6 @@ Redemptor Dreadnought (210 points)</pre>
       if(t.dataset.shape){ sch.shape = t.dataset.shape; renderPreview(); return; }
       if(t.id === "s-emmore"){ emLimit += 90; renderIcons(); return; }
       if(t.dataset.style){ sch.style = t.dataset.style; renderPreview(); return; }
-      if(t.dataset.tdel != null){ sch.tiers.splice(+t.dataset.tdel, 1); tierFrom.splice(+t.dataset.tdel, 1); renderTiers(); renderPreview(); return; }
-      if(t.id === "s-addtier"){ sch.tiers.push({name: "New rank", note: "", color: sch.colors.secondary, paint: sch.slotPaints.secondary || ""}); tierFrom.push(null); renderTiers(); renderPreview(); return; }
       if(t.id === "s-save"){
         const saved = await saveSetup();
         if(saved) location.hash = "#/army/" + saved.id;
@@ -5974,7 +5953,7 @@ Redemptor Dreadnought (210 points)</pre>
 
       ${canWrite && scheme.wonly ? `<div class="banner colours-prompt" id="wonly-banner"><span class="dot"></span><span><strong>This army was set up in War Ledger</strong>, so it's using the official ${esc(f.name)} colours. Choose your own scheme before you start painting, or keep these.</span><span class="cp-acts"><a class="btn btn-sm primary" href="#/army/${esc(army.id)}/colours">Choose your colours</a><button type="button" class="btn-sm" id="b-keepcol">Keep these colours</button></span></div>` : ""}
       ${!canWrite ? `<div class="banner viewonly"><span class="dot on"></span><span>You're viewing a shared ledger. You can look but not change anything.</span>${store.kind === "supabase" && !store.session ? `<button type="button" class="btn-sm" data-signin>Sign in</button>` : `<span class="vo-social" id="vo-social"></span>`}</div>` : ""}
-      <section class="key" id="key" aria-label="Rank colours">${scheme.tiers.map(t => `<div><span class="rank-sw" style="background:${ART.hexOk(t.color) ? t.color : "#1f1f22"}" aria-hidden="true"></span><span><strong>${esc(t.name)}</strong><small>${esc(t.note || cname(t.color) + " " + PROF.head)}</small></span></div>`).join("")}</section>
+
 
         <section class="list" aria-labelledby="army-h">
           <div class="list-head">
@@ -5993,9 +5972,9 @@ Redemptor Dreadnought (210 points)</pre>
           <div class="list-tools arrange tools-fill">
             ${canWrite ? `<button type="button" class="btn-sm b-select" id="b-select" aria-pressed="false"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="m8 12 3 3 5-6"/></svg>Select units</button>` : ""}
             <label class="inline">Group by<select id="g-by">
-              <option value="none">Nothing</option><option value="role">Role</option><option value="rank">Rank</option><option value="status">Status</option></select></label>
+              <option value="none">Nothing</option><option value="role">Role</option><option value="status">Status</option></select></label>
             <label class="inline">Sort by<select id="s-by">
-              <option value="rank">Rank</option><option value="name">Name</option><option value="points">Points</option><option value="progress">Progress</option><option value="recent">Recently changed</option></select></label>
+              <option value="rank">Role</option><option value="name">Name</option><option value="points">Points</option><option value="progress">Progress</option><option value="recent">Recently changed</option></select></label>
           </div>
           <div class="cards" id="cards"><div class="empty">Loading units…</div></div>
         </section>
@@ -6047,14 +6026,13 @@ Redemptor Dreadnought (210 points)</pre>
             <label class="full">Datasheet<select id="f-sheet"><option value="">Choose a datasheet…</option>${sheetOptions(army.faction)}<option value="__custom">Not listed (type it in)</option></select></label>
             <label class="full" id="custom-wrap" hidden>Datasheet name<input id="f-sheet-custom" maxlength="80" placeholder="Unit type"></label>
             <label class="full">Unit name<input id="f-name" maxlength="80" placeholder="e.g. Brother Aldric's squad"></label>
-            <label>Rank<select id="f-tier">${scheme.tiers.map((t, i) => `<option value="${i}">${esc(t.name)}</option>`).join("")}</select></label>
             <label>Models<input id="f-count" type="number" inputmode="numeric" min="1" max="99" value="5"></label>
             <label>Points<input id="f-points" type="number" inputmode="numeric" min="0" max="9999" step="5"></label>
             <div class="pts-hint" id="pts-hint"></div>
           </fieldset>
           <fieldset>
             <legend>Colours used</legend>
-            <p class="hint-sm full">The paints you use on this unit. Its look follows the army's colours and its rank.</p>
+            <p class="hint-sm full">The paints you use on this unit. Its look follows the army's colours.</p>
             <ul class="full used-list" id="f-used" aria-label="Colours used"></ul>
             <label class="full used-add"><span class="sr-only">Add a paint</span><input id="f-used-add" maxlength="90" placeholder="Add a paint, e.g. Macragge Blue"></label>
             <div class="full"><button type="button" class="btn-sm" id="f-used-army">Add the army's colours</button></div>
@@ -6141,7 +6119,7 @@ Redemptor Dreadnought (210 points)</pre>
     /* ---------- state ---------- */
     let units = [], selId = null, filter = "all", query = "", armed = false, dirty = false, busy = false;
     let selecting = false, picked = new Set();   // batch updates
-    let pendingPhoto = null, removePhoto = false, tierTouched = false, pointsTouched = false;
+    let pendingPhoto = null, removePhoto = false, pointsTouched = false;
     const form = $("form");
     // Pauldrons last: an unset one copies the unit's armour, secondary or emblem colour.
     const COLOR_IDS = ["helmet","lens","skin","armour","secondary","trim","emblem","cloth","metal",...(PROF.pauldrons ? PAULDRONS : [])].filter(k => k !== "skin" || hasSkin);
@@ -6162,7 +6140,7 @@ Redemptor Dreadnought (210 points)</pre>
       const o = {datasheet, ...(sh ? {role: sheetDefaults(sh).role} : {}), name: $("f-name").value.trim(), count,
         points: Math.max(0, parseInt($("f-points").value, 10) || 0), stages: readStages(),
         painted: Math.min(count, Math.max(0, parseInt($("f-painted").value, 10) || 0)),
-        tier: +$("f-tier").value || 0, head: formHead, paintsUsed: usedPaints.slice(),
+        tier: 0, head: formHead, paintsUsed: usedPaints.slice(),
         melee: $("f-melee").value.trim(), ranged: $("f-ranged").value.trim(),
         paints: $("f-paints").value.trim(), notes: $("f-notes").value.trim(),
         recipes: [...$("f-recipes").querySelectorAll("input:checked")].map(i => i.value)};
@@ -6181,7 +6159,6 @@ Redemptor Dreadnought (210 points)</pre>
       $("f-stages").querySelectorAll("input").forEach(i => i.checked = (d.stages || []).includes(i.value));
       $("f-painted").value = d.painted || 0;
       renderRecipePicks(d.recipes || []);
-      $("f-tier").value = String(Math.min(d.tier, scheme.tiers.length - 1));
       formHead = headOf(d);
       usedPaints = Array.isArray(d.paintsUsed) ? d.paintsUsed.slice() : []; drawUsed();
       ["melee","ranged","paints","notes"].forEach(k => $("f-" + k).value = d[k] || "");
@@ -6189,7 +6166,7 @@ Redemptor Dreadnought (210 points)</pre>
     }
     const slotLabel = k => k === "emblem" ? LB.emblem + " colour" : LB[k];
     // Colours used: chips for the paints on this unit, added from the paint search (or typed in).
-    const armyPaints = () => [...new Set([...COLOR_IDS.map(k => k === "helmet" ? "" : (scheme.slotPaints || {})[k]), ...scheme.tiers.map(t => t.paint),
+    const armyPaints = () => [...new Set([...COLOR_IDS.map(k => k === "helmet" ? "" : (scheme.slotPaints || {})[k]), scheme.tiers[0] && scheme.tiers[0].paint,
       ...Object.values(scheme.xareas || {}).map(v => v && v.paint)].filter(Boolean))];
     function drawUsed(){
       $("f-used").innerHTML = usedPaints.length ? usedPaints.map((p, i) => `<li>${PU.swatch(p)}<span class="uu-n">${esc(PU.shortName(p))}</span>${isOwned(p) ? `<span class="own ok">Owned</span>` : ""}<button type="button" class="icon-x" data-used-rm="${i}" aria-label="Remove ${esc(PU.shortName(p))}">×</button></li>`).join("")
@@ -6218,8 +6195,7 @@ Redemptor Dreadnought (210 points)</pre>
       const u = readForm();
       $("pv-svg").innerHTML = soloBadge(unitBadge(u, scheme, 120), 120);
       $("pv-name").textContent = u.name || u.datasheet || "Unnamed unit";
-      const tier = scheme.tiers[u.tier];
-      $("pv-meta").textContent = [u.datasheet || "Unit", tier && tier.name, plural(u.count, "model"), u.points ? u.points + "\u00a0pts" : ""].filter(Boolean).join(" · ");
+      $("pv-meta").textContent = [u.datasheet || "Unit", plural(u.count, "model"), u.points ? u.points + "\u00a0pts" : ""].filter(Boolean).join(" · ");
       $("painted-of").textContent = "of " + u.count;
       $("f-painted").max = u.count;
       updatePointsHint();
@@ -6263,11 +6239,11 @@ Redemptor Dreadnought (210 points)</pre>
     }
     function editUnit(id){
       const u = units.find(x => x.id === id); if(!u) return;
-      selId = id; tierTouched = true; pointsTouched = true; clearPending(); writeForm(u); disarm(); setEditing(u); setPhotoUI(); setDirty(false); msg(""); render();
+      selId = id; pointsTouched = true; clearPending(); writeForm(u); disarm(); setEditing(u); setPhotoUI(); setDirty(false); msg(""); render();
       openEditor(); $("f-name").focus({preventScroll: true});
     }
     function newUnit(focus){
-      selId = null; tierTouched = false; pointsTouched = false; clearPending(); writeForm(defaults()); disarm(); setEditing(null); setPhotoUI(); setDirty(false); msg(""); render();
+      selId = null; pointsTouched = false; clearPending(); writeForm(defaults()); disarm(); setEditing(null); setPhotoUI(); setDirty(false); msg(""); render();
       if(focus) $("f-sheet").focus();
     }
     function openEditor(){
@@ -6330,7 +6306,7 @@ Redemptor Dreadnought (210 points)</pre>
     /* ---------- list ---------- */
     const rankOf = u => ROLE_ORDER.indexOf(u.role) < 0 ? 99 : ROLE_ORDER.indexOf(u.role);
     const SORTS = {
-      rank: (a, b) => (b.tier - a.tier) || (rankOf(a) - rankOf(b)) || String(a.name).localeCompare(String(b.name)),
+      rank: (a, b) => (rankOf(a) - rankOf(b)) || String(a.name).localeCompare(String(b.name)),
       name: (a, b) => String(a.name).localeCompare(String(b.name)),
       points: (a, b) => (b.points - a.points) || String(a.name).localeCompare(String(b.name)),
       progress: (a, b) => (progressOf(b) - progressOf(a)) || String(a.name).localeCompare(String(b.name)),
@@ -6343,23 +6319,23 @@ Redemptor Dreadnought (210 points)</pre>
         if(filter === "progress" && !(u.status === "progress" || u.status === "primed" || u.status === "built")) return false;
         if(filter === "todo" && u.status === "done") return false;
         if(filter === "fav" && !u.fav) return false;
-        if(q && ![u.name, u.datasheet, u.role, u.melee, u.ranged, u.notes, (scheme.tiers[u.tier] || {}).name].join(" ").toLowerCase().includes(q)) return false;
+        if(q && ![u.name, u.datasheet, u.role, u.melee, u.ranged, u.notes, ...(u.paintsUsed || [])].join(" ").toLowerCase().includes(q)) return false;
         return true;
       }).sort(SORTS[prefs.sort] || SORTS.rank);
     }
     function groupsOf(list){
       const g = prefs.group;
       if(g === "none") return [["", list]];
-      const keyOf = g === "role" ? (u => u.role || "Other") : g === "rank" ? (u => (scheme.tiers[u.tier] || {}).name || "Other") : (u => STATUS[u.status] || "Unbuilt");
-      const order = g === "role" ? ROLE_ORDER : g === "rank" ? scheme.tiers.map(t => t.name).reverse() : ["Painted","In progress","Primed","Built","Unbuilt"];
+      const keyOf = g === "role" || g === "rank" ? (u => u.role || "Other") : (u => STATUS[u.status] || "Unbuilt");
+      const order = g === "role" || g === "rank" ? ROLE_ORDER : ["Painted","In progress","Primed","Built","Unbuilt"];
       const m = new Map();
       list.forEach(u => { const k = keyOf(u); if(!m.has(k)) m.set(k, []); m.get(k).push(u); });
       return [...m.entries()].sort((a, b) => ((order.indexOf(a[0]) + 1 || 99) - (order.indexOf(b[0]) + 1 || 99)));
     }
     const weaponsText = u => [u.melee, u.ranged].filter(Boolean).join(" + ") || "—";
-    // A unit's colours are its army's, with its rank's helmet colour.
+    // A unit's colours are its army's.
     const withColours = u => {
-      const o = {...u}, tier = scheme.tiers[u.tier] || scheme.tiers[0] || {}, sp = scheme.slotPaints || {};
+      const o = {...u}, tier = scheme.tiers[0] || {}, sp = scheme.slotPaints || {};
       COLOR_IDS.forEach(k => { o[k] = k === "helmet" ? tier.color : ART.hexOk(scheme.colors[k]) ? scheme.colors[k] : BASE_OF[k] ? scheme.colors[BASE_OF[k]] : scheme.colors[k]; });
       o.head = headOf(o);
       o.xareas = scheme.xareas || {};
@@ -6403,7 +6379,7 @@ Redemptor Dreadnought (210 points)</pre>
     const photoSrc = p => safeImg(store.photoUrl ? store.photoUrl(p) : p);
     function cardHtml(u){
       u = withColours(u);
-      const img = safeImg(u.image) || ((u.photos || [])[0] ? photoSrc(u.photos[0]) : ""), tier = scheme.tiers[u.tier] || {};
+      const img = safeImg(u.image) || ((u.photos || [])[0] ? photoSrc(u.photos[0]) : "");
       const nx = canWrite ? nextStep(u) : null;
       const segs = STAGE_KEYS.map(k => `<i class="${(u.stages || []).includes(k) ? "on" : ""}"></i>`).join("");
       const pk = selecting && picked.has(u.id);
@@ -6413,10 +6389,7 @@ Redemptor Dreadnought (210 points)</pre>
         <div class="body">
           <div class="card-top">${soloBadge(unitBadge(u, scheme, 60), 60)}<div><h3><button type="button" class="card-open" ${selecting ? `aria-pressed="${pk}" aria-label="Select ${esc(u.name)}"` : `aria-label="View ${esc(u.name)}"`}>${esc(u.name)}</button>${u.own === "planned" ? PLANNED_TAG : ""}</h3><div class="type">${esc([u.datasheet && u.datasheet !== u.name ? u.datasheet : "", u.role].filter(Boolean).join(" · ") || "Unit")}</div></div>${u.points ? `<span class="pts">${num(u.points)}<small>pts</small></span>` : ""}${starBtn(u)}</div>
           <dl>
-            <dt>Rank</dt><dd>${esc(tier.name || "—")}</dd>
-            ${u.head === "none" ? "" : `<dt>${u.head === "bare" ? "Face" : esc(LB.helmet)}</dt><dd>${u.head === "bare" ? chip(u.skin) + "Bare head" : chip(u.helmet) + esc(nameOf(u, "helmet"))}${u.hdetail ? ", " + esc(u.hdetail) : ""}</dd>`}
-            <dt>${esc(LB.armour)}</dt><dd>${chip(u.armour)}${esc(nameOf(u, "armour"))}, ${esc(nameOf(u, "trim"))} ${esc(LB.trim.toLowerCase())}</dd>
-            ${PROF.skinAlways ? `<dt>${esc(LB.skin)}</dt><dd>${chip(u.skin)}${esc(nameOf(u, "skin"))}</dd>` : ""}
+            ${(u.paintsUsed || []).length ? `<dt>Colours</dt><dd>${u.paintsUsed.slice(0, 3).map(p => PU.swatch(p) + esc(PU.shortName(p))).join(", ")}${u.paintsUsed.length > 3 ? ` +${u.paintsUsed.length - 3}` : ""}</dd>` : ""}
             ${u.melee || u.ranged ? `<dt>Weapons</dt><dd>${esc(weaponsText(u))}</dd>` : ""}
             ${recipesOf(u).length ? `<dt>Recipes</dt><dd>${esc(recipesOf(u).map(r => r.name).join(", "))}${canWrite && missingFor(u).length ? ` <span class="need">${missingFor(u).length} to buy</span>` : ""}</dd>` : ""}
           </dl>
@@ -6528,7 +6501,7 @@ Redemptor Dreadnought (210 points)</pre>
       const apis = [];
       // A unit looks like its army, so each scheme is drawn as the army with those colours.
       const trial = v => { const colors = {...scheme.colors}; keys.forEach(k => { if(k !== "helmet") colors[k] = v.c[k].hex; });
-        const tiers = scheme.tiers.map((t, i) => i === (+u.tier || 0) && v.c.helmet ? {...t, color: v.c.helmet.hex} : t);
+        const tiers = scheme.tiers.map((t, i) => i === 0 && v.c.helmet ? {...t, color: v.c.helmet.hex} : t);
         return {...scheme, colors, tiers}; };
       const pic = v => soloBadge(unitBadge(u, trial(v), 150), 150);
       const nearest = hex => PU.nearestHex(hex, {labels: ownedList});
@@ -6572,10 +6545,10 @@ Redemptor Dreadnought (210 points)</pre>
         const use = e.target.closest("[data-lab-use]"); if(!use || busy) return;
         const i = +use.dataset.labUse;
         if(!changed(i)){ toast(i ? "That's the same as the army's colours now. Change something first." : "These are the army's colours already."); return; }
-        // Units follow their army's colours, so a scheme is used for the whole army (the helmet for this unit's rank).
+        // Units follow their army's colours, so a scheme is used for the whole army.
         const v = schemes[i].c, t = trial(schemes[i]), sp = {...(scheme.slotPaints || {})};
         keys.filter(k => k !== "helmet").forEach(k => { if(v[k].paint) sp[k] = v[k].paint; else delete sp[k]; });
-        if(v.helmet) t.tiers = t.tiers.map((x, j) => j === (+u.tier || 0) ? {...x, paint: v.helmet.paint || ""} : x);
+        if(v.helmet) t.tiers = t.tiers.map((x, j) => j === 0 ? {...x, paint: v.helmet.paint || ""} : x);
         busy = true; use.disabled = true;
         try { await store.saveArmy({faction: army.faction, name: army.name, scheme: {...t, slotPaints: sp}, public: army.public}, army.id); d.close(); toast(`New colours saved on ${army.name}`); route(); }
         catch(err){ use.disabled = false; toast("Couldn't save the colours: " + errText(err)); }
@@ -6587,7 +6560,7 @@ Redemptor Dreadnought (210 points)</pre>
       const found = units.find(x => x.id === id); if(!found) return;
       const u = withColours(found);
       $("detail").dataset.unit = id;
-      const img = safeImg(u.image), tier = scheme.tiers[u.tier] || {};
+      const img = safeImg(u.image);
       // The paints used on this unit, each with Owned / To buy.
       const usedHtml = x => (x.paintsUsed || []).length ? `<ul class="used-view">${x.paintsUsed.map(p => { const d = PU.describe(p);
           return `<li>${PU.swatch(p)}<span>${esc(d.name)}${d.meta ? ` <small class="pmeta">${esc(d.meta)}</small>` : ""}</span>${canWrite ? (isOwned(p) ? `<span class="own ok">Owned</span>` : `<span class="own no">To buy</span>`) : ""}</li>`; }).join("")}</ul>`
@@ -6619,7 +6592,6 @@ Redemptor Dreadnought (210 points)</pre>
             ${unitMins(u) || canWrite ? `<p class="pt-line"><span>Painting time <b>${hm(unitMins(u))}</b></span>${canWrite ? (t => `<button type="button" class="btn-sm${t && t.unitId === u.id ? " on" : ""}" data-timer="${esc(u.id)}">${t && t.unitId === u.id ? "Stop timer" : "Start timer"}</button>`)(getTimer()) : ""}</p>` : ""}`)}
           ${(u.journal || []).length || canWrite ? box("journal", `Painting journal${(u.journal || []).length ? ` <small class="dsec-n">${u.journal.length}</small>` : ""}`, journalHtml(u)) : ""}
           ${recipesOf(u).map(r => box("recipes", `Recipe · ${esc(r.name)}${r.area ? " · " + esc(r.area) : ""}`, stepsHtml(r), false)).join("")}
-          ${sec("Rank", [["Rank", esc(tier.name)], ["Who", esc(tier.note)]], "rank")}
           ${box("used", "Colours used", usedHtml(u))}
           ${sec("Weapons", [["Melee", esc(u.melee)], ["Ranged", esc(u.ranged)]], "weapons")}
           ${u.paints ? box("paintnotes", "Paint notes", `<p class="prose">${esc(u.paints)}</p>`) : ""}
@@ -6671,16 +6643,11 @@ Redemptor Dreadnought (210 points)</pre>
       const sh = sel && sel !== "__custom" ? sheetFor(sel) : null;
       const nm = $("f-name");
       if(sh && (!nm.value || sheets.some(s => s.n === nm.value))) nm.value = sh.n;
-      if(sh && !tierTouched){
-        const t = (sh.r === "Epic Hero" || sh.r === "Character") ? Math.min(2, scheme.tiers.length - 1) : 0;
-        $("f-tier").value = String(t);
-      }
       if(!selId) formHead = sh ? autoHead(sh.r) : PROF.defaultHead;
       if(sh && !selId) $("f-count").value = sheetDefaults(sh).count;
       if(sh && !pointsTouched){ const p = sheetPts(sh, Math.max(1, parseInt($("f-count").value, 10) || 1)); if(p != null) $("f-points").value = p; }
       fillWeapons(); preview();
     });
-    $("f-tier").addEventListener("change", () => { tierTouched = true; preview(); });
 
     function takePhoto(file){
       if(!file) return;
@@ -6909,7 +6876,7 @@ Redemptor Dreadnought (210 points)</pre>
       if(ed){ $("detail").close(); if(await okToLeave()) editUnit(ed.dataset.edit); }
       if(dup){
         const u = units.find(x => x.id === dup.dataset.dup); $("detail").close();
-        if(u && await okToLeave()){ selId = null; tierTouched = true; pointsTouched = true; clearPending(); writeForm({...u, name: u.name + " (copy)"}); setEditing(null); setPhotoUI(); setDirty(true); render(); openEditor(); msg("Copy ready. Change what you need and save."); }
+        if(u && await okToLeave()){ selId = null; pointsTouched = true; clearPending(); writeForm({...u, name: u.name + " (copy)"}); setEditing(null); setPhotoUI(); setDirty(true); render(); openEditor(); msg("Copy ready. Change what you need and save."); }
       }
     }
     $("detail").addEventListener("click", onDetailClick);
@@ -7000,7 +6967,7 @@ Redemptor Dreadnought (210 points)</pre>
         if(!pick.length) return;
         const c = scheme.colors;
         const rows = pick.map(u => {
-          const tierIdx = (u.sheet.r === "Epic Hero" || u.sheet.r === "Character") ? Math.min(2, scheme.tiers.length - 1) : 0;
+          const tierIdx = 0;
           return {datasheet: u.sheet.n, role: u.sheet.r, name: u.name, count: u.count, points: u.points, stages: [], painted: 0, tier: tierIdx,
             helmet: scheme.tiers[tierIdx].color, head: autoHead(u.sheet.r), skin: c.skin, lens: c.lens, armour: c.armour, secondary: c.secondary, trim: c.trim, emblem: c.emblem, shape: "",
             cloth: c.cloth, metal: c.metal, melee: u.melee.join(", "), ranged: u.ranged.join(", "), notes: u.notes.join(". ")};
@@ -7048,9 +7015,6 @@ Redemptor Dreadnought (210 points)</pre>
     }
     const onBeforeUnload = e => { if(dirty && canWrite){ e.preventDefault(); e.returnValue = ""; } };
     window.addEventListener("beforeunload", onBeforeUnload);
-    // Rank strip scrolls sideways on phones: fade the right edge while there's more to see.
-    const keyFade = () => { const k = $("key"); if(k) k.classList.toggle("more-right", k.scrollLeft + k.clientWidth < k.scrollWidth - 4); };
-    $("key").addEventListener("scroll", keyFade, {passive: true}); window.addEventListener("resize", keyFade); keyFade();
     // "More" menu (backups): closes on a pick, a click elsewhere or Escape.
     const moreOpen = on => { $("more-menu").hidden = !on; $("b-more").setAttribute("aria-expanded", on); };
     $("b-more").addEventListener("click", e => { e.stopPropagation(); moreOpen($("more-menu").hidden); });
@@ -7176,9 +7140,9 @@ Redemptor Dreadnought (210 points)</pre>
         if(!need.get(k).recipes.includes(why)) need.get(k).recipes.push(why);
       };
       (scheme.recipes || []).filter(r => !onlyUsed || used.has(r.id)).forEach(r => paintsOf(r).forEach(p => add(p, r.name)));
-      // Paints picked for colour areas: the army's colours, its ranks and each unit's colours used.
+      // Paints picked for colour areas: the army's colours and each unit's colours used.
       COLOR_IDS.forEach(k => add((scheme.slotPaints || {})[k], k === "emblem" ? slotLabel(k) : slotLabel(k) + " colour"));
-      scheme.tiers.forEach(t => add(t.paint, `${t.name} rank`));
+      if(scheme.tiers[0]) add(scheme.tiers[0].paint, `${capFirst(PROF.head)} colour`);
       units.forEach(u => (u.paintsUsed || []).forEach(p => add(p, u.name)));
       [...XA.details, ...XA.weapons].forEach(a => { const v = (scheme.xareas || {})[a.id]; if(v) add(v.paint, a.label); });
       return [...need.values()].sort((a, b) => a.label.localeCompare(b.label));
@@ -7669,7 +7633,6 @@ Redemptor Dreadnought (210 points)</pre>
     "crusade-points": {g: "crusade", t: "Crusade points", d: "1 for each battle honour, less 1 for each battle scar. They show how powerful a Crusade force has become."},
     // Painting
     stages: {g: "paint", t: "Painting stages", d: "Built, Primed, Basecoat, Shade, Highlight, Basing and Varnish. Tick each off as you go. A unit counts as painted once all its models are."},
-    ranks: {g: "paint", t: "Ranks", d: "Groups of units, like troops, sergeants, veterans and heroes, so each can have its own helmet or trim colour while the army keeps one scheme."},
     recipe: {g: "paint", t: "Recipe", d: "The paints and steps for one area, like Prime, Basecoat, Shade, Layer and Highlight. Write it once and use it on any unit in any ledger."},
     primer: {g: "paint", t: "Priming", d: "A first coat, usually sprayed, that paint sticks to. Black, grey and white are the usual choices."},
     basecoat: {g: "paint", t: "Basecoat", d: "The solid main colour of an area, painted over the primer in thin coats."},

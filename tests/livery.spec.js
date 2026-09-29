@@ -436,3 +436,18 @@ test("a unit has Colours used instead of a colour for every piece", async ({page
   await page.getByRole("button", {name: "View Captain"}).click();
   await expect(page.locator('#detail details[data-k="used"]')).toContainText("Macragge Blue");
 });
+
+test("no ranks in Livery Ledger: not in the unit editor, the ledger, the colour setup or the guide", async ({page}) => {
+  await seed(page);
+  await open(page, "#/army/a1");
+  await expect(page.locator("#key")).toHaveCount(0);
+  await expect(page.locator('#g-by option[value="rank"]')).toHaveCount(0);
+  await page.click("#b-add");
+  await expect(page.locator("#f-tier")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await open(page, "#/army/a1/colours");
+  await expect(page.locator("#s-addtier")).toHaveCount(0);
+  await expect(page.locator("#s-tiers [data-tslot]")).toHaveCount(1);
+  await open(page, "#/army/a1/guide");
+  await expect(page.locator("main")).not.toContainText("Ranks");
+});
