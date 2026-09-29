@@ -488,6 +488,12 @@ dialog.paintdlg[open]{display:flex}
 .st-p small{display:block}
 .st-t{font-family:var(--mono);font-size:.66rem;text-transform:uppercase;letter-spacing:.06em;color:var(--faint)}
 .st-p{overflow-wrap:anywhere}
+.used-list,.used-view{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:6px}
+.used-list li,.used-view li{display:inline-flex;align-items:center;gap:7px;padding:5px 6px 5px 9px;border:1px solid var(--line);border-radius:99px;background:var(--surface-2);font-size:.85rem;min-width:0}
+.used-view li{padding-right:10px}
+.used-list .uu-none{border:0;background:none;padding:0;color:var(--muted)}
+.used-list .pswatch,.used-view .pswatch{flex:none}
+.used-list .icon-x{width:22px;height:22px;padding:0;border-radius:99px;display:inline-grid;place-items:center;line-height:1}
 .own{font-family:var(--mono);font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:2px 7px;border-radius:99px;white-space:nowrap}
 .own.ok{color:var(--good);background:rgba(74,222,128,.08);border:1px solid rgba(74,222,128,.25)}
 .own.no{color:var(--warn);background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.25)}
@@ -597,14 +603,6 @@ html[data-bg="none"] body::before{display:none}
 @media (max-width:520px){.bg-menu{position:fixed;left:16px;right:16px;width:auto;top:64px}}
 
 /* ---------- Head type (helmet / bare / none) ---------- */
-div.hd-when{display:contents}
-.headseg{display:flex;gap:4px;padding:4px;border:1px solid var(--line);border-radius:99px;background:var(--surface-2)}
-.headseg label{flex:1;display:block;margin:0;cursor:pointer}
-.headseg input{position:absolute;opacity:0;pointer-events:none}
-.headseg span{display:block;text-align:center;padding:7px 10px;border-radius:99px;font-size:.84rem;font-weight:500;color:var(--muted);transition:background .15s,color .15s}
-.headseg label:hover span{color:var(--ink)}
-.headseg input:checked+span{background:var(--brand);color:var(--brand-ink)}
-.headseg input:focus-visible+span{outline:2px solid var(--brand);outline-offset:2px}
 #head-hint{margin:-4px 0 0;font-size:.8rem;line-height:1.4;color:var(--muted)}
 
 /* ---------- Paint picker for colour areas ---------- */
@@ -678,8 +676,6 @@ dialog{overflow-x:hidden}
 .detail section.row-actions{position:sticky;bottom:0;z-index:2;margin:0 -24px -24px;padding:14px 24px calc(14px + env(safe-area-inset-bottom,0px));background:rgba(13,17,20,.94);border-top:1px solid var(--line);border-radius:0;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
 @media (max-width:720px){.detail section.row-actions{flex-wrap:nowrap;gap:8px}.detail section.row-actions>*{flex:1;white-space:nowrap;padding-left:10px;padding-right:10px}.detail section.row-actions .danger{flex:0 0 auto}}
 /* Space Marine pauldrons painted differently: a small group per shoulder */
-.pd-group{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:12px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface-2)}
-.pd-group[hidden]{display:none}
 .pd-h{grid-column:1/-1;margin:0;font-family:var(--mono);font-size:.62rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:700}
 .split-check{margin-top:14px;flex-wrap:wrap}
 .split-check small{flex-basis:100%;color:var(--muted);font-size:.78rem;padding-left:26px}
@@ -703,8 +699,6 @@ dialog{overflow-x:hidden}
 .xa-add{display:flex;flex-wrap:wrap;gap:6px}
 .xa-pill{padding:5px 11px;font-size:.78rem;font-weight:500;border-radius:99px;border-style:dashed;color:var(--muted);background:transparent}
 .xa-pill:hover{color:var(--ink);border-color:var(--brand-line);border-style:solid}
-.xa-field{display:flex;flex-direction:column;gap:8px}
-.xa-cap{font-size:.78rem;color:var(--muted);font-weight:500}
 .xa-wrap{margin-top:18px;padding-top:14px;border-top:1px solid var(--line)}
 .xa-wrap .pd-h{margin:12px 0 8px}
 
@@ -1183,8 +1177,8 @@ body.no-points .card-top .pts,body.no-points .stat-pts,body.no-points .ro-pts,bo
 .sh-sort select{width:auto}
 
 /* Hidden checkboxes and radios stay inside their label, so focusing one never scrolls a dialog out of place */
-.stage,.switch,.headseg label{position:relative}
-.stage input,.switch input,.headseg input{top:0;left:0}
+.stage,.switch{position:relative}
+.stage input,.switch input{top:0;left:0}
 /* Full-height dialogs only scroll their inner content */
 dialog.editdlg,dialog.paintdlg{overflow:clip}
 

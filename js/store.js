@@ -118,6 +118,8 @@
     o.assembly = String(r.assembly || "").slice(0, 600);
     // Planned: in your plans but not bought yet. It's never battle ready and isn't counted as owned.
     o.own = r.own === "planned" ? "planned" : "owned";
+    // Colours used: the paints you use on this unit (its look follows the army's colours and its rank).
+    o.paintsUsed = cleanPaints(r.paintsUsed).slice(0, 40);
     if(!o.name) o.name = o.datasheet || "Unnamed unit";
     return o;
   }

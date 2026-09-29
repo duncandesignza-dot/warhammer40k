@@ -319,10 +319,10 @@ test("scheme lab: compare schemes side by side, try a suggestion, and use one", 
   await expect(lab.locator(".lab-col")).toHaveCount(3);
   await expect(lab.locator("[data-lab-add]")).toHaveCount(0);
   await lab.locator('[data-lab-rm="2"]').click();
-  // The first is the unit as it is: using it changes nothing.
+  // The first is the army's colours as they are: using it changes nothing.
   await lab.locator('[data-lab-use="0"]').click();
-  await expect(page.locator("#toast")).toContainText("These are the unit's colours already.");
-  const before = (await saved(page)).units.find(x => x.id === "u2");
+  await expect(page.locator("#toast")).toContainText("These are the army's colours already.");
+  const before = (await saved(page)).armies.find(x => x.id === "a1").scheme;
   // The Ultramarines already have gold trim, so that suggestion changes nothing; a spot colour does.
   await lab.locator('[data-lab-sug="1"]').selectOption("metal-trim");
   await expect(lab.locator(".lab-col").nth(1).locator(".lab-slot", {hasText: "Trim"})).toContainText("Retributor Armour");
@@ -331,11 +331,12 @@ test("scheme lab: compare schemes side by side, try a suggestion, and use one", 
   await expect(lab.locator(".lab-col").nth(0).locator(".lab-slot", {hasText: "Emblem"})).toContainText("Corax White");
   await lab.locator('[data-lab-use="1"]').click();
   await expect(lab).toHaveCount(0);
-  await expect(page.locator("#toast")).toContainText("New colours saved on Intercessor Squad");
-  const after = (await saved(page)).units.find(x => x.id === "u2");
+  // Units follow their army, so the scheme is used for the whole army.
+  await expect(page.locator("#toast")).toContainText("New colours saved on Ultramarines 2nd Company");
+  const after = (await saved(page)).armies.find(x => x.id === "a1").scheme;
   expect(after.slotPaints.emblem).toMatch(/^Citadel /);
   expect(after.slotPaints.emblem).not.toMatch(/Corax White/);
-  expect(after.emblem).not.toBe(before.emblem || "");
+  expect(after.colors.emblem).not.toBe(before.colors.emblem);
 });
 
 test("projects: pick units and a date, and see what's left and how many models a day", async ({page}) => {
@@ -411,4 +412,27 @@ test("shared armies live in Community Ledger: gold, with its tabs, and the old a
   await expect(page.locator("#botnav")).toHaveAttribute("aria-label", "Community Ledger sections");
   await page.click('#botnav a[href="#/community/shared"]');
   await expect(page.locator('#botnav a[aria-current]')).toHaveText("Shared");
+});
+
+test("a unit has Colours used instead of a colour for every piece", async ({page}) => {
+  await seed(page);
+  await open(page, "#/army/a1");
+  await page.getByRole("button", {name: "View Captain"}).click();
+  await page.click("#detail [data-edit]");
+  const ed = page.locator("#editdlg");
+  await expect(ed.locator("[data-slot]")).toHaveCount(0);
+  await expect(ed.locator("legend", {hasText: "Colours used"})).toBeVisible();
+  await ed.locator("#f-used-add").fill("Macragge Blue");
+  await page.locator(".psuggest .psug").first().click();
+  await expect(ed.locator("#f-used li")).toHaveCount(1);
+  await ed.locator("#f-used-add").fill("My own mix");
+  await ed.locator("#f-used-add").press("Enter");
+  await expect(ed.locator("#f-used li")).toHaveCount(2);
+  await ed.locator('[data-used-rm="1"]').click();
+  await expect(ed.locator("#f-used li")).toHaveCount(1);
+  await page.click("#b-save");
+  await expect.poll(async () => (await saved(page)).units.find(u => u.id === "u1").paintsUsed).toEqual([expect.stringMatching(/Macragge Blue/)]);
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", {name: "View Captain"}).click();
+  await expect(page.locator('#detail details[data-k="used"]')).toContainText("Macragge Blue");
 });
