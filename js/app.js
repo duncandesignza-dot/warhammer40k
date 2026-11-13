@@ -7593,7 +7593,7 @@ ${LIV ? `      <section class="lp-war lp-liv panel" aria-labelledby="lp-liv-h">
       </section>
 
       <section class="war-sec" id="h-words" aria-labelledby="h-words-h"><div class="sec-h"><h2 id="h-words-h">What the words mean</h2></div>
-        <div class="hp-gloss">${GLOSS_GROUPS.map(([g, title]) => `<section class="panel hp-g" aria-labelledby="hg-${g}"><h3 id="hg-${g}">${esc(title)}</h3><dl>${Object.entries(GLOSSARY).filter(([, v]) => v.g === g).map(([k, v]) => `<div class="hp-w" id="g-${esc(k)}"><dt>${esc(v.t)}</dt><dd>${esc(v.d)}</dd></div>`).join("")}</dl></section>`).join("")}</div>
+        <div class="hp-gloss">${GLOSS_GROUPS.map(([g, title]) => `<section class="panel hp-g" aria-labelledby="hg-${g}"><h3 id="hg-${g}">${esc(title)}</h3><dl>${Object.entries(GLOSSARY).filter(([, v]) => v.g === g && (LIV || !/Livery Ledger/.test(v.d)) && (COMM || !/Community Ledger/.test(v.d))).map(([k, v]) => `<div class="hp-w" id="g-${esc(k)}"><dt>${esc(v.t)}</dt><dd>${esc(v.d)}</dd></div>`).join("")}</dl></section>`).join("")}</div>
       </section>
 
       <section class="war-sec" id="h-faq" aria-labelledby="h-faq-h"><div class="sec-h"><h2 id="h-faq-h">Questions</h2></div>

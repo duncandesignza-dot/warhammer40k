@@ -30,6 +30,7 @@ for(const [name, viewport] of Object.entries(SIZES)){
 }
 
 test("both modes of the homepage open, and the switch changes the colours", async ({page}) => {
+  await page.addInitScript(() => { window.LEDGER_TOOLS = {livery: true, community: true}; });   // this test covers Livery and Community
   await page.goto("/#/");
   const brand = () => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--brand").trim());
   await page.click('[data-lp-mode="war"], .mode-switch a[href*="war"]');
@@ -39,6 +40,7 @@ test("both modes of the homepage open, and the switch changes the colours", asyn
 });
 
 test("the homepage's Community view is gold, says who runs it and lists every feature", async ({page}) => {
+  await page.addInitScript(() => { window.LEDGER_TOOLS = {livery: true, community: true}; });   // this test covers Livery and Community
   for(const w of [1280, 390, 320]){
     await page.setViewportSize({width: w, height: 800});
     await page.goto("/#/");
@@ -70,6 +72,7 @@ test("the background picker sits next to your profile", async ({page}) => {
 });
 
 test("on a desktop, the homepage switch docks at the bottom once you scroll past it", async ({page}) => {
+  await page.addInitScript(() => { window.LEDGER_TOOLS = {livery: true, community: true}; });   // this test covers Livery and Community
   await page.setViewportSize({width: 1280, height: 800});
   await page.goto("/#/");
   const dock = page.locator("#lp-dock");
@@ -89,6 +92,7 @@ test("on a desktop, the homepage switch docks at the bottom once you scroll past
 });
 
 test("tooltips: pointing at a tab or button says what it does, and so does tabbing to it", async ({page}) => {
+  await page.addInitScript(() => { window.LEDGER_TOOLS = {livery: true, community: true}; });   // this test covers Livery and Community
   await seed(page);
   await page.setViewportSize({width: 1280, height: 800});
   await open(page, "#/war");
@@ -109,6 +113,7 @@ test("tooltips: pointing at a tab or button says what it does, and so does tabbi
 });
 
 test("ⓘ buttons explain a word, on a tap as well as a click, and link to Help", async ({page}) => {
+  await page.addInitScript(() => { window.LEDGER_TOOLS = {livery: true, community: true}; });   // this test covers Livery and Community
   await seed(page);
   await page.setViewportSize({width: 390, height: 800});
   await open(page, "#/war/list/l1");
@@ -130,6 +135,7 @@ test("ⓘ buttons explain a word, on a tap as well as a click, and link to Help"
 });
 
 test("Help: the three tools, getting started, the words and questions, and a ⓘ opens it at its word", async ({page}) => {
+  await page.addInitScript(() => { window.LEDGER_TOOLS = {livery: true, community: true}; });   // this test covers Livery and Community
   await seed(page);
   await open(page, "#/help");
   await expect(page.locator("h1")).toHaveText("How it all works");
@@ -157,6 +163,7 @@ test("Help sits just left of Settings on each ledger's overview", async ({page})
 });
 
 test("getting started: a checklist for someone new, ticking off as they go, and it can be hidden", async ({page}) => {
+  await page.addInitScript(() => { window.LEDGER_TOOLS = {livery: true, community: true}; });   // this test covers Livery and Community
   await seed(page, `db.units = []; db.lists = []; db.games = []; db.armies = db.armies.slice(0, 1);`);
   await open(page, "#/war");
   const card = page.locator('[data-start-card="war"]');

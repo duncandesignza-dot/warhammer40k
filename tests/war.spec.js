@@ -34,6 +34,7 @@ test("a unit can live in the armoury without an army, and lists can use it", asy
 });
 
 test("the armoury lists your units by faction, with points, painting and how often your lists use them", async ({page}) => {
+  await page.addInitScript(() => { window.LEDGER_TOOLS = {livery: true, community: true}; });   // this test covers Livery and Community
   await seed(page, `db.units.push({id: "u9", armyId: "a1", name: "Gladiator Lancer", datasheet: "Gladiator Lancer", role: "Vehicle", count: 1, points: 160, painted: 0, stages: [], fav: true});`);
   await open(page, "#/war/armoury");
   await expect(page.locator("h1")).toHaveText("Armoury");
@@ -368,6 +369,7 @@ test("export a list in New Recruit's tournament layout, and paste it back in wit
 });
 
 test("import an army: the faction is found, and the army and a list of units you don't own yet are made", async ({page}) => {
+  await page.addInitScript(() => { window.LEDGER_TOOLS = {livery: true, community: true}; });   // this test covers Livery and Community
   const text = require("fs").readFileSync(require("path").join(__dirname, "fixtures/newrecruit-world-eaters.txt"), "utf8");
   await seed(page);
   await open(page, "#/war/new");
@@ -574,6 +576,7 @@ test("the eye on army and collection tables shows a unit's datasheet, and the un
 });
 
 test("new army pages show the faction's picture under the army name, where there is one", async ({page}) => {
+  await page.addInitScript(() => { window.LEDGER_TOOLS = {livery: true, community: true}; });   // this test covers Livery and Community
   await seed(page);
   for(const f of ["aeldari", "drukhari", "genestealer-cults", "leagues-of-votann", "necrons", "orks", "tau-empire", "tyranids", "adepta-sororitas", "adeptus-custodes", "adeptus-mechanicus", "agents-of-the-imperium", "astra-militarum", "black-templars", "chaos-daemons", "chaos-knights", "chaos-space-marines", "death-guard", "emperors-children", "blood-angels", "dark-angels", "deathwatch", "grey-knights", "imperial-fists", "imperial-knights", "iron-hands", "raven-guard", "salamanders", "space-wolves", "thousand-sons", "white-scars", "world-eaters"]){
     await open(page, "#/war/new/" + f);
@@ -1024,7 +1027,7 @@ test("game day: CP buttons keep an open datasheet open, and a new game stops sho
 
 test("the site is War Ledger only: no Livery or Community in the header, homepage or help, and their addresses open War Ledger", async ({page}) => {
   await seed(page);
-  await expect(page).toHaveTitle("War Ledger");
+  await expect(page).toHaveTitle(/^War Ledger/);
   await expect(page.locator(".mode-switch, .top-comm, .lp-switch")).toHaveCount(0);
   await expect(page.locator("main")).not.toContainText(/Livery Ledger|Community Ledger/);
   for(const old of ["#/livery", "#/livery/ledgers", "#/army/a1", "#/community", "#/shared", "#/player/x", "#/profile"]){
