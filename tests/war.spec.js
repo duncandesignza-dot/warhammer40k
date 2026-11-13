@@ -1021,3 +1021,23 @@ test("game day: CP buttons keep an open datasheet open, and a new game stops sho
   await open(page, "#/war/battles");
   await expect(page.locator("#pp-go")).toHaveCount(0);
 });
+
+test("the site is War Ledger only: no Livery or Community in the header, homepage or help, and their addresses open War Ledger", async ({page}) => {
+  await seed(page);
+  await expect(page).toHaveTitle("War Ledger");
+  await expect(page.locator(".mode-switch, .top-comm, .lp-switch")).toHaveCount(0);
+  await expect(page.locator("main")).not.toContainText(/Livery Ledger|Community Ledger/);
+  for(const old of ["#/livery", "#/livery/ledgers", "#/army/a1", "#/community", "#/shared", "#/player/x", "#/profile"]){
+    await open(page, old);
+    await expect(page).toHaveURL(/#\/war$/);
+    await expect(page.locator("main h1, main .page-head")).toBeVisible();
+  }
+  await open(page, "#/help");
+  await expect(page.locator("main")).not.toContainText(/Livery Ledger|Community Ledger/);
+  await open(page, "#/settings");
+  await expect(page.locator("main")).not.toContainText(/Livery Ledger|Community Ledger/);
+  await expect(page.locator("#set-group")).toHaveCount(0);
+  await open(page, "#/war/army/a1");
+  await expect(page.locator("main")).not.toContainText(/Livery|Community|painted/i);
+  await expect(page.locator("[data-share]")).toHaveCount(0);
+});

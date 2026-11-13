@@ -1,5 +1,7 @@
 // Getting around: the tab bar on phones, the page for addresses that don't exist, and link previews.
 const {test, expect, seed, open} = require("./helpers");
+// The site runs as War Ledger only by default; these tests cover Livery Ledger and Community Ledger, so they switch them on.
+test.use({tools: {livery: true, community: true}});
 const fs = require("fs"), path = require("path");
 
 test("phones get a tab bar for the tool you're in, lighting the section you're on", async ({page}) => {

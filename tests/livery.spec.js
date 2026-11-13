@@ -1,5 +1,7 @@
 // Livery Ledger: making a ledger, adding units, planned units and the colours prompt.
 const {test, expect, seed, saved, open, mockSupabase} = require("./helpers");
+// The site runs as War Ledger only by default; these tests cover Livery Ledger and Community Ledger, so they switch them on.
+test.use({tools: {livery: true, community: true}});
 
 test("make a ledger and add a unit to it", async ({page}) => {
   await page.goto("/#/livery/new");

@@ -1,6 +1,8 @@
 // Livery Ledger and War Ledger edit the same units with different editors. These check they follow the
 // same rules and never undo each other's work.
 const {test, expect, seed, saved, open} = require("./helpers");
+// The site runs as War Ledger only by default; these tests cover Livery Ledger and Community Ledger, so they switch them on.
+test.use({tools: {livery: true, community: true}});
 
 const unit = async (page, id) => (await saved(page)).units.find(u => u.id === id);
 

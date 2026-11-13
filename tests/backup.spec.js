@@ -1,5 +1,7 @@
 // Backups: everything goes out (lists and battles too), and comes back linked together.
 const {test, expect, seed, saved, open} = require("./helpers");
+// The site runs as War Ledger only by default; these tests cover Livery Ledger and Community Ledger, so they switch them on.
+test.use({tools: {livery: true, community: true}});
 const fs = require("fs");
 
 const PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEklEQVR4nGP4z8DwnwEFMBQAAO4H+Qm7p1wAAAAASUVORK5CYII=";

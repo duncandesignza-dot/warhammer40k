@@ -1,6 +1,8 @@
 // The online version, against a pretend Supabase: saving lists and details, restoring a backup, and
 // what happens when the lists and battles tables haven't been set up.
 const {test, expect, open, mockSupabase, axe} = require("./helpers");
+// The site runs as War Ledger only by default; these tests cover Livery Ledger and Community Ledger, so they switch them on.
+test.use({tools: {livery: true, community: true}});
 
 const DB = {
   armies: [{id: "a1", owner: "u1", faction: "necrons", name: "Szarekhan Dynasty", public: false, updated_at: "2026-09-19", scheme: {tiers: [{name: "Line", color: "#888888"}], colors: {armour: "#888888"}}}],

@@ -1,5 +1,7 @@
 // No accessibility problems (axe-core, WCAG 2.1 AA) on the main pages and dialogs.
 const {test, expect, seed, open, axe, noSidewaysScroll} = require("./helpers");
+// The site runs as War Ledger only by default; these tests cover Livery Ledger and Community Ledger, so they switch them on.
+test.use({tools: {livery: true, community: true}});
 
 const PAGES = ["#/", "#/livery", "#/livery/collection", "#/livery/paints", "#/livery/new/ultramarines", "#/army/a1", "#/army/a1/colours",
   "#/war", "#/war/armoury", "#/war/collection", "#/war/army/a1", "#/war/list/l1", "#/war/lists", "#/war/battles", "#/war/buy", "#/war/datasheets", "#/war/events", "#/settings"];
