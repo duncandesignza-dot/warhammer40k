@@ -6,8 +6,13 @@ const fs = require("fs");
 const AXE = fs.readFileSync(require.resolve("axe-core/axe.min.js"), "utf8");
 
 const test = base.test.extend({
+  // The site runs as War Ledger only (TOOLS in js/app.js). Livery Ledger and Community Ledger are still
+  // tested, so they keep working for when they're switched back on: those tests turn them on with
+  // test.use({tools: {livery: true, community: true}}).
+  tools: [{}, {option: true}],
   errors: async ({}, use) => { await use([]); },
-  page: async ({page, errors}, use) => {
+  page: async ({page, errors, tools}, use) => {
+    if(Object.keys(tools).length) await page.addInitScript(t => { window.LEDGER_TOOLS = t; }, tools);
     page.on("pageerror", e => errors.push(e.message));
     page.on("console", m => { if(m.type() === "error" && !/Failed to load resource|net::ERR_/.test(m.text())) errors.push(m.text()); });
     // Everything off this machine is blocked. With the Supabase library blocked the app saves in the

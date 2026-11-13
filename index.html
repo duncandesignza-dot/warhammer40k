@@ -3,15 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Livery Ledger</title>
-<meta name="description" content="A free Warhammer 40,000 army tracker. Livery Ledger plans your colour schemes and painting; War Ledger tracks your collection, army lists and battles.">
+<title>War Ledger</title>
+<meta name="description" content="A free Warhammer 40,000 army tracker. War Ledger keeps your armies, builds and checks your army lists, and records your battles.">
 <meta name="theme-color" content="#06080a">
 <!-- Link previews (WhatsApp, Facebook, Discord and others). Every link opens this page, so one preview covers both tools. -->
 <meta property="og:type" content="website">
-<meta property="og:site_name" content="Livery Ledger">
+<meta property="og:site_name" content="War Ledger">
 <meta property="og:url" content="https://www.liveryledger.co.za/">
-<meta property="og:title" content="Livery Ledger and War Ledger: paint your army, command it">
-<meta property="og:description" content="A free Warhammer 40,000 army tracker. Plan colour schemes and track painting in Livery Ledger; track your collection, army lists and battles in War Ledger.">
+<meta property="og:title" content="War Ledger: command your Warhammer 40,000 army">
+<meta property="og:description" content="A free Warhammer 40,000 army tracker. Keep your armies, build army lists checked against the points, and record every battle.">
 <meta property="og:image" content="https://www.liveryledger.co.za/img/share.jpg">
 <meta property="og:image:type" content="image/jpeg">
 <meta property="og:image:width" content="1200">
@@ -24,18 +24,19 @@
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Livery Ledger">
+<meta name="apple-mobile-web-app-title" content="War Ledger">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap">
-<script>try{var d=document.documentElement,h=location.hash;d.dataset.bg=localStorage.getItem("ll-bg")||"1";if(/^#\/war(\/|$)/.test(h)||(!/^#\/(profile|army|new)(\/|$)/.test(h)&&localStorage.getItem("ll-mode")==="war"))d.dataset.mode="war"}catch(e){}</script>
+<!-- The site is War Ledger only for now (TOOLS in js/app.js), so it always opens in War's colours. -->
+<script>try{var d=document.documentElement,h=location.hash,t=window.LEDGER_TOOLS||{};d.dataset.bg=localStorage.getItem("ll-bg")||"1";if(!t.livery||/^#\/war(\/|$)/.test(h)||(!/^#\/(profile|army|new)(\/|$)/.test(h)&&localStorage.getItem("ll-mode")==="war"))d.dataset.mode="war"}catch(e){}</script>
 <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
   <div class="topbar">
     <div class="topbar-in">
-      <a class="brand" href="#/" aria-label="Livery Ledger home">
+      <a class="brand" href="#/" aria-label="War Ledger home">
         <svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true">
           <defs>
             <linearGradient id="bm-g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:var(--brand)"/><stop offset="1" style="stop-color:var(--brand-2)"/></linearGradient>

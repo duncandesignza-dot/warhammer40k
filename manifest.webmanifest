@@ -1,8 +1,8 @@
 {
-  "name": "Livery Ledger",
-  "short_name": "Livery Ledger",
-  "description": "Plan and track how you paint your Warhammer 40,000 armies.",
-  "start_url": "./#/profile",
+  "name": "War Ledger",
+  "short_name": "War Ledger",
+  "description": "Keep your Warhammer 40,000 armies, build army lists and record your battles.",
+  "start_url": "./#/war",
   "scope": "./",
   "display": "standalone",
   "background_color": "#06080a",

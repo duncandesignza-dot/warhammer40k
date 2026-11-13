@@ -6,6 +6,13 @@
   const STATUS = S.STATUS;
   const FACTIONS = DATA.factions;
   const FBY = Object.fromEntries(FACTIONS.map(f => [f.id, f]));
+  /* Which tools are on. Livery Ledger (painting) and Community Ledger (events and shared armies for the club)
+     are switched off for now, so the site is War Ledger only: their pages send you to War Ledger, and nothing
+     links to them. Their code and everyone's data are kept, so setting these back to true brings them back
+     (index.html's first script and its title also name the site). */
+  const TOOLS = {livery: false, community: false, ...(window.LEDGER_TOOLS || {})};   // tests can switch them on
+  const LIV = TOOLS.livery, COMM = TOOLS.community;
+  const SITE = LIV ? "Livery Ledger" : "War Ledger";
   // A few datasheets' unit sizes disagree with their price brackets (Jakhals say 2 models but cost more from 11),
   // and a few have brackets but no size. Where they disagree the brackets win: from one below the first bracket
   // up to its end, or double that when it's open-ended (10 and 20 for Jakhals).
@@ -282,20 +289,20 @@
   }
   function drawTop(){
     const nav = $("topnav"), a = store.kind === "supabase" ? acct() : null, war = isWar(), comm = document.documentElement.dataset.page === "community";
-    const sw = `<div class="mode-switch" role="group" aria-label="Switch between Livery Ledger and War Ledger"><a href="#/livery"${war || comm ? "" : ` aria-current="true"`}><span class="ms-ico">${LOGO_DROP}</span><span class="ms-text"><span class="ms-long">Livery<span class="ms-full" aria-hidden="true"> Ledger</span></span><span class="ms-sub" aria-hidden="true">Paint your army</span></span><span class="ms-short" aria-hidden="true">L</span><span class="sr-only"> Ledger: painting</span></a><a href="#/war"${war && !comm ? ` aria-current="true"` : ""}><span class="ms-ico">${LOGO_SWORDS}</span><span class="ms-text"><span class="ms-long">War<span class="ms-full" aria-hidden="true"> Ledger</span></span><span class="ms-sub" aria-hidden="true">Command your army</span></span><span class="ms-short" aria-hidden="true">W</span><span class="sr-only"> Ledger: your fighting force</span></a></div>`;
+    const sw = !LIV ? "" : `<div class="mode-switch" role="group" aria-label="Switch between Livery Ledger and War Ledger"><a href="#/livery"${war || comm ? "" : ` aria-current="true"`}><span class="ms-ico">${LOGO_DROP}</span><span class="ms-text"><span class="ms-long">Livery<span class="ms-full" aria-hidden="true"> Ledger</span></span><span class="ms-sub" aria-hidden="true">Paint your army</span></span><span class="ms-short" aria-hidden="true">L</span><span class="sr-only"> Ledger: painting</span></a><a href="#/war"${war && !comm ? ` aria-current="true"` : ""}><span class="ms-ico">${LOGO_SWORDS}</span><span class="ms-text"><span class="ms-long">War<span class="ms-full" aria-hidden="true"> Ledger</span></span><span class="ms-sub" aria-hidden="true">Command your army</span></span><span class="ms-short" aria-hidden="true">W</span><span class="sr-only"> Ledger: your fighting force</span></a></div>`;
     if(store.kind !== "supabase"){ nav.innerHTML = sw; return; }
     if(!a){
       nav.innerHTML = `<button type="button" class="btn-sm ghost" data-auth-open="in">Log in</button><button type="button" class="btn-sm primary" data-auth-open="up">Sign up</button>`;
       return;
     }
-    const commLink = `<a class="top-comm" href="#/community" title="Community Ledger"${comm ? ` aria-current="page"` : ""}><span class="tc-ico">${LOGO_COMMUNITY}</span><span class="tc-l">Community Ledger</span></a>`;
+    const commLink = !COMM ? "" : `<a class="top-comm" href="#/community" title="Community Ledger"${comm ? ` aria-current="page"` : ""}><span class="tc-ico">${LOGO_COMMUNITY}</span><span class="tc-l">Community Ledger</span></a>`;
     nav.innerHTML = commLink + sw + `<div class="acct">
       <button type="button" class="acct-btn" id="b-acct" aria-haspopup="menu" aria-expanded="false" aria-controls="acct-menu" aria-label="Account menu for ${esc(a.name)}">${avatarHtml(a)}<span class="acct-name">${esc(a.name)}</span>${CARET}</button>
       <div class="acct-menu" id="acct-menu" role="menu" hidden>
         <div class="acct-head">${avatarHtml(a, "lg")}<span><strong>${esc(a.name)}</strong><small>${esc(a.email)}</small></span></div>
         <a role="menuitem" href="#/">Home</a>
         ${(war ? WAR_TABS : LIV_TABS).map(([k, l]) => `<a role="menuitem" href="#/${war ? "war" : "livery"}${k ? "/" + k : ""}">${esc(l)}</a>`).join("")}
-        <a role="menuitem" href="#/community">Community Ledger</a>
+        ${COMM ? `<a role="menuitem" href="#/community">Community Ledger</a>` : ""}
         <a role="menuitem" href="#/settings">Settings</a>
         <a role="menuitem" href="#/help">Help</a>
         ${installable() ? `<button type="button" role="menuitem" data-install>Install app</button>` : ""}
@@ -597,6 +604,10 @@
     const raw = location.hash.replace(/^#\/?/, "") || "", anchor = raw.includes("#") ? raw.slice(raw.indexOf("#") + 1) : "";
     const parts = raw.split("#")[0].split("/").filter(Boolean);
     // War Ledger pages are red, Livery Ledger's own pages green; shared pages keep the last one used.
+    // A tool that's switched off: its pages (and old links to them) open War Ledger's overview instead.
+    if((!LIV && ["livery", "army", "new", "profile"].includes(parts[0])) || (!COMM && ["community", "shared", "player", "painter"].includes(parts[0]))){
+      history.replaceState(null, "", "#/war"); lastHash = location.hash; parts.splice(0, parts.length, "war");
+    }
     // Old links to the profile page open Livery Ledger's overview.
     if(parts[0] === "profile"){ history.replaceState(null, "", "#/livery"); lastHash = location.hash; parts.splice(0, parts.length, "livery"); }
     setMode(parts[0] === "war" ? "war" : ["livery", "army", "new"].includes(parts[0]) ? "livery" : savedMode());
@@ -698,12 +709,13 @@
     return store.saveArmy({faction, name: `${f.name} (not in an army)`, scheme: {...P.presetFor(faction), pool: true, wonly: true}, public: false});
   }
   const isWar = () => document.documentElement.dataset.mode === "war";
-  const toolName = () => isWar() ? "War Ledger" : "Livery Ledger";
+  const toolName = () => isWar() || !LIV ? "War Ledger" : "Livery Ledger";
   function setMode(m){
+    if(!LIV) m = "war";
     if(m === "war") document.documentElement.dataset.mode = "war"; else delete document.documentElement.dataset.mode;
     try { localStorage.setItem(MODE_KEY, m === "war" ? "war" : "livery"); } catch(e){}
   }
-  const savedMode = () => { try { return localStorage.getItem(MODE_KEY) === "war" ? "war" : "livery"; } catch(e){ return "livery"; } };
+  const savedMode = () => { if(!LIV) return "war"; try { return localStorage.getItem(MODE_KEY) === "war" ? "war" : "livery"; } catch(e){ return "livery"; } };
 
   // Models and points in some units. War Ledger counts every unit, owned or not, so you can try out forces you don't have.
   const modelsOf = u => Math.max(1, +u.count || 1);
@@ -876,7 +888,7 @@
     const t = getTimer();
     let bar = $("ptimer");
     clearInterval(timerTick);
-    if(!t){ if(bar) bar.remove(); document.body.classList.remove("has-timer"); return; }
+    if(!t || !LIV){ if(bar) bar.remove(); document.body.classList.remove("has-timer"); return; }
     if(!bar){ bar = document.createElement("div"); bar.id = "ptimer"; bar.className = "ptimer"; bar.setAttribute("role", "region"); bar.setAttribute("aria-label", "Painting timer"); document.body.appendChild(bar);
       bar.addEventListener("click", e => { if(e.target.closest("[data-tstop]")) stopTimer(); }); }
     bar.innerHTML = `<span class="pt-dot" aria-hidden="true"></span><a href="#/army/${esc(t.armyId)}">Painting <b>${esc(t.name)}</b></a><span class="pt-clock"></span><button type="button" class="btn-sm" data-tstop>Stop</button>`;
@@ -1005,7 +1017,7 @@
       <h2>Muster your first army</h2>
       <p class="sub">Pick a faction and name your force. Then add units, whether you own them or not, or paste an army list to add them all at once.</p>
       <a class="btn primary" href="#/war/new">+ New army</a>
-      <p class="hint">Already painting in Livery Ledger? Those armies show up here automatically.</p>
+      ${LIV ? `<p class="hint">Already painting in Livery Ledger? Those armies show up here automatically.</p>` : ""}
     </section>`;
   const SWORDS = `<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 3l10.5 12.5M20 3 9.5 15.5"/><path d="M12.5 17.5l3.5-3M11.5 17.5 8 14.5"/><path d="M15.5 16l3.5 4.5M8.5 16 5 20.5"/></svg>`;
 
@@ -1015,7 +1027,7 @@
     return `<ul class="games">${games.map(g => `<li class="game r-${g.result}">
         <span class="res" aria-label="${RES[g.result]}">${g.result.toUpperCase()}</span>
         <div class="g-main"><strong>${esc(an(g.armyId))}${ln(g.listId) ? ` <small>· ${esc(ln(g.listId))}</small>` : ""}</strong>
-          <small>vs ${g.oppUser && store.canShare ? `<a href="#/player/${esc(g.oppUser)}" class="g-friend">${esc(g.oppName || g.oppUserName || factionName(g.opp))}</a>` : esc(g.oppName || factionName(g.opp))}${g.mission ? ` · ${esc(g.mission)}` : ""} · ${esc(dayText(g.date))}</small></div>
+          <small>vs ${g.oppUser && store.canShare && COMM ? `<a href="#/player/${esc(g.oppUser)}" class="g-friend">${esc(g.oppName || g.oppUserName || factionName(g.opp))}</a>` : esc(g.oppName || factionName(g.opp))}${g.mission ? ` · ${esc(g.mission)}` : ""} · ${esc(dayText(g.date))}</small></div>
         ${g.us != null || g.them != null ? `<span class="score">${g.us ?? "–"}–${g.them ?? "–"}</span>` : ""}
         <button type="button" class="btn-sm" data-game="${esc(g.id)}" aria-label="Edit battle on ${esc(dayText(g.date))}">Edit</button>
       </li>`).join("")}</ul>`;
@@ -1087,7 +1099,7 @@
     };
     const has = D.armies.length || mine.length;
     app.innerHTML = armoury ? `
-      ${tabHead("War Ledger", "Armoury", "Every unit you own, by faction, with its points, how much is painted and how many of your lists use it.", `<button type="button" class="btn btn-sm primary" data-coll-add>+ Add unit</button>`)}
+      ${tabHead("War Ledger", "Armoury", `Every unit you own, by faction, with its points, ${LIV ? "how much is painted " : ""}and how many of your lists use it.`, `<button type="button" class="btn btn-sm primary" data-coll-add>+ Add unit</button>`)}
       ${warTabs("armoury")}
       ${missingBanner(D)}
       ${has ? `
@@ -1096,7 +1108,7 @@
         return `<section class="war-sec ar-fac" aria-labelledby="ar-${esc(f.fid)}">
         <div class="ar-head">${soloBadge(factionBadge(f.fid, 40), 40)}<div class="ar-title"><h2 id="ar-${esc(f.fid)}">${esc(factionName(f.fid))}</h2>
           <p class="ar-stats">${esc([plural(f.us.length, "unit"), plural(t.models, "model"), ptsText(t.points)].join(" · "))}</p></div>
-          <div class="ar-paintbar" title="${p} of ${t.models} models painted"><span>${pct(p, t.models)}% painted</span><div class="wbar" aria-hidden="true"><i style="width:${pct(p, t.models)}%"></i></div><small>${p} of ${plural(t.models, "model")} · <a href="${f.armies.find(a => !isPool(a)) ? `#/army/${esc(f.armies.find(a => !isPool(a)).id)}` : "#/livery"}">Livery Ledger</a></small></div></div>
+          ${LIV ? `<div class="ar-paintbar" title="${p} of ${t.models} models painted"><span>${pct(p, t.models)}% painted</span><div class="wbar" aria-hidden="true"><i style="width:${pct(p, t.models)}%"></i></div><small>${p} of ${plural(t.models, "model")} · <a href="${f.armies.find(a => !isPool(a)) ? `#/army/${esc(f.armies.find(a => !isPool(a)).id)}` : "#/livery"}">Livery Ledger</a></small></div>` : ""}</div>
         <p class="ar-meta">${f.armies.filter(a => !isPool(a)).map(a => `<a class="ar-chip" href="#/war/army/${esc(a.id)}">${armyBadge(a, 18)}${esc(a.name)} <small>${D.byArmy(a.id).length}</small></a>`).join("")}
           <span>${plural(lists, "army list")}</span>${f.gs.length ? `<span>${recText(rec)} in ${plural(f.gs.length, "battle")}</span>` : ""}</p>
         ${table(f)}
@@ -1128,7 +1140,7 @@
         <div class="card-top">${armyBadge(a, 44)}<div><h3>${esc(a.name)}</h3><div class="meta">${esc(factionName(a.faction))}</div></div></div>
         <div class="wc-nums"><span><b>${num(t.points)}</b> pts</span><span><b>${us.length}</b> ${us.length === 1 ? "unit" : "units"}</span>${r.w + r.l + r.d ? `<span><b>${recText(r)}</b> record</span>` : ""}</div>
         <div class="prog" aria-hidden="true"><i style="width:${pctOf(p, t.models)}%"></i></div>
-        <div class="foot"><span>${pctOf(p, t.models)}% painted</span><span>${plural(t.models, "model")}</span></div>
+        <div class="foot"><span>${LIV ? `${pctOf(p, t.models)}% painted` : plural(us.length, "unit")}</span><span>${plural(t.models, "model")}</span></div>
       </a>`; };
     const lists = D.lists.filter(l => l.status !== "archived").sort((x, y) => String(y.updatedAt || "").localeCompare(String(x.updatedAt || ""))).slice(0, 3);
     const games = D.games.slice().sort((x, y) => String(y.date).localeCompare(String(x.date))), rec = recordOf(games);
@@ -1326,7 +1338,7 @@
         <label>Points<input id="w-pts" type="number" min="0" max="9999" inputmode="numeric" value="${u ? u.points : 0}"></label>
         <p class="hint span3 pts-hint" id="w-ptshint" aria-live="polite"></p>
         ${choices ? `<label class="span3">Army<select id="w-army"><option value="">Not in an army (just in your collection)</option>${choices.map(a => `<option value="${esc(a.id)}"${a.id === curArmy ? " selected" : ""}>${esc(a.name)}${a.faction !== army.faction ? ` (${esc(factionName(a.faction))})` : ""}</option>`).join("")}</select></label>` : ""}
-        <label class="chk span3"><input type="checkbox" id="w-fav"${u && u.fav ? " checked" : ""}><span>Starred <small>(shows with a star here and in Livery Ledger)</small></span></label>
+        <label class="chk span3"><input type="checkbox" id="w-fav"${u && u.fav ? " checked" : ""}><span>Starred <small>(shows with a star${LIV ? " here and in Livery Ledger" : ""})</small></span></label>
       </div>
       </div><div class="wu-col">
       <fieldset class="wfs"><legend>Wargear</legend>
@@ -1529,11 +1541,11 @@
         <div class="crumbs"><a href="#/war">War Ledger</a> / <a href="#/war/lists">Army lists</a> / ${esc(army.name)}</div>
         <section class="page-head war-head">
           <div class="wh-id">${armyBadge(army, 64)}<div><p class="eyebrow">${esc(factionName(army.faction))}</p><h1>${esc(army.name)}</h1>
-            <p class="sub"><a href="#/army/${esc(id)}">Open in Livery Ledger</a> to plan its colours and painting.</p></div></div>
-          <div class="war-actions"><button type="button" class="primary" data-add-unit>+ Add unit</button><button type="button" data-from-list>Add from a list</button><button type="button" class="share-btn${army.public ? " on" : ""}" data-share><span class="dot${army.public ? " on" : ""}"></span>${army.public ? "Shared" : "Share"}</button>
+            ${LIV ? `<p class="sub"><a href="#/army/${esc(id)}">Open in Livery Ledger</a> to plan its colours and painting.</p>` : ""}</div></div>
+          <div class="war-actions"><button type="button" class="primary" data-add-unit>+ Add unit</button><button type="button" data-from-list>Add from a list</button>${COMM ? `<button type="button" class="share-btn${army.public ? " on" : ""}" data-share><span class="dot${army.public ? " on" : ""}"></span>${army.public ? "Shared" : "Share"}</button>` : ""}
             <div class="more"><button type="button" id="wa-more" aria-expanded="false" aria-controls="wa-menu">More</button>
               <div class="more-menu" id="wa-menu" hidden>
-                <a href="#/army/${esc(id)}/colours">Edit colours</a>
+                ${LIV ? `<a href="#/army/${esc(id)}/colours">Edit colours</a>` : ""}
                 ${D.warMissing ? "" : `<button type="button" data-new-list="${esc(id)}">New army list</button><button type="button" data-log="${esc(id)}">Log a battle</button>`}
                 <button type="button" data-rename>Rename army</button>
                 ${D.warMissing ? "" : `<button type="button" data-full-list>Make a list of the whole army</button>`}
@@ -1921,7 +1933,7 @@
     const us = D.byArmy(a.id), t = sumUp(us), painted = paintedOf(us), gs = D.games.filter(g => g.armyId === a.id);
     return `<a class="lcard war-card full-army" href="#/war/army/${esc(a.id)}">
       <div class="card-top">${armyBadge(a, 44)}<div><h3>Full army</h3><div class="meta">${esc([factionName(a.faction), "Every unit you own in it"].join(" · "))}</div></div></div>
-      <div class="wc-nums"><span><b>${num(t.points)}</b>${a.scheme && a.scheme.limit ? ` / ${num(a.scheme.limit)}` : ""} pts</span><span><b>${us.length}</b> ${us.length === 1 ? "unit" : "units"}</span><span><b>${t.models ? Math.round(painted / t.models * 100) : 0}%</b> painted</span></div>
+      <div class="wc-nums"><span><b>${num(t.points)}</b>${a.scheme && a.scheme.limit ? ` / ${num(a.scheme.limit)}` : ""} pts</span><span><b>${us.length}</b> ${us.length === 1 ? "unit" : "units"}</span>${LIV ? `<span><b>${t.models ? Math.round(painted / t.models * 100) : 0}%</b> painted</span>` : ""}</div>
       ${a.scheme && a.scheme.limit ? `<div class="prog" aria-hidden="true"><i style="width:${Math.min(100, pctOf(t.points, a.scheme.limit))}%"></i></div>` : ""}
       <div class="foot"><span>${plural(t.models, "model")}</span>${gs.length ? `<span>${recText(recordOf(gs))}</span>` : ""}</div>
     </a>`;
@@ -2342,7 +2354,7 @@
       }
       if(!n) return;
       D = await warData(); list = {...list, units}; await save({units});
-      flash(`${plural(n, "unit")} added to ${army.name}, and to Livery Ledger ready to paint.`);
+      flash(`${plural(n, "unit")} added to ${army.name}${LIV ? ", and to Livery Ledger ready to paint" : ""}.`);
     }
     // The eye: the datasheet (models, weapons, abilities, rules and keywords), with this unit's models,
     // wargear and points in this list above it.
@@ -2358,7 +2370,7 @@
         </div>
         ${x.u ? `<p class="hint">Leave the points blank to use the unit's own (${num(+x.u.points || 0)}). A change here only affects this list. <button type="button" class="linkish" data-edit-unit>Edit the unit</button> to change its models or wargear.</p>`
           : `<div class="gp-field"><span class="gp-label" id="w-egear-l">Wargear</span><div class="gear-pick" id="w-egear" role="group" aria-labelledby="w-egear-l"></div></div>`}
-        <div class="row-actions"><button type="submit" class="primary">Save</button>${x.u ? "" : `<button type="button" data-bought>I've bought this</button><span class="hint">Adds it to ${esc(army.name)} and to Livery Ledger.</span>`}</div>
+        <div class="row-actions"><button type="submit" class="primary">Save</button>${x.u ? "" : `<button type="button" data-bought>I've bought this</button><span class="hint">Adds it to ${esc(army.name)}${LIV ? " and to Livery Ledger" : ""}.</span>`}</div>
         <div id="ds-body" class="ds" aria-live="polite"><p class="hint">Loading the datasheet…</p></div>`, "wide");
       let find = null;
       const drawSheet = () => { const b = $("ds-body"); if(b && find) b.innerHTML = datasheetHtml(find(sh ? sh.n : (x.u ? x.u.datasheet : x.sheet)), gearNow()); };
@@ -2962,7 +2974,7 @@
           <p class="ev-list">${past ? "You went" : "You're going"}${l ? `, taking <a href="#/war/list/${esc(l.id)}">${esc(l.name)}</a> <small>${esc([a ? a.name : "", ptsText(s.points) + (l.limit ? ` of ${num(l.limit)}` : "")].filter(Boolean).join(" · "))}</small>` : ". No list chosen yet."}</p>
           ${!past && ch && ch.items.length ? `<p class="ev-warn">The latest points change this list (${num(s.points)} → ${num(ch.next)} pts). <a href="#/war/points">Points check</a></p>` : ""}
           ${!past && over ? `<p class="ev-warn">${ptsText(s.points - l.limit)} over its limit.</p>` : ""}
-          ${l && !past ? (j => j.models ? `<p class="ev-paint">${j.todo ? `<b>${plural(j.todo, "model")}</b> still to paint: ${perDay(j.todo, n)}. <a href="#/livery">Livery Ledger</a>` : `Every model in it is painted.`}</p>` : "")(paintJob(l, D.units)) : ""}
+          ${l && !past && LIV ? (j => j.models ? `<p class="ev-paint">${j.todo ? `<b>${plural(j.todo, "model")}</b> still to paint: ${perDay(j.todo, n)}. <a href="#/livery">Livery Ledger</a>` : `Every model in it is painted.`}</p>` : "")(paintJob(l, D.units)) : ""}
           ${m.notes ? `<p class="ev-notes">${esc(m.notes)}</p>` : ""}
           ${l && (past || n === 0) ? `<p class="ev-res">${gs.length ? `Result: <b>${recText(recordOf(gs))}</b> over ${plural(gs.length, "game")}` : "No battles logged for it yet."}</p>` : ""}
         </div>` : ""}
@@ -3233,7 +3245,7 @@
           if(done.has(list.id)) continue; done.add(list.id);
           await store.saveList({...list, units: list.units.map((x, j) => j === i ? ownedEntry(x, unit) : x)}, list.id);
         }
-        flash(`${r.name} added to ${r.army.name}, and to Livery Ledger ready to paint.`);
+        flash(`${r.name} added to ${r.army.name}${LIV ? ", and to Livery Ledger ready to paint" : ""}.`);
         D = await warData(); draw();
       } catch(err){ console.error(err); flash("Couldn't save: " + errText(err)); D = await warData(); draw(); }
     });
@@ -4114,7 +4126,7 @@
         <label>Army name<input id="w-name" maxlength="80" placeholder="e.g. ${esc(f.name)} Strike Force" autocomplete="off"></label>
         ${factionHero(fid)}
         <label><span>Points you're building to <span class="opt">(optional)</span></span><input id="w-lim" type="number" min="0" max="20000" step="250" inputmode="numeric" placeholder="e.g. 2000"></label>
-        <p class="hint">War Ledger uses the faction's official colours behind the scenes. If you start painting, you can choose your own in Livery Ledger.</p>
+        ${LIV ? `<p class="hint">War Ledger uses the faction's official colours behind the scenes. If you start painting, you can choose your own in Livery Ledger.</p>` : ""}
         <div class="row-actions"><button type="submit" class="primary">Create army</button><button type="button" id="wn-import">Import from a list</button><a class="btn" href="#/war/new">Back</a><span class="msg" id="w-msg" role="status"></span></div>
       </form>`;
     // Already built it somewhere else: paste the list and War Ledger makes the army and a list together.
@@ -4162,7 +4174,7 @@
         <label class="span2">Faction${factionSelect("ia-f", "", "Choose a faction…")}</label>
         <label>Points limit<input id="ia-lim" type="number" min="0" max="20000" step="250" inputmode="numeric" placeholder="No limit"></label>
         <label class="span3">Army name<input id="ia-name" maxlength="80" autocomplete="off"></label>
-        <label class="chk span3"><input type="checkbox" id="ia-own"><span>I own all of these <small>(they go in the army, and in Livery Ledger ready to paint)</small></span></label>
+        <label class="chk span3"><input type="checkbox" id="ia-own"><span>I own all of these <small>(${LIV ? "they go in the army, and in Livery Ledger ready to paint" : "they go in your Armoury"})</small></span></label>
       </div>
       <div id="ia-found" class="w-found ia-found" aria-live="polite"></div>
       <div class="row-actions"><button type="submit" class="primary" id="ia-go" disabled>Import army</button><span class="msg" id="w-msg" role="status"></span></div>`, "wide");
@@ -4228,7 +4240,7 @@
       t.querySelectorAll("td").forEach(x => x.setAttribute("role", "cell"));
     });
   }
-  const PLANNED_TAG = `<span class="tag plan" title="Planned: you don't own it yet, so it isn't in Livery Ledger">Planned</span>`;
+  const PLANNED_TAG = `<span class="tag plan" title="Planned: you don't own it yet${LIV ? ", so it isn't in Livery Ledger" : ""}">Planned</span>`;
   // A list unit that isn't in your army: you're testing it before you buy it.
   const NOT_OWNED_TAG = `<span class="tag plan" title="Not in your army yet. Mark it as owned when you buy it.">Not owned</span>`;
   const singleRole = r => ["Epic Hero","Character","Vehicle","Monster","Dedicated Transport","Fortification"].includes(r);
@@ -4433,7 +4445,7 @@
   let landingDock = null;   // watches the switch at the top, to show the docked one when it's gone
   async function viewLanding(opts){
     view.name = "landing";
-    const comm = !!(opts && opts.comm), war = isWar() && !comm;
+    const comm = COMM && !!(opts && opts.comm), war = (isWar() || !LIV) && !comm;
     if(comm) document.documentElement.dataset.page = "community"; else delete document.documentElement.dataset.page;
     setTop();
     document.title = comm ? "Community Ledger · Run by the Eastern Cape Warlords" : war ? "War Ledger · Track your Warhammer 40,000 armies, lists and battles" : "Livery Ledger · Plan and track your Warhammer 40,000 painting";
@@ -4683,7 +4695,7 @@ Redemptor Dreadnought (210 points)</pre>
 
       <section class="lp-cta panel">
         <div><h2>Your army deserves a plan</h2><p class="sub">Free, and ready in under a minute.</p></div>
-        <div class="lp-cta-btns">${me ? `<a class="btn lg" href="#/community/shared">Browse shared armies</a>` : ""}${cta}</div>
+        <div class="lp-cta-btns">${me && COMM ? `<a class="btn lg" href="#/community/shared">Browse shared armies</a>` : ""}${cta}</div>
       </section>
     `;
     // The War Ledger homepage: the same shell, with War Ledger's own features.
@@ -4777,7 +4789,7 @@ Redemptor Dreadnought (210 points)</pre>
         </article>
       </section>
 
-      <section class="lp-war lp-liv panel" aria-labelledby="lp-liv-h">
+${LIV ? `      <section class="lp-war lp-liv panel" aria-labelledby="lp-liv-h">
         <div class="lpw-copy">
           <p class="eyebrow">The companion: Livery Ledger</p>
           <h2 id="lp-liv-h">War Ledger records the war. <span class="grad">Livery Ledger records the hobby.</span></h2>
@@ -4792,7 +4804,7 @@ Redemptor Dreadnought (210 points)</pre>
           <div class="ill-card"><div class="ill-badges"><div>${b(demo.tiers[0].color, 72)}</div></div></div>
           <div class="ill-rows">${swatch("Armour", "armour")}${swatch("Trim", "trim")}${swatch("Lenses", "lens")}</div>
         </div>
-      </section>
+      </section>` : ""}
 
       <section class="lp-grid" aria-labelledby="lp-more-h">
         <h2 id="lp-more-h" class="lp-grid-h">And the little things that help</h2>
@@ -4806,15 +4818,15 @@ Redemptor Dreadnought (210 points)</pre>
              ["print", "Print a list", "A clean copy of any list to take to the table."],
              ["swap", "Compare lists", "Put two lists side by side to see what's different."],
              ["note", "Opponent notes", "Your notes on each faction you face, shown when you play them."],
-             ["users", "Battles against friends", "Tag a friend as your opponent and they can add the game to their own record."],
+             ...(COMM ? [["users", "Battles against friends", "Tag a friend as your opponent and they can add the game to their own record."]] : []),
              ["check", "Things to check", "Friendly notes on a list, like going over the points, having no warlord or a leader with nothing to lead."],
              ["layers", "Wargear", "Note each unit's loadout, filled in from its datasheet to start with."],
              ["list", "Your whole collection", "Every unit across every army in one list, grouped by army or role."],
              ["copy", "Copy a list", "Copy any list as text to send to an opponent or tournament organiser."],
              ["layers", "Duplicate lists", "Try a variation of a list without touching the original."],
              ["trophy", "Records by opponent", "See how you fare against each faction you face."],
-             ["share", "Shared armies", "Share an army and its win–loss record shows alongside it."],
-             ["brush", "Works with Livery Ledger", "Every army here can be given colours and painted in Livery Ledger."],
+             ...(COMM ? [["share", "Shared armies", "Share an army and its win–loss record shows alongside it."]] : []),
+             ...(LIV ? [["brush", "Works with Livery Ledger", "Every army here can be given colours and painted in Livery Ledger."]] : []),
              ["backup", "Backups", "Download an army any time, and bring it back whenever you like."],
              ["phone", "Install it like an app", "Add it to your home screen and have it ready on game night."]]
             .map(([k, h, t]) => `<div class="panel lp-mini"><span class="lp-ico">${icon(k)}</span><h3>${h}</h3><p>${t}</p></div>`).join("")}
@@ -4835,19 +4847,19 @@ Redemptor Dreadnought (210 points)</pre>
         <div class="lp-faq-list">
           ${[["Is it free?", "Yes. Every feature is free to use."],
              ["Do I need to own the models?", "No. Army lists can include units you don't own yet, straight from the datasheets, so you can try a list before you buy it."],
-             ["Do I need to paint my models?", "No. War Ledger works without choosing colours or tracking painting. If you do paint, Livery Ledger shares the same armies."],
+             ["Do I need to paint my models?", LIV ? "No. War Ledger works without choosing colours or tracking painting. If you do paint, Livery Ledger shares the same armies." : "No. War Ledger is about your armies, lists and battles, not painting."],
              online ? ["Do I need an account?", "A free account keeps your armies, lists and battles safe online, so they follow you from your phone to your computer. Sign up with just an email and password."]
                     : ["Do I need an account?", "Not on this copy. Everything is saved in this browser, so use Backups now and then to keep a copy somewhere safe."],
-             ["Can other people see my lists and battles?", "No. Army lists and battle reports are private. If you share an army, only its win–loss record is shown with it."],
+             ["Can other people see my lists and battles?", COMM ? "No. Army lists and battle reports are private. If you share an army, only its win–loss record is shown with it." : "No. Your armies, army lists and battle reports are private."],
              ["Which army lists can I paste?", `Lists from the Warhammer 40,000 app, New Recruit and BattleScribe, and list-builder share codes. Units are matched to ${num(nSheets)} datasheets across ${FACTIONS.length} factions and chapters.`],
-             ["Is this made by Games Workshop?", "No. War Ledger and Livery Ledger are an unofficial fan tool and aren't endorsed by Games Workshop."]]
+             ["Is this made by Games Workshop?", `No. ${LIV ? "War Ledger and Livery Ledger are" : "War Ledger is"} an unofficial fan tool and isn't endorsed by Games Workshop.`]]
             .map(([q, a]) => `<details class="lp-q"><summary>${esc(q)}</summary><p>${esc(a)}</p></details>`).join("")}
         </div>
       </section>
 
       <section class="lp-cta panel">
         <div><h2>Take command of your collection</h2><p class="sub">Free, and ready in under a minute.</p></div>
-        <div class="lp-cta-btns">${me ? `<a class="btn lg" href="#/community/shared">Browse shared armies</a>` : ""}${cta}</div>
+        <div class="lp-cta-btns">${me && COMM ? `<a class="btn lg" href="#/community/shared">Browse shared armies</a>` : ""}${cta}</div>
       </section>
     `;
 
@@ -4909,18 +4921,18 @@ Redemptor Dreadnought (210 points)</pre>
 
       <section class="lp-cta panel">
         <div><h2>Join the table</h2><p class="sub">Free, and ready in under a minute.</p></div>
-        <div class="lp-cta-btns">${me ? `<a class="btn lg" href="#/community/shared">Browse shared armies</a>` : ""}${cta}</div>
+        <div class="lp-cta-btns">${me && COMM ? `<a class="btn lg" href="#/community/shared">Browse shared armies</a>` : ""}${cta}</div>
       </section>
     `;
 
     app.innerHTML = `
       <section class="lp-hero">
         <div class="lp-copy">
-          <div class="lp-switch" role="group" aria-label="Show the homepage for">
+          ${LIV || COMM ? `<div class="lp-switch" role="group" aria-label="Show the homepage for">
             <button type="button" data-lp-mode="livery" aria-pressed="${!war && !comm}"><span class="lps-ico">${LOGO_DROP}</span><span><strong>Livery Ledger</strong><small>Paint your army</small></span></button>
             <button type="button" data-lp-mode="war" aria-pressed="${war}"><span class="lps-ico">${LOGO_SWORDS}</span><span><strong>War Ledger</strong><small>Command your army</small></span></button>
             <button type="button" data-lp-mode="community" aria-pressed="${comm}"><span class="lps-ico">${LOGO_COMMUNITY}</span><span><strong>Community Ledger</strong><small>Meet other players</small></span></button>
-          </div>
+          </div>` : ""}
           ${comm ? `<p class="eyebrow">Run by the Eastern Cape Warlords</p>
           <h1>Paint, play <span class="grad">and meet up.</span></h1>
           <p class="lead">Community is where Livery Ledger and War Ledger meet other players: club and national events to sign up for with your list, armies other players have shared, and battles against friends. Spotlights and painting challenges are on the way.</p>
@@ -4981,13 +4993,13 @@ Redemptor Dreadnought (210 points)</pre>
     // Switch the homepage between Livery Ledger and War Ledger without leaving it.
     /* On a desktop, once the switch at the top has scrolled away, the same switch docks at the bottom of the screen. */
     const heroSw = app.querySelector(".lp-hero .lp-switch"), dock = $("lp-dock");
-    dock.innerHTML = `<div class="lp-switch" role="group" aria-label="Show the homepage for">${heroSw.innerHTML}</div>`;
+    if(heroSw) dock.innerHTML = `<div class="lp-switch" role="group" aria-label="Show the homepage for">${heroSw.innerHTML}</div>`;
     if(landingDock) landingDock.disconnect();
     landingDock = "IntersectionObserver" in window ? new IntersectionObserver(([e]) => {
       const on = !e.isIntersecting && e.boundingClientRect.top < 0;
       dock.classList.toggle("on", on); dock.inert = !on; dock.setAttribute("aria-hidden", String(!on));
     }) : null;
-    if(landingDock){
+    if(landingDock && heroSw){
       landingDock.observe(heroSw);
       const prev = view.cleanup; view.cleanup = () => { if(landingDock){ landingDock.disconnect(); landingDock = null; } if(prev) prev(); };
     }
@@ -5349,7 +5361,7 @@ Redemptor Dreadnought (210 points)</pre>
       <div class="settings">
         ${me ? `<section class="panel set-sec">
           <h2>Profile</h2>
-          <div class="set-row">${avatarHtml(me, "lg")}<div><strong>${esc(me.name)}</strong><small>${esc(me.email)}</small></div><a class="btn btn-sm" href="#/livery">Change name or picture</a></div>
+          <div class="set-row">${avatarHtml(me, "lg")}<div><strong>${esc(me.name)}</strong><small>${esc(me.email)}</small></div><a class="btn btn-sm" href="${LIV ? "#/livery" : "#/war"}">Change name or picture</a></div>
         </section>
         <section class="panel set-sec">
           <h2>Password</h2>
@@ -5364,11 +5376,11 @@ Redemptor Dreadnought (210 points)</pre>
           <h2>Display</h2>
           <label class="switch"><input type="checkbox" id="set-points" ${settings.hidePoints ? "checked" : ""}><span class="track" aria-hidden="true"><i></i></span><span>Hide points<small>For people who only paint: hides points on unit cards and ledger totals.</small></span></label>
           <div class="set-grid">
-            <label>Group units by<select id="set-group">${[["none", "Nothing"], ["role", "Role"], ["status", "Status"]].map(([v, l]) => opt(v, listPrefs.group === "rank" ? "role" : listPrefs.group, l)).join("")}</select></label>
-            <label>Sort units by<select id="set-sort">${[["rank", "Role"], ["name", "Name"], ["points", "Points"], ["progress", "Progress"], ["recent", "Recently changed"]].map(([v, l]) => opt(v, listPrefs.sort, l)).join("")}</select></label>
+            ${LIV ? `            <label>Group units by<select id="set-group">${[["none", "Nothing"], ["role", "Role"], ["status", "Status"]].map(([v, l]) => opt(v, listPrefs.group === "rank" ? "role" : listPrefs.group, l)).join("")}</select></label>
+            <label>Sort units by<select id="set-sort">${[["rank", "Role"], ["name", "Name"], ["points", "Points"], ["progress", "Progress"], ["recent", "Recently changed"]].map(([v, l]) => opt(v, listPrefs.sort, l)).join("")}</select></label>` : ""}
             <label>Background<select id="set-bg">${[["1", "Necrons and Ultramarines"], ["2", "Terminators"], ["3", "Orks and Blood Angels"], ["4", "Tyranids"], ["none", "None"]].map(([v, l]) => opt(v, bg, l)).join("")}</select></label>
           </div>
-          <p class="hint">Grouping and sorting are where every ledger starts; you can still change them on each ledger.</p>
+          ${LIV ? `<p class="hint">Grouping and sorting are where every ledger starts; you can still change them on each ledger.</p>` : ""}
           <div class="msg" id="set-msg" role="status"></div>
         </section>
         <section class="panel set-sec">
@@ -5378,8 +5390,8 @@ Redemptor Dreadnought (210 points)</pre>
         </section>
         <section class="panel set-sec">
           <h2>App</h2>
-          ${standalone() ? `<p class="hint">You're using Livery Ledger as an installed app.</p>`
-            : installable() ? `<p class="hint">Add Livery Ledger to your home screen or desktop. It opens like an app, and still opens without a connection, showing what was last loaded.</p><div class="row-actions"><button type="button" class="primary btn-sm" id="set-install">Install app</button></div>`
+          ${standalone() ? `<p class="hint">You're using ${SITE} as an installed app.</p>`
+            : installable() ? `<p class="hint">Add ${SITE} to your home screen or desktop. It opens like an app, and still opens without a connection, showing what was last loaded.</p><div class="row-actions"><button type="button" class="primary btn-sm" id="set-install">Install app</button></div>`
             : iOS ? `<p class="hint">On iPhone or iPad: open this site in Safari, tap the Share button, then <strong>Add to Home Screen</strong>.</p>`
             : `<p class="hint">In Chrome or Edge, use the install icon in the address bar, or the browser menu's <strong>Install</strong> or <strong>Add to Home screen</strong> option. On iPhone, use Safari's Share button, then Add to Home Screen.</p>`}
         </section>
@@ -5404,7 +5416,7 @@ Redemptor Dreadnought (210 points)</pre>
       try { await saveSettings({listChecks: e.target.checked}); $("set-wmsg").textContent = "Saved."; } catch(err){ $("set-wmsg").textContent = "Couldn't save: " + errText(err); }
     });
     const listSave = () => { try { localStorage.setItem("ll-list-prefs", JSON.stringify({group: $("set-group").value, sort: $("set-sort").value})); } catch(e){} say("set-msg", "Saved."); };
-    $("set-group").addEventListener("change", listSave); $("set-sort").addEventListener("change", listSave);
+    if($("set-group")){ $("set-group").addEventListener("change", listSave); $("set-sort").addEventListener("change", listSave); }
     $("set-bg").addEventListener("change", e => { document.documentElement.dataset.bg = e.target.value; try { localStorage.setItem("ll-bg", e.target.value); } catch(err){} say("set-msg", "Saved."); });
     if($("set-install")) $("set-install").addEventListener("click", async () => { await installApp(); viewSettings(); });
     if($("pw-form")) $("pw-form").addEventListener("submit", async e => {
@@ -7538,7 +7550,7 @@ Redemptor Dreadnought (210 points)</pre>
      What each of the three tools is for and what's in it, how to get started, the glossary and common questions.
      #/help#g-<word> opens it at that word (the ⓘ notes link here). */
   function viewHelp(anchor){
-    view.name = "help"; document.title = "Help · Livery Ledger";
+    view.name = "help"; document.title = `Help · ${SITE}`;
     const tipOf = sel => (TIPS.find(t => t[0] === sel) || [])[1] || "";
     const tabList = (tabs, base) => `<ul class="hp-tabs">${tabs.map(([k, l]) => `<li><a href="#/${base}${k ? "/" + k : ""}">${esc(l)}</a><span>${esc(tipOf(`.war-tabs a[href="#/${base}${k ? "/" + k : ""}"]`))}</span></li>`).join("")}</ul>`;
     const tool = (cls, logo, name, what, tabs, base) => `<section class="panel hp-tool ${cls}" aria-labelledby="hp-${cls}">
@@ -7547,36 +7559,36 @@ Redemptor Dreadnought (210 points)</pre>
       <section class="page-head">
         <p class="eyebrow">Help</p>
         <h1>How it all works</h1>
-        <p class="sub">Livery Ledger is three tools in one account: one for painting, one for playing and one for the club. Here's what each does, how to get started and what the words mean.</p>
+        <p class="sub">${LIV || COMM ? "Livery Ledger is three tools in one account: one for painting, one for playing and one for the club. Here's what each does, how to get started and what the words mean." : "War Ledger keeps your armies, builds your army lists and records your battles. Here's what each part does, how to get started and what the words mean."}</p>
       </section>
-      <nav class="hp-nav" aria-label="On this page"><a href="#/help#h-tools">The three tools</a><a href="#/help#h-start">Getting started</a><a href="#/help#h-words">What the words mean</a><a href="#/help#h-faq">Questions</a></nav>
+      <nav class="hp-nav" aria-label="On this page"><a href="#/help#h-tools">${LIV || COMM ? "The three tools" : "What's where"}</a><a href="#/help#h-start">Getting started</a><a href="#/help#h-words">What the words mean</a><a href="#/help#h-faq">Questions</a></nav>
 
-      <section class="war-sec" id="h-tools" aria-labelledby="h-tools-h"><div class="sec-h"><h2 id="h-tools-h">The three tools</h2></div>
-        <p class="hint">Switch between them at the top of any page. They share the same account and the same armies: an army you add in one shows up in the others.</p>
+      <section class="war-sec" id="h-tools" aria-labelledby="h-tools-h"><div class="sec-h"><h2 id="h-tools-h">${LIV || COMM ? "The three tools" : "What's where"}</h2></div>
+        ${LIV || COMM ? `<p class="hint">Switch between them at the top of any page. They share the same account and the same armies: an army you add in one shows up in the others.</p>` : ""}
         <div class="hp-tools">
-          ${tool("liv", LOGO_DROP, "Livery Ledger", "For painting. Plan your army's colours, write paint recipes and track every unit from bare plastic to varnished.", LIV_TABS, "livery")}
+          ${LIV ? tool("liv", LOGO_DROP, "Livery Ledger", "For painting. Plan your army's colours, write paint recipes and track every unit from bare plastic to varnished.", LIV_TABS, "livery") : ""}
           ${tool("war", LOGO_SWORDS, "War Ledger", "For playing. Keep everything you own in the Armoury, build army lists (with units you don't own yet, too), play on Game day and log every battle.", WAR_TABS, "war")}
-          ${tool("comm", LOGO_COMMUNITY, "Community Ledger", "For the club, run by the Eastern Cape Warlords. Club and national events to sign up for, and armies other players have shared.", COMM_TABS, "community")}
+          ${COMM ? tool("comm", LOGO_COMMUNITY, "Community Ledger", "For the club, run by the Eastern Cape Warlords. Club and national events to sign up for, and armies other players have shared.", COMM_TABS, "community") : ""}
         </div>
       </section>
 
       <section class="war-sec" id="h-start" aria-labelledby="h-start-h"><div class="sec-h"><h2 id="h-start-h">Getting started</h2></div>
         <div class="hp-tools">
-          <section class="panel hp-steps"><h3>If you paint</h3><ol>
+          ${LIV ? `<section class="panel hp-steps"><h3>If you paint</h3><ol>
             <li><a href="#/livery/new">Start a ledger</a>: pick your faction.</li>
             <li>Choose your colours: start from the official scheme and change anything you like.</li>
             <li>Add your units one at a time, or paste your army list.</li>
-            <li>Tick off each painting stage as you go. Write recipes for the steps you repeat.</li></ol></section>
+            <li>Tick off each painting stage as you go. Write recipes for the steps you repeat.</li></ol></section>` : ""}
           <section class="panel hp-steps"><h3>If you play</h3><ol>
             <li><a href="#/war/new">Add an army</a>, or paste a list with Import an army.</li>
             <li>Add the units you own. They show in your Armoury.</li>
             <li>Make an army list for a game, with units you own and any you don't yet.</li>
             <li>Play it on Game day, then log the battle to build each army's record.</li></ol></section>
-          <section class="panel hp-steps"><h3>For the club</h3><ol>
+          ${COMM ? `<section class="panel hp-steps"><h3>For the club</h3><ol>
             <li>See what's on under <a href="#/community">Community Ledger</a>.</li>
             <li>On an event, press I'm going and choose your list.</li>
             <li>Livery Ledger then shows what's left to paint before the day.</li>
-            <li>Share an army so others can see your colours and progress.</li></ol></section>
+            <li>Share an army so others can see your colours and progress.</li></ol></section>` : ""}
         </div>
       </section>
 
@@ -7587,12 +7599,13 @@ Redemptor Dreadnought (210 points)</pre>
       <section class="war-sec" id="h-faq" aria-labelledby="h-faq-h"><div class="sec-h"><h2 id="h-faq-h">Questions</h2></div>
         <div class="lp-faq-list">
           ${[["Is it free?", "Yes. Every feature is free to use."],
-             ["Why is my army a 'ledger' in one place and an 'army' in another?", "It's the same army. Livery Ledger calls it a ledger, because it's the record of how you're painting it; War Ledger calls it an army. Add units in either and they show in both."],
+             ...(LIV ? [["Why is my army a 'ledger' in one place and an 'army' in another?", "It's the same army. Livery Ledger calls it a ledger, because it's the record of how you're painting it; War Ledger calls it an army. Add units in either and they show in both."]] : []),
+
              ["Do I need to own the models to make a list?", "No. Army lists can include units you don't own yet, straight from the datasheets. They're marked Not owned and add up on the To buy tab."],
-             ["Who can see my armies?", "Only you, until you share one. A shared army can be seen by anyone with its link, and by logged-in players on Shared armies. Lists and battles are always private."],
+             ["Who can see my armies?", COMM ? "Only you, until you share one. A shared army can be seen by anyone with its link, and by logged-in players on Shared armies. Lists and battles are always private." : "Only you. Your armies, lists and battles are private."],
              ["What's the difference between an army list and a Crusade force?", "An army list is for one game at a time. A Crusade force is kept from game to game in a campaign, and its units gain experience and upgrades as they fight."],
              ["Can I use it on my phone?", "Yes. It works in your phone's browser, and you can install it from the account menu so it opens like an app."],
-             ["How do I keep a copy of my data?", "Settings has Download all my data, and each ledger can be exported as a backup you can bring back later."],
+             ["How do I keep a copy of my data?", LIV ? "Settings has Download all my data, and each ledger can be exported as a backup you can bring back later." : "Settings has Download all my data, as one file you can bring back later."],
              ["Who runs it?", "The Eastern Cape Warlords, a Warhammer 40,000 club. It's an unofficial fan tool and isn't endorsed by Games Workshop."]]
             .map(([q, a]) => `<details class="lp-q"><summary>${esc(q)}</summary><p>${esc(a)}</p></details>`).join("")}
         </div>
