@@ -2,6 +2,17 @@
 
 Everything a new session (or a new account) needs to pick this project up. Read this first, then `tests/README.md`.
 
+## Right now the site is War Ledger only
+
+Livery Ledger and Community Ledger are switched off with `TOOLS` at the top of `js/app.js`:
+`{livery: false, community: false}`. Their header buttons, homepage switch and links are hidden, their
+addresses (`#/livery`, `#/army/…`, `#/community`, `#/shared`, `#/player/…`) open War Ledger, and the
+homepage, Help, Settings, page titles, `index.html` and `manifest.webmanifest` say War Ledger. All their code
+and everyone's saved data are kept; setting a flag to `true` brings the tool back.
+Tests: `tests/helpers.js` has a `tools` option; the Livery and Community test files switch both on
+(`test.use({tools: {livery: true, community: true}})`), and a few tests in `war.spec.js` / `smoke.spec.js` do it with
+`page.addInitScript`. The default (War only) is covered by "the site is War Ledger only" in `war.spec.js`.
+
 ## What it is
 
 One static site with two tools that share the same armies and units:
